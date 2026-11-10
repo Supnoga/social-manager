@@ -65,16 +65,24 @@ def check_github(apply=True):
     if repo.startswith("https://github.com/"):
         repo = repo[len("https://github.com/"):]
     branch = db.get_setting("update_branch", "main")
+    token = (db.get_setting("update_token", "") or "").strip()
     with httpx.Client(timeout=60, follow_redirects=True) as c:
-        r = c.get(f"https://raw.githubusercontent.com/{repo}/{branch}/VERSION")
+        if token:  # súkromný repozitár: cez GitHub API s kľúčom len na čítanie
+            h = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.raw"}
+            r = c.get(f"https://api.github.com/repos/{repo}/contents/VERSION", params={"ref": branch}, headers=h)
+        else:
+            r = c.get(f"https://raw.githubusercontent.com/{repo}/{branch}/VERSION")
         if r.status_code != 200:
-            return {"configured": True, "error": "Repozitár sa nedá prečítať (musí byť verejný)."}
+            return {"configured": True, "error": "Repozitár sa nedá prečítať (je súkromný? vlož kľúč v Pokročilých)."}
         remote = r.text.strip()
         if _vt(remote) <= _vt(version()):
             return {"configured": True, "latest": True, "version": version()}
         if not apply:
             return {"configured": True, "available": remote}
-        z = c.get(f"https://github.com/{repo}/archive/refs/heads/{branch}.zip")
+        if token:
+            z = c.get(f"https://api.github.com/repos/{repo}/zipball/{branch}", headers={"Authorization": f"Bearer {token}"})
+        else:
+            z = c.get(f"https://github.com/{repo}/archive/refs/heads/{branch}.zip")
         z.raise_for_status()
     return {"configured": True, "updated": apply_zip(z.content)}
 

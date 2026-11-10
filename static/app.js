@@ -670,7 +670,9 @@ async function pSettings(m) {
     <p class="small dim">Nové verzie si appka sťahuje sama (pri zapnutí a každé 4 hodiny). Projekty, videá, účty a nastavenia ostávajú.</p>
     <label class="l">Nový zip appky</label><input type="file" id="updZip" accept=".zip"><button class="btn sm" style="margin-top:8px" onclick="updZip()">${I('upload', 's')}Aktualizovať zo zipu</button>
     <div class="row" style="margin-top:8px"><button class="btn sm" onclick="updGh()">${I('refresh', 's')}Skontrolovať teraz</button></div>
-    <details style="margin-top:10px"><summary class="small dim">Pokročilé</summary><label class="l">Odkiaľ sa sťahujú nové verzie (GitHub)</label><div class="row"><input id="updRepo" style="flex:1" placeholder="Supnoga/social-manager"><button class="btn sec sm" onclick="saveRepo()">Uložiť</button></div></details></div>
+    <details style="margin-top:10px"><summary class="small dim">Pokročilé</summary><label class="l">Odkiaľ sa sťahujú nové verzie (GitHub)</label><div class="row"><input id="updRepo" style="flex:1" placeholder="Supnoga/social-manager"></div>
+      <label class="l">Kľúč na čítanie (len pri súkromnom repozitári)</label><input id="updTok" type="password" placeholder="github_pat_…">
+      <button class="btn sec sm" style="margin-top:8px" onclick="saveRepo()">Uložiť</button></details></div>
   </div><div>
   <div class="card"><h2>${I('chart')}Spotreba AI</h2>
     <div class="row" style="gap:20px;margin-bottom:10px"><div><b style="font-size:22px">${((u.day.inp + u.day.outp) / 1000).toFixed(1)}k</b><div class="small muted">tokenov za 24 h</div></div><div><b style="font-size:22px">${((u.week.inp + u.week.outp) / 1000).toFixed(1)}k</b><div class="small muted">za 7 dní</div></div><div><b style="font-size:22px">${u.day.cached}</b><div class="small muted">zadarmo z pamäte</div></div></div>
@@ -726,7 +728,7 @@ async function loadUpd() {
 async function waitRestart() { busy(true, 'Aktualizujem a reštartujem…'); for (let i = 0; i < 60; i++) { await new Promise(r => setTimeout(r, 2000)); try { const r = await fetch('/api/meta'); if (r.ok) { busy(false); toast('Aktualizované'); return location.reload(); } } catch (e) { } } busy(false); toast('Appka sa nespustila znova – spusti ju ručne.', true); }
 async function updZip() { const f = $('#updZip').files[0]; if (!f) return toast('Vyber zip', true); const fd = new FormData(); fd.append('file', f); await api('/api/update/zip', { method: 'POST', body: fd }, 'Inštalujem novú verziu…'); waitRestart(); }
 async function quitApp() { if (!confirm('Vypnúť appku? Naplánované videá sa nezverejnia, kým ju znova nezapneš ikonkou.')) return; await fetch('/api/quit', { method: 'POST' }).catch(() => { }); document.body.innerHTML = '<div style="padding:60px;font:16px Inter,sans-serif;color:#fff">Appka je vypnutá. Zapneš ju ikonkou Social Manager.</div>'; }
-async function saveRepo() { await api('/api/settings', { method: 'POST', body: { update_repo: $('#updRepo').value.trim() } }); toast('Uložené'); loadUpd(); }
+async function saveRepo() { await api('/api/settings', { method: 'POST', body: { update_repo: $('#updRepo').value.trim(), ...($('#updTok').value.trim() ? { update_token: $('#updTok').value.trim() } : {}) } }); toast('Uložené'); loadUpd(); }
 async function updGh() { const r = await api('/api/update/github', { method: 'POST' }, 'Sťahujem aktualizáciu…'); if (r.updated) waitRestart(); else { toast(r.latest ? 'Máš najnovšiu verziu' : (r.error || 'Hotovo')); loadUpd(); } }
 
 render();

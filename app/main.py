@@ -216,7 +216,7 @@ def api_meta():
 def api_settings(data: dict = Body(...)):
     allowed = {"ai_mode", "model_creative", "model_cheap", "paused", "claude_path", "meta_api_version", "tt_mode",
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min",
-               "update_repo", "auto_update", "google_tts_key", "google_tts_budget"}
+               "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
