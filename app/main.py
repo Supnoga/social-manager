@@ -1271,6 +1271,8 @@ async def update_zip(file: UploadFile = File(...)):
 # ---------------- Komentáre (samostatný modul) ----------------
 from . import comments  # noqa: E402
 app.include_router(comments.router)
+from . import messages  # noqa: E402
+app.include_router(messages.router)
 from . import radar_api  # noqa: E402
 app.include_router(radar_api.router)
 from . import profiles  # noqa: E402
