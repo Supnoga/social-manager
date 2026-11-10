@@ -113,7 +113,8 @@ Write production-ready video scripts for these ideas:
 
 Rules: short = 110-150 spoken words (~45s), long = 700-1100 words. Start with the hook verbatim, deliver value fast,
 use pattern interrupts, end with a natural CTA (follow/save/comment). Spoken text must sound natural for voice-over (TTS),
-no emojis or symbols in voiceover. Captions/hashtags optimized for TikTok/Reels/Shorts.
+no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
+tied to one language, numbers as digits, brand/product names exact. Captions/hashtags optimized for TikTok/Reels/Shorts.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"max 90 chars, curiosity-driven","voiceover":"full spoken text",
 "scenes":[{{"visual":"what to show","onscreen":"short on-screen text"}}],
 "description":"YouTube description 2-4 sentences + CTA","caption":"social caption max 150 chars","hashtags":"#a #b (5-8)"}}]}}
@@ -255,8 +256,43 @@ def apply_manual(name, params, text):
 
 
 def translate_all(script_id, langs, chunk=6):
-    """Preklad do mnohých jazykov - po 6 jazykov na volanie (rovnováha medzi tokenmi a spoľahlivosťou)."""
-    total = 0
-    for i in range(0, len(langs), chunk):
-        total += run_task("translate", {"script_id": script_id, "langs": langs[i:i + chunk]})["created"]
-    return {"created": total}
+    """Preklad: najprv bezplatné strojové prekladače (0 tokenov), Claude len pre zvyšok a na opravu označených kúskov."""
+    from . import translate
+    done, rest, flags, used = ([], list(langs), {}, [])
+    if translate.any_enabled():
+        done, rest, flags, used = translate.machine_translate(script_id, langs)
+    if flags:
+        try:
+            fix_flagged(script_id, flags)
+            flags = {}
+        except ai.NeedManual:
+            pass
+        except Exception:
+            pass
+    for l, why in flags.items():
+        db.run("UPDATE scripts SET qa=? WHERE idea_id=(SELECT idea_id FROM scripts WHERE id=?) AND lang=?",
+               (json.dumps(why, ensure_ascii=False), script_id, l))
+    total = len(done)
+    for i in range(0, len(rest), chunk):
+        total += run_task("translate", {"script_id": script_id, "langs": rest[i:i + chunk]})["created"]
+    return {"created": total, "machine": len(done), "ai": len(rest), "by": used, "check": flags}
+
+
+def fix_flagged(script_id, flags):
+    """Malé AI volanie: opraví len polia, ktoré neprešli automatickou kontrolou (všetky jazyky naraz)."""
+    src = db.one("SELECT * FROM scripts WHERE id=?", (script_id,))
+    items = {}
+    for lang, fields in flags.items():
+        t = db.one("SELECT * FROM scripts WHERE idea_id=? AND lang=?", (src["idea_id"], lang))
+        items[lang] = {f: t[f] for f in fields}
+    prompt = f"""Fix these machine translations of a short video script (problems: {json.dumps(flags, ensure_ascii=False)}).
+Keep numbers and brand names, natural native style, similar length to source.
+Source ({languages.english(src['lang'])}): {json.dumps({f: src[f] for fs in flags.values() for f in fs}, ensure_ascii=False)}
+Translations: {json.dumps(items, ensure_ascii=False)}
+Return JSON with the same shape: {{"<lang>":{{"<field>":"fixed text"}}}}"""
+    data = ai.ask(prompt, "fix", "cheap")
+    for lang, fields in (data or {}).items():
+        if lang in flags and isinstance(fields, dict):
+            for f, v in fields.items():
+                if f in ("title", "voiceover", "description", "caption") and isinstance(v, str) and v.strip():
+                    db.run(f"UPDATE scripts SET {f}=?, qa='' WHERE idea_id=? AND lang=?", (v, src["idea_id"], lang))

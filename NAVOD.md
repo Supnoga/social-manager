@@ -50,6 +50,9 @@ TikTok Business si videá **sťahuje z internetu**, nevie ich prijať priamo. Ri
 
 Zvonka je viditeľné **len** video pod tajným odkazom a overovací súbor, nič iné z appky.
 
+## 3b. Preklady zadarmo (bez tokenov)
+V **Nastavenia → Preklady zadarmo** vlož kľúč Microsoft Translator (Free F0, 2 mil. znakov mesačne) – návod je priamo tam. Voliteľne DeepL Free (500 tis.) a Google (500 tis.). Potom preklady nestoja žiadne Claude tokeny; Claude len opraví sporné kúsky. V projekte vyplň **Neprekladať** (názov značky, produktov). V kroku **Text a hlas** tlačidlo **Vyrobiť všetky jazyky** spraví preklad, hlasy aj videá naraz.
+
 ## 4. AI a spotreba
 
 - AI ide cez **Claude Code s tvojím Max plánom** – nič sa neplatí navyše. Ak Claude Code nie je, appka ponúkne **ručný režim** (skopíruješ text do claude.ai a odpoveď vložíš späť).

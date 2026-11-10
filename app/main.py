@@ -200,7 +200,8 @@ def api_meta():
                                                           ("tt_mode", "inbox"), ("meta_api_version", "v25.0"),
                                                           ("claude_path", ""), ("public_base_url", ""), ("ttb_draft", False),
                                                           ("ttb_ai_label", False), ("cf_tunnel_token", ""),
-                                                          ("jitter_min", 10), ("verify_files", {})]},
+                                                          ("jitter_min", 10), ("verify_files", {}),
+                                                          ("mt_azure_region", ""), ("mt_google", False)]},
         "ttb_redirect": tiktok_business.redirect_uri(),
         "tunnel": tunnel.status(),
         "has": {"yt_client": bool(db.get_setting("yt_client")), "tt_creds": bool(db.get_setting("tt_client_key")),
@@ -209,6 +210,7 @@ def api_meta():
         "scheduler": scheduler.state,
         "ffmpeg": bool(media.ffmpeg()),
         "google_tts": voices.google_usage(),
+        "mt": __import__("app.translate", fromlist=["usage"]).usage(),
     }
 
 
@@ -216,7 +218,8 @@ def api_meta():
 def api_settings(data: dict = Body(...)):
     allowed = {"ai_mode", "model_creative", "model_cheap", "paused", "claude_path", "meta_api_version", "tt_mode",
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min",
-               "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token"}
+               "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
+               "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -270,7 +273,7 @@ def get_file(path: str):
 
 
 # ---------------- Projekty ----------------
-PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate"]
+PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary"]
 
 
 @app.get("/api/projects")
@@ -577,7 +580,8 @@ def script_translate(sid: int, data: dict = Body(...)):
     langs = [l for l in data.get("langs", []) if l in languages.LANGUAGES]
     if not langs:
         raise HTTPException(400, "Vyber jazyky")
-    if db.get_setting("ai_mode", "auto") == "manual" or not ai.find_claude():
+    from . import translate
+    if (db.get_setting("ai_mode", "auto") == "manual" or not ai.find_claude()) and not translate.any_enabled():
         return content.run_task("translate", {"script_id": sid, "langs": langs})
     return content.translate_all(sid, langs)
 
@@ -663,6 +667,23 @@ async def script_attach(sid: int, file: UploadFile = File(...)):
         while chunk := await file.read(1024 * 1024 * 8):
             out.write(chunk)
     return {"video_id": _add_video(s["project_id"], str(dest), file.filename, s["lang"], s)}
+
+
+@app.post("/api/ideas/{iid}/produce-all")
+def idea_produce_all(iid: int, data: dict = Body(default={})):
+    """Jedno tlačidlo: preklad do všetkých jazykov projektu -> hlasy -> videá."""
+    src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    if not src:
+        raise HTTPException(400, "Najprv schváľ prototyp (scenár)")
+    p = db.one("SELECT languages FROM projects WHERE id=?", (src["project_id"],))
+    have = {r["lang"] for r in db.q("SELECT lang FROM scripts WHERE idea_id=?", (iid,))}
+    missing = [l for l in json.loads(p["languages"] or "[]") if l not in have]
+    out = {}
+    if missing:
+        out["translate"] = content.translate_all(src["id"], missing)
+    out["voices"] = idea_voice_all(iid, only_missing=1)
+    out["videos"] = idea_videos_all(iid, data)
+    return out
 
 
 @app.post("/api/ideas/{iid}/videos-all")

@@ -295,6 +295,7 @@ function pProjectForm(m, p) {
     <div class="g2"><div><label class="l">Štýl / tón</label><input id="pTone" value="${esc(p.tone)}" placeholder="vtipný, odborný…"></div><div><label class="l">Cieľ</label><input id="pGoals" value="${esc(p.goals)}" placeholder="sledovatelia, predaj…"></div></div>
     <div class="g2"><div><label class="l">Hlavný jazyk (v ňom vymýšľame)</label><select id="pSrc">${S.meta.languages.map(l => `<option value="${l.code}" ${l.code === p.source_lang ? 'selected' : ''}>${l.name}</option>`).join('')}</select></div>
     <div><label class="l">Hlas</label><select id="pVoice"><option value="F" ${p.voice_gender === 'F' ? 'selected' : ''}>Ženský</option><option value="M" ${p.voice_gender === 'M' ? 'selected' : ''}>Mužský</option></select></div></div>
+    <label class="l">Neprekladať (názvy značky, produktov, mená – oddeľ čiarkou)</label><input id="pGloss" value="${esc(p.glossary || '')}" placeholder="Zdravé recepty, FitBox, Oliver">
     <label class="l">Siete</label><div class="pick">${PLATS.map(x => `<label><input type="checkbox" name="pl" value="${x}" ${p.platforms.includes(x) ? 'checked' : ''}>${I(x, 's')}${PL[x]}</label>`).join('')}</div>
     <label class="l">Jazyky <a class="small" onclick="$$('[name=lang]').forEach(c=>c.checked=true)">vybrať všetky</a> · <a class="small" onclick="$$('[name=lang]').forEach(c=>c.checked=false)">zrušiť</a></label>
     <div class="pick">${S.meta.languages.map(l => `<label><input type="checkbox" name="lang" value="${l.code}" ${p.languages.includes(l.code) ? 'checked' : ''}>${l.name}</label>`).join('')}</div>
@@ -345,7 +346,7 @@ async function srcAdd(pid) { const urls = $('#srcUrls').value, text = $('#srcTex
 async function srcFiles(pid, files) { const fd = new FormData(); [...files].forEach(f => fd.append('files', f)); srcDone(await api(`/api/projects/${pid}/sources`, { method: 'POST', body: fd }, 'Čítam súbory…')); }
 async function srcRemove(pid, i) { if (!confirm('Odstrániť tento zdroj?')) return; srcDone(await api(`/api/projects/${pid}/sources`, { method: 'POST', body: { remove: i } }, 'Aktualizujem…')); }
 async function saveProject(id) {
-  const body = { name: $('#pName').value, color: $('#pColor').value, description: $('#pDesc').value, audience: $('#pAud').value, tone: $('#pTone').value, goals: $('#pGoals').value, source_lang: $('#pSrc').value, voice_gender: $('#pVoice').value, ...($('#pRate') ? { voice_rate: +$('#pRate').value, voices: Object.fromEntries($$('[data-vl]').map(x => [x.dataset.vl, x.value])) } : {}), languages: $$('[name=lang]:checked').map(c => c.value), platforms: $$('[name=pl]:checked').map(c => c.value) };
+  const body = { name: $('#pName').value, color: $('#pColor').value, description: $('#pDesc').value, audience: $('#pAud').value, tone: $('#pTone').value, goals: $('#pGoals').value, source_lang: $('#pSrc').value, voice_gender: $('#pVoice').value, glossary: $('#pGloss').value, ...($('#pRate') ? { voice_rate: +$('#pRate').value, voices: Object.fromEntries($$('[data-vl]').map(x => [x.dataset.vl, x.value])) } : {}), languages: $$('[name=lang]:checked').map(c => c.value), platforms: $$('[name=pl]:checked').map(c => c.value) };
   if (!body.name) return toast('Zadaj názov projektu', true);
   if (!body.languages.includes(body.source_lang)) body.languages.unshift(body.source_lang);
   const r = await api(id ? '/api/projects/' + id : '/api/projects', { method: id ? 'PUT' : 'POST', body });
@@ -447,17 +448,20 @@ function sLangs(b, { p, scripts, src, iid }) {
   const missing = p.languages.filter(l => !have[l]);
   const noVoice = scripts.filter(s => !s.voice_path).length;
   b.innerHTML = `<div class="card"><div class="row"><h2 style="margin:0">${I('globe')}Jazyky <span class="chip">${p.languages.filter(l => have[l]).length}/${p.languages.length}</span></h2><span class="sp"></span>
-    ${missing.length ? `<button class="btn" onclick="translateMissing(${src.id},'${missing.join(',')}')">${I('globe')}Preložiť chýbajúce (${missing.length})</button>` : ''}
-    <button class="btn ${missing.length ? 'sec' : ''}" onclick="voiceAll(${iid})" ${noVoice ? '' : 'disabled'}>${I('mic')}Hlasy pre všetky (${noVoice})</button></div>
-    <p class="small dim" style="margin:6px 0 10px">Preklad robí lacnejší model a viac jazykov naraz, takže to nemíňa veľa tokenov.</p>
-    ${p.languages.map(l => { const s = have[l]; return `<div class="lang-row"><div><b>${langName(l)}</b>${s && s.is_source ? ' <span class="chip acc">originál</span>' : ''}</div>
+    <button class="btn" onclick="produceAll(${iid})">${I('zap')}Vyrobiť všetky jazyky</button>
+    ${missing.length ? `<button class="btn sec" onclick="translateMissing(${src.id},'${missing.join(',')}')">${I('globe')}Len preložiť (${missing.length})</button>` : ''}
+    <button class="btn sec" onclick="voiceAll(${iid})" ${noVoice ? '' : 'disabled'}>${I('mic')}Hlasy pre všetky (${noVoice})</button></div>
+    <p class="small dim" style="margin:6px 0 10px">${Object.values(S.meta.mt || {}).some(x => x.enabled) ? 'Preklad robí bezplatný prekladač (0 tokenov), Claude len opraví sporné kúsky.' : 'Preklad robí Claude (lacnejší model). Bezplatný prekladač bez tokenov zapneš v Nastaveniach → Preklady zadarmo.'} „Vyrobiť všetky jazyky“ spraví preklad, hlasy aj videá naraz.</p>
+    ${p.languages.map(l => { const s = have[l]; return `<div class="lang-row"><div><b>${langName(l)}</b>${s && s.is_source ? ' <span class="chip acc">originál</span>' : ''}${s && s.qa ? ` <span class="chip" style="color:var(--warn,#f5b000)" title="${esc(Object.entries(JSON.parse(s.qa)).map(([k, v]) => k + ': ' + v).join(', '))}">skontroluj</span>` : ''}</div>
       <div class="small ${s ? '' : 'dim'}" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s ? esc(s.title) : 'chýba preklad'}</div>
       <div class="row">${s ? `${s.voice_path ? `<audio controls preload="none" src="/api/file?path=${encodeURIComponent(s.voice_path)}"></audio>` : `<button class="btn sec sm" onclick="voiceOne(${s.id},true)">${I('mic', 's')}Hlas</button>`}
         <button class="btn ghost sm" onclick="editLang(${s.id})">${I('pencil', 's')}</button>` : ''}</div></div>`; }).join('')}</div>
   <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="go('p/${p.id}/v/${iid}/video')">Ďalej: video${I('right')}</button></div>`;
   window._scripts = scripts;
 }
-async function translateMissing(sid, langs) { const r = await api(`/api/scripts/${sid}/translate`, { method: 'POST', body: { script_id: sid, langs: langs.split(',') } }, `Prekladám do ${langs.split(',').length} jazykov…`); toast(`Preložené: ${r.created}`); render(); }
+function trMsg(r) { if (!r) return ''; let m = `Preložené: ${r.created}`; if (r.machine) m += ` (zadarmo prekladačom: ${r.machine}${r.ai ? `, cez Claude: ${r.ai}` : ''})`; const c = Object.keys(r.check || {}); if (c.length) m += ` · skontroluj: ${c.map(langName).join(', ')}`; return m; }
+async function translateMissing(sid, langs) { const r = await api(`/api/scripts/${sid}/translate`, { method: 'POST', body: { script_id: sid, langs: langs.split(',') } }, `Prekladám do ${langs.split(',').length} jazykov…`); toast(trMsg(r)); render(); }
+async function produceAll(iid) { const r = await api(`/api/ideas/${iid}/produce-all`, { method: 'POST', body: {} }, 'Vyrábam všetky jazyky: preklad → hlas → video… (môže to trvať pár minút)'); const e = [...(r.voices?.errors || []), ...(r.videos?.errors || [])]; toast(`${r.translate ? trMsg(r.translate) + ' · ' : ''}Videí: ${r.videos?.created || 0}` + (e.length ? ' · chyby: ' + e.join('; ') : ''), !!e.length); go(location.hash.slice(2).replace(/\/[^/]+$/, '/video')); }
 async function voiceAll(iid) { const r = await api(`/api/ideas/${iid}/voice-all?only_missing=1`, { method: 'POST' }, 'Vytváram hlasy…'); toast(`Hlasov: ${r.done}` + (r.errors.length ? ' · chyby: ' + r.errors.join('; ') : ''), !!r.errors.length); voiceNote(r); render(); }
 function editLang(sid) {
   const s = window._scripts.find(x => x.id === sid);
@@ -666,6 +670,16 @@ async function pSettings(m) {
     <button class="btn sm" onclick="saveVoiceSet()">${I('check', 's')}Uložiť</button>
     <label class="l" style="margin-top:16px">Vypočuj si hlasy</label><div class="row"><select id="tL" onchange="loadVoiceList()">${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select></div>
     <div id="vList" class="vlist"></div></div>
+  <div class="card"><h2>${I('globe')}Preklady zadarmo (bez tokenov)</h2>
+    <p class="small muted">Preklady do jazykov urobí bezplatný prekladač namiesto Clauda – Max limit ostane na vymýšľanie. Stačí jeden, najlepšie Microsoft (2 mil. znakov mesačne ≈ 55 videí v 36 jazykoch). Appka sa zastaví pred limitom, nič sa neplatí.</p>
+    ${Object.entries(S.meta.mt || {}).map(([k, u]) => `<div class="vrow"><span style="min-width:90px"><b>${u.name}</b></span><span class="small ${u.enabled ? 'ok-t' : 'dim'}">${u.enabled ? 'zapnutý' : 'nenastavený'}</span><span style="flex:1"><div class="bar"><i style="width:${Math.min(100, Math.round(u.used / u.free * 100))}%"></i></div></span><span class="small dim">${Math.round(u.used / 1000)}k / ${u.free / 1000}k</span></div>`).join('')}
+    <details><summary class="small">Ako získam kľúč</summary><ol class="small muted">
+      <li><b>Microsoft</b> (odporúčam): <a href="https://portal.azure.com/#create/Microsoft.CognitiveServicesTextTranslation" target="_blank">vytvor Translator</a> → Pricing tier <b>Free F0</b> → Create → v časti <i>Keys and Endpoint</i> skopíruj <b>KEY 1</b> a <b>Location/Region</b>.</li>
+      <li><b>DeepL</b> (voliteľne, najlepšia kvalita pre veľké jazyky): <a href="https://www.deepl.com/pro-api" target="_blank">DeepL API Free</a> → účet → <i>API Keys</i> → skopíruj kľúč.</li>
+      <li><b>Google</b>: v tom istom projekte ako hlas zapni <a href="https://console.cloud.google.com/apis/library/translate.googleapis.com" target="_blank">Cloud Translation API</a> (Enable) a zaškrtni nižšie. Ak má kľúč obmedzenie, pridaj mu aj Cloud Translation API.</li></ol></details>
+    <div class="g2"><div><label class="l">Microsoft kľúč</label><input id="mtAz" type="password" placeholder="${S.meta.mt?.azure?.enabled ? 'uložený' : ''}"></div><div><label class="l">Microsoft región</label><input id="mtAzR" value="${esc(st.mt_azure_region || '')}" placeholder="westeurope"></div>
+    <div><label class="l">DeepL kľúč</label><input id="mtDl" type="password" placeholder="${S.meta.mt?.deepl?.enabled ? 'uložený' : ''}"></div><div><label class="l">Google</label><label class="small" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="mtGo" ${st.mt_google ? 'checked' : ''}>Použiť Google kľúč z hlasu</label></div></div>
+    <button class="btn sm" style="margin-top:10px" onclick="saveMt()">${I('check', 's')}Uložiť</button></div>
   <div class="card"><h2>${I('refresh')}Aktualizácie</h2><div id="updBox" class="small muted">Kontrolujem…</div>
     <p class="small dim">Nové verzie si appka sťahuje sama (pri zapnutí a každé 4 hodiny). Projekty, videá, účty a nastavenia ostávajú.</p>
     <label class="l">Nový zip appky</label><input type="file" id="updZip" accept=".zip"><button class="btn sm" style="margin-top:8px" onclick="updZip()">${I('upload', 's')}Aktualizovať zo zipu</button>
@@ -700,6 +714,7 @@ function voiceUsageHTML(g) {
   const pct = Math.min(100, Math.round(g.used / g.free * 100));
   return `<div class="hint">${I('check')}<div style="flex:1">Google hlasy zapnuté. Tento mesiac: <b>${g.used.toLocaleString('sk')}</b> z ${g.free.toLocaleString('sk')} znakov zadarmo (cca ${g.minutes} min)${g.spent ? ` · navyše cca <b>${g.spent} €</b>` : ''}.<div class="bar"><i style="width:${pct}%"></i></div></div></div>`;
 }
+async function saveMt() { const b = { mt_azure_region: $('#mtAzR').value.trim(), mt_google: $('#mtGo').checked }; if ($('#mtAz').value.trim()) b.mt_azure_key = $('#mtAz').value.trim(); if ($('#mtDl').value.trim()) b.mt_deepl_key = $('#mtDl').value.trim(); await api('/api/settings', { method: 'POST', body: b }); toast('Uložené'); S.meta = await api('/api/meta'); render(); }
 async function saveVoiceSet() { await api('/api/settings', { method: 'POST', body: { ...($('#gKey').value.trim() ? { google_tts_key: $('#gKey').value.trim() } : {}), google_tts_budget: +$('#gBud').value || 0 } }); toast('Uložené'); for (const k in VCACHE) delete VCACHE[k]; S.meta = await api('/api/meta'); render(); }
 const VCACHE = {};
 async function voicesFor(lang) { return VCACHE[lang] || (VCACHE[lang] = await api('/api/voices/' + lang)); }
