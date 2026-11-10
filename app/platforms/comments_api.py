@@ -1,0 +1,180 @@
+"""Čítanie komentárov a odpovedanie cez oficiálne API sietí (zadarmo).
+
+Každá sieť vráti zoznam {id, post, post_url, post_title, author, text, created, likes, answered}.
+- YouTube: commentThreads (1 jednotka z 10 000 denne), odpoveď 50 jednotiek. Treba právo youtube.force-ssl.
+- Facebook / Instagram: Graph API, token potrebuje pages_read_engagement, pages_read_user_content,
+  pages_manage_engagement a instagram_manage_comments.
+- TikTok: len cez TikTok API for Business (práva comment.list a comment.list.manage).
+- LinkedIn: len firemné stránky (Community Management API). Osobný profil čítanie komentárov nedovolí.
+"""
+import re
+import urllib.parse
+
+from .common import PlatformError, check, client, tokens
+from . import linkedin, meta, tiktok_business, youtube
+
+
+def _yt(acc, posts):
+    tok = youtube.access_token(acc)
+    out = []
+    with client() as c:
+        for p in posts:
+            r = c.get("https://www.googleapis.com/youtube/v3/commentThreads", headers={"Authorization": f"Bearer {tok}"},
+                      params={"part": "snippet", "videoId": p["external_id"], "maxResults": 50, "order": "time",
+                              "textFormat": "plainText"})
+            if r.status_code == 403 and "insufficient" in r.text.lower():
+                raise PlatformError("YouTube: chýba povolenie na komentáre. Pripoj kanál znova (Účty → YouTube).")
+            if r.status_code == 403 and "commentsDisabled" in r.text:
+                continue
+            check(r, "YouTube komentáre")
+            for it in r.json().get("items", []):
+                s = it["snippet"]["topLevelComment"]["snippet"]
+                if (s.get("authorChannelId") or {}).get("value") == acc["external_id"]:
+                    continue
+                out.append({"id": it["id"], "post": p["external_id"], "post_url": p.get("url", ""),
+                            "post_title": p.get("title") or "", "author": s.get("authorDisplayName", ""),
+                            "text": s.get("textDisplay") or s.get("textOriginal", ""), "created": s.get("publishedAt", ""),
+                            "likes": s.get("likeCount", 0), "answered": it["snippet"].get("totalReplyCount", 0) > 0})
+    return out
+
+
+def _fb(acc, posts):
+    t = tokens(acc)
+    out = []
+    with client() as c:
+        for p in posts:
+            r = c.get(meta.G(f"{p['external_id']}/comments"), params={
+                "access_token": t["page_token"], "filter": "toplevel", "order": "reverse_chronological", "limit": 50,
+                "fields": "id,from{id,name},message,created_time,like_count,comment_count"})
+            if r.status_code in (400, 403) and "permission" in r.text.lower():
+                raise PlatformError("Facebook: token nemá právo na komentáre (pages_read_engagement, "
+                                    "pages_read_user_content, pages_manage_engagement). Vytvor nový token a vlož ho v Účtoch.")
+            check(r, "Facebook komentáre")
+            for it in r.json().get("data", []):
+                if (it.get("from") or {}).get("id") == t.get("page_id"):
+                    continue
+                out.append({"id": it["id"], "post": p["external_id"], "post_url": p.get("url", ""),
+                            "post_title": p.get("title") or "", "author": (it.get("from") or {}).get("name", ""),
+                            "text": it.get("message", ""), "created": it.get("created_time", ""),
+                            "likes": it.get("like_count", 0), "answered": False})
+    return out
+
+
+def _ig(acc, posts):
+    t = tokens(acc)
+    me = acc["name"].lstrip("@")
+    out = []
+    with client() as c:
+        for p in posts:
+            r = c.get(meta.G(f"{p['external_id']}/comments"), params={
+                "access_token": t["page_token"], "limit": 50,
+                "fields": "id,text,username,timestamp,like_count,replies{username}"})
+            if r.status_code in (400, 403) and "permission" in r.text.lower():
+                raise PlatformError("Instagram: token nemá právo instagram_manage_comments. Vytvor nový token a vlož ho v Účtoch.")
+            check(r, "Instagram komentáre")
+            for it in r.json().get("data", []):
+                if it.get("username") == me:
+                    continue
+                replied = any(x.get("username") == me for x in (it.get("replies") or {}).get("data", []))
+                out.append({"id": it["id"], "post": p["external_id"], "post_url": p.get("url", ""),
+                            "post_title": p.get("title") or "", "author": "@" + it.get("username", ""),
+                            "text": it.get("text", ""), "created": it.get("timestamp", ""),
+                            "likes": it.get("like_count", 0), "answered": replied})
+    return out
+
+
+def _tt_video(p):
+    m = re.search(r"/video/(\d+)", p.get("url") or "")
+    return m.group(1) if m else ""
+
+
+def _tt(acc, posts):
+    if tokens(acc).get("api") != "business":
+        raise PlatformError("TikTok komentáre idú len cez TikTok API for Business (tento účet je pripojený inak).")
+    tok = tiktok_business.access_token(acc)
+    out = []
+    with client() as c:
+        for p in posts:
+            vid = _tt_video(p)
+            if not vid:
+                continue
+            r = c.get(f"{tiktok_business.API}/business/comment/list/", headers={"Access-Token": tok}, params={
+                "business_id": acc["external_id"], "video_id": vid, "max_count": 30,
+                "sort_field": "create_time", "sort_order": "desc"})
+            check(r, "TikTok komentáre")
+            d = r.json()
+            if d.get("code") not in (0, "0"):
+                msg = str(d.get("message", ""))
+                if "scope" in msg.lower() or "permission" in msg.lower():
+                    raise PlatformError("TikTok: appka nemá právo na komentáre (comment.list, comment.list.manage). "
+                                        "Pridaj ich v TikTok Business portáli a pripoj účet znova.")
+                raise PlatformError(f"TikTok komentáre: {msg}")
+            for it in (d.get("data") or {}).get("comments", []):
+                if it.get("owner") or it.get("parent_comment_id") not in (None, "", "0", it.get("comment_id")):
+                    continue
+                out.append({"id": str(it["comment_id"]), "post": vid, "post_url": p.get("url", ""),
+                            "post_title": p.get("title") or "",
+                            "author": "@" + (it.get("username") or it.get("display_name") or ""),
+                            "text": it.get("text", ""), "created": str(it.get("create_time", "")),
+                            "likes": it.get("likes", 0), "answered": bool(it.get("replies"))})
+    return out
+
+
+def _li(acc, posts):
+    owner = acc["external_id"]
+    if not owner.startswith("urn:li:organization"):
+        return []  # osobný profil: LinkedIn čítanie komentárov nedovolí
+    tok = tokens(acc).get("access_token", "")
+    out = []
+    with client() as c:
+        for p in posts:
+            urn = urllib.parse.quote(p["external_id"], safe="")
+            r = c.get(f"{linkedin.REST}/socialActions/{urn}/comments", headers=linkedin.headers(tok), params={"count": 50})
+            check(r, "LinkedIn komentáre")
+            for it in r.json().get("elements", []):
+                if it.get("actor") == owner or it.get("parentComment"):
+                    continue
+                cid = it.get("commentUrn") or it.get("$URN") or str(it.get("id", ""))
+                out.append({"id": cid, "post": p["external_id"], "post_url": p.get("url", ""),
+                            "post_title": p.get("title") or "", "author": "",
+                            "text": (it.get("message") or {}).get("text", ""),
+                            "created": str((it.get("created") or {}).get("time", "")), "likes": 0, "answered": False})
+    return out
+
+
+LISTERS = {"youtube": _yt, "facebook": _fb, "instagram": _ig, "tiktok": _tt, "linkedin": _li}
+
+
+def list_comments(acc, posts):
+    fn = LISTERS.get(acc["platform"])
+    return fn(acc, posts) if fn else []
+
+
+def reply(acc, com, text):
+    p = acc["platform"]
+    with client() as c:
+        if p == "youtube":
+            tok = youtube.access_token(acc)
+            check(c.post("https://www.googleapis.com/youtube/v3/comments", params={"part": "snippet"},
+                         headers={"Authorization": f"Bearer {tok}"},
+                         json={"snippet": {"parentId": com["external_id"], "textOriginal": text}}), "YouTube odpoveď")
+        elif p == "facebook":
+            check(c.post(meta.G(f"{com['external_id']}/comments"),
+                         data={"access_token": tokens(acc)["page_token"], "message": text}), "Facebook odpoveď")
+        elif p == "instagram":
+            check(c.post(meta.G(f"{com['external_id']}/replies"),
+                         data={"access_token": tokens(acc)["page_token"], "message": text}), "Instagram odpoveď")
+        elif p == "tiktok":
+            tok = tiktok_business.access_token(acc)
+            tiktok_business._env(c.post(f"{tiktok_business.API}/business/comment/reply/create/",
+                                        headers={"Access-Token": tok, "Content-Type": "application/json"},
+                                        json={"business_id": acc["external_id"], "video_id": com["post_ext"],
+                                              "comment_id": com["external_id"], "text": text}), "TikTok odpoveď")
+        elif p == "linkedin":
+            post = com["post_ext"]
+            check(c.post(f"{linkedin.REST}/socialActions/{urllib.parse.quote(post, safe='')}/comments",
+                         headers=linkedin.headers(tokens(acc).get("access_token", "")),
+                         json={"actor": acc["external_id"], "object": post, "parentComment": com["external_id"],
+                               "message": {"text": text}}), "LinkedIn odpoveď")
+        else:
+            raise PlatformError("Táto sieť odpovede nepodporuje.")

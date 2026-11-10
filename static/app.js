@@ -133,6 +133,7 @@ function sidebar() {
     ${nav('', 'home', 'Prehľad', !cur)}
     <a class="nav ${cur === 'kontrola' ? 'on' : ''}" href="#/kontrola">${I('eye')}Kontrola${S.meta.review_count ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.meta.review_count}</span>` : ''}</a>
     ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
+    <a class="nav ${cur === 'komentare' ? 'on' : ''}" href="#/komentare">${I('message')}Komentáre${S.cmCount ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.cmCount}</span>` : ''}</a>
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${cur === 'p' && +r[1] === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt">${p.ideas}</span></a>`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Nastavenie</div>
@@ -154,6 +155,7 @@ async function render() {
     if (!r[0]) await pHome(m);
     else if (r[0] === 'kalendar') await pCalendar(m);
     else if (r[0] === 'kontrola') await pReview(m);
+    else if (r[0] === 'komentare') await pComments(m);
     else if (r[0] === 'ucty') await pAccounts(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
     else if (r[0] === 'novy') pProjectForm(m, null);
