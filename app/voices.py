@@ -69,6 +69,14 @@ SAMPLE = {
     "no": "Hei! Dette er en prøve på stemmen min. Slik kommer videoene dine til å høres ut.",
     "fi": "Hei! Tämä on näyte äänestäni. Tältä videosi tulevat kuulostamaan.",
     "tr": "Merhaba! Bu benim sesimden bir örnek. Videoların böyle duyulacak.",
+    "et": "Tere! See on minu hääle näidis. Nii hakkavad sinu videod kõlama.",
+    "lv": "Sveiki! Šis ir mana balss paraugs. Tā skanēs tavi video.",
+    "lt": "Labas! Tai mano balso pavyzdys. Taip skambės tavo vaizdo įrašai.",
+    "is": "Halló! Þetta er sýnishorn af röddinni minni. Svona munu myndböndin þín hljóma.",
+    "sr": "Здраво! Ово је пример мог гласа. Овако ће звучати твоји видео снимци.",
+    "bs": "Zdravo! Ovo je primjer mog glasa. Ovako će zvučati tvoji videi.",
+    "mk": "Здраво! Ова е пример за мојот глас. Вака ќе звучат твоите видеа.",
+    "sq": "Përshëndetje! Ky është një shembull i zërit tim. Kështu do të tingëllojnë videot e tua.",
 }
 
 

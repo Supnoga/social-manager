@@ -42,6 +42,12 @@ Podrobný návod na registrácie je v samostatnom návode „Registrácie na pla
 | TikTok (záloha) | Client key + Secret → videá prídu ako koncept do TikTok appky |
 | LinkedIn | 2 appky: profil (Client ID + Secret, funguje hneď) a firemné stránky (druhé Client ID + Secret, po schválení LinkedInom) |
 
+### Veľa kanálov a účtov (napr. 40 YouTube kanálov v jednom projekte)
+
+- **Viac YouTube kanálov pod jedným Google účtom**: klikni *Pripojiť kanál*, v okne Google vyber kanál. Pre ďalší kanál klikni znova a vyber ďalší. Každý kanál je v appke samostatný účet.
+- **Projekt a jazyk**: v zozname účtov zaškrtni viac účtov naraz a hore nastav projekt alebo jazyk jedným klikom. Zoznam sa dá filtrovať podľa siete, projektu a mena.
+- **Limit YouTube**: jeden Google projekt zvládne cca 100 nahratí denne (všetky kanály spolu). Pri 40 kanáloch × 1–2 videá denne to stačí. Pri viac vytvor v Google Cloud ďalší projekt (rovnaký postup) a nahraj jeho JSON tlačidlom *Pridať ďalší Google projekt* – nové kanály sa rozložia samé. Keď sa denný limit minie, video nezlyhá, len počká do rána.
+
 ### Verejná adresa (len pre TikTok Business)
 TikTok Business si videá **sťahuje z internetu**, nevie ich prijať priamo. Riešenie:
 1. Vyber si jednu zo svojich domén (takú, na ktorej nemáš dôležitý e-mail ani web) a pridaj ju do Cloudflare (bezplatný plán).
@@ -57,6 +63,15 @@ V **Nastavenia → Preklady zadarmo** vlož kľúč Microsoft Translator (Free F
 ## 3c. Obraz videí (zábery + titulky)
 V **Nastavenia → Zábery a hudba** vlož bezplatný kľúč **Pexels** (a voliteľne Pixabay). Svoje vlastné zábery daj do priečinka **Moje zábery** (tlačidlo ho otvorí) a pomenuj ich podľa obsahu, napr. `varenie-cestoviny.mp4` – appka ich uprednostní. Hudbu (mp3) daj do priečinka **Hudba**.
 Video potom vyzerá takto: nový záber každé 2–3 s, fotky sa pohybujú, titulky slovo po slove (aktuálne slovo vo farbe projektu), text scény hore. Zábery sa vyberú raz a platia pre všetky jazyky; v kroku **Video** ich vidíš po scénach a môžeš ich vymeniť.
+
+## 3d. Radar, výsledky a plánovanie na týždeň
+
+- **Radar** (v menu): appka sama sleduje trendy (Google Trendy, Google Správy, Wikipédia, YouTube), videá konkurencie (YouTube kanály, ktoré pridáš v karte Konkurencia) a čísla tvojich videí. Všetko zadarmo a bez AI.
+- **Nápady**: každý pondelok Claude z krátkeho výťahu navrhne 5 nápadov na projekt (1 volanie). Klikneš *Beriem*, *Neskôr* alebo *Nie*. Pri trende alebo videe konkurencie je aj tlačidlo *Nápad z tohto*.
+- **YouTube kľúč** na sledovanie konkurencie: Nastavenia → Radar a plánovanie (návod je tam, 3 minúty, zadarmo).
+- **Výsledky**: čísla zo sietí sa sťahujú každých 6 hodín. Appka vie, ktoré videá sa darili, a posiela to Claudovi pri vymýšľaní, aby staval na tom, čo funguje.
+- **Naplánovať týždeň** (Publikovanie): jedným klikom rozdelí hotové videá na všetky účty na 7 dní, v najlepšie časy pre každý účet. Kým nie sú vlastné čísla, používa štandardné časy podľa siete a krajiny. Dá sa zapnúť, aby to robila sama každú nedeľu večer.
+- **Zopakovať úspešné** (Radar → Výsledky): úspešné videá idú pri plánovaní prvé na účty, kde ešte neboli, a Claude k nim navrhne nové variácie. Rovnaké video na ten istý účet znova nedávame, siete to trestajú.
 
 ## 4. AI a spotreba
 

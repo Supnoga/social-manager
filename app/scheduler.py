@@ -1,4 +1,5 @@
 """Plánovač: každých 30 s pozrie frontu a nahrá videá, ktorým nastal čas. Pri chybe skúsi znova (max 3x)."""
+import random
 import threading
 import time
 import traceback
@@ -31,6 +32,11 @@ def process_one(post):
     if not acc or not vid:
         db.run("UPDATE posts SET status='failed', error='Účet alebo video už neexistuje' WHERE id=?", (post["id"],))
         return
+    if acc["platform"] == "youtube" and not youtube.quota_ok(acc):
+        nxt = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=random.randint(0, 59), second=0)
+        db.run("UPDATE posts SET scheduled_at=?, error=? WHERE id=?", (nxt.strftime("%Y-%m-%d %H:%M:%S"),
+               "Dnešný limit YouTube nahratí je vyčerpaný, presunuté na zajtra (pridaj ďalší Google projekt v Účtoch).", post["id"]))
+        return
     db.run("UPDATE posts SET status='uploading', attempts=attempts+1, updated_at=? WHERE id=?", (now_str(), post["id"]))
     state["current"] = f"{acc['platform']}: {vid['title'] or vid['original_name']}"
     try:
@@ -39,6 +45,11 @@ def process_one(post):
                (str(ext_id), url or "", now_str(), post["id"]))
     except Exception as e:
         msg = str(e)[:800]
+        if acc["platform"] == "youtube" and ("quotaExceeded" in msg or "uploadLimitExceeded" in msg or "quota" in msg.lower()):
+            nxt = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=random.randint(0, 59), second=0)
+            db.run("UPDATE posts SET status='queued', attempts=attempts-1, scheduled_at=?, error=?, updated_at=? WHERE id=?",
+                   (nxt.strftime("%Y-%m-%d %H:%M:%S"), "YouTube denný limit, presunuté na zajtra.", now_str(), post["id"]))
+            return
         attempts = post["attempts"] + 1
         if attempts < 3 and "vypršalo" not in msg and "Najprv" not in msg:
             retry = (datetime.now() + timedelta(minutes=15 * attempts)).strftime("%Y-%m-%d %H:%M:%S")

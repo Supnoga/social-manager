@@ -41,6 +41,24 @@ LANGUAGES = {
 }
 
 
+# Jazyky, ktoré appka ponúka (Oliverov zoznam 2026-11-10, slovenčina ako východisková) a krajiny, kde sa použijú
+COUNTRIES = {
+    "sk": ["SK"], "cs": ["CZ"], "de": ["DE", "AT", "CH", "LU"], "pl": ["PL"], "hu": ["HU"], "fr": ["FR", "BE", "CH", "LU"],
+    "nl": ["NL", "BE"], "it": ["IT", "CH"], "es": ["ES"], "pt": ["PT"], "en": ["GB", "IE", "MT"], "da": ["DK"], "sv": ["SE"],
+    "no": ["NO"], "fi": ["FI"], "is": ["IS"], "et": ["EE"], "lv": ["LV"], "lt": ["LT"], "el": ["GR", "CY"], "bg": ["BG"],
+    "ro": ["RO"], "hr": ["HR"], "sl": ["SI"], "sr": ["RS", "ME"], "bs": ["BA"], "mk": ["MK"], "sq": ["AL", "XK"],
+}
+COUNTRY_NAMES = {
+    "SK": "Slovensko", "CZ": "Česko", "DE": "Nemecko", "AT": "Rakúsko", "CH": "Švajčiarsko", "LU": "Luxembursko", "PL": "Poľsko",
+    "HU": "Maďarsko", "FR": "Francúzsko", "BE": "Belgicko", "NL": "Holandsko", "IT": "Taliansko", "ES": "Španielsko",
+    "PT": "Portugalsko", "GB": "Spojené kráľovstvo", "IE": "Írsko", "MT": "Malta", "DK": "Dánsko", "SE": "Švédsko", "NO": "Nórsko",
+    "FI": "Fínsko", "IS": "Island", "EE": "Estónsko", "LV": "Lotyšsko", "LT": "Litva", "GR": "Grécko", "CY": "Cyprus",
+    "BG": "Bulharsko", "RO": "Rumunsko", "HR": "Chorvátsko", "SI": "Slovinsko", "RS": "Srbsko", "ME": "Čierna Hora",
+    "BA": "Bosna a Hercegovina", "MK": "Severné Macedónsko", "AL": "Albánsko", "XK": "Kosovo",
+}
+EXTRA = {"en": "medzinárodná verzia"}
+
+
 def name(code):
     return LANGUAGES.get(code, (code,))[0]
 
@@ -56,5 +74,11 @@ def voice(code, gender="F"):
     return v[2] if gender.upper().startswith("F") else v[3]
 
 
+def countries_text(code):
+    t = ", ".join(COUNTRY_NAMES.get(c, c) for c in COUNTRIES.get(code, []))
+    return t + (" a " + EXTRA[code] if code in EXTRA else "")
+
+
 def as_list():
-    return [{"code": k, "name": v[0], "female": v[2], "male": v[3]} for k, v in LANGUAGES.items()]
+    return [{"code": k, "name": LANGUAGES[k][0], "female": LANGUAGES[k][2], "male": LANGUAGES[k][3],
+             "countries": countries_text(k)} for k in COUNTRIES]

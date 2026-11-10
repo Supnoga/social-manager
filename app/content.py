@@ -79,6 +79,7 @@ def ideas_prompt(params):
     return f"""{_ctx(p)}
 Pillars: {pillars or 'choose yourself'}
 {('Focus for this batch: ' + focus) if focus else ''}
+{('Our real results so far (build on what worked, avoid what flopped): ' + p['learnings']) if p.get('learnings') else ''}
 Video format: {'short vertical 20-60s' if fmt == 'short' else 'long-form 5-12 min YouTube'}
 Already used (do NOT repeat or paraphrase): {prev_txt or 'none'}
 
@@ -234,6 +235,86 @@ Return JSON: {{"summary":"max 1500 chars, dense English bullet-style facts (use 
 def sources_apply(params, data):
     db.run("UPDATE projects SET sources_summary=? WHERE id=?", ((data.get("summary") or "")[:1800], params["project_id"]))
     return data
+
+
+# ---------- RADAR (trendy, konkurencia, schránka nápadov) ----------
+import datetime as _dt
+
+
+def radar_keywords(pid):
+    """Kľúčové slová projektu pre každý jazyk (1 lacné volanie, raz za projekt / po zmene popisu)."""
+    p = _project(pid)
+    langs = p["languages"][:40]
+    data = ai.ask(f"""{_ctx(p)}
+About: {(p['description'] or '')[:500]}
+For trend monitoring, give search keywords for this project in each language: {', '.join(langs)}.
+core = 4-8 exact topic words people search, related = 4-8 adjacent topics, negative = 2-5 words that look related but are off-topic,
+entities = 0-5 brands/people/places relevant. Single words or short phrases, lowercase, in that language.
+Return JSON: {{"<lang code>":{{"core":[],"related":[],"negative":[],"entities":[]}}}}""", "radar_keywords", "cheap")
+    n = 0
+    for lang, kw in (data or {}).items():
+        if lang in langs and isinstance(kw, dict):
+            db.run("""INSERT OR REPLACE INTO project_keywords(project_id, lang, core, related, negative, entities, updated_at)
+                      VALUES(?,?,?,?,?,?,datetime('now','localtime'))""",
+                   (pid, lang, *(json.dumps([str(x) for x in kw.get(k, [])][:10], ensure_ascii=False)
+                                 for k in ("core", "related", "negative", "entities"))))
+            n += 1
+    return {"langs": n}
+
+
+def _radar_ideas(p, sig, n, purpose, kind, extra=""):
+    prev = db.q("SELECT title FROM ideas WHERE project_id=? ORDER BY id DESC LIMIT 40", (p["id"],))
+    lines = "\n".join(f'{s["id"]} [{",".join(s["mk"]) if isinstance(s["mk"], list) else s["mk"]}] {s["txt"]}' for s in sig)
+    data = ai.ask(f"""{_ctx(p)}
+{('Our results: ' + p['learnings']) if p.get('learnings') else ''}
+Signals this week (T = trend, K = competitor video far above its normal views):
+{lines or 'none'}
+{extra}
+Already have (don't repeat): {'; '.join(r['title'][:50] for r in prev) or 'none'}
+Propose the {n} best short-video ideas for this project. Use a signal only if it truly fits the project; it's fine to ignore weak ones.
+For K signals copy the format/angle, never the content. Score 1-10 strictly.
+Return JSON: {{"ideas":[{{"title":"","hook":"exact first sentence","angle":"","why":"","why_now":"1 short sentence, which signal and why now","signal":"T1|K2|none","markets":"all|list of lang codes","score":7}}]}}
+Write in {languages.english(p['source_lang'])}.""", purpose, kind)
+    refs = {s["id"]: s["ref"] for s in sig}
+    exp = (_dt.datetime.now() + _dt.timedelta(days=14)).strftime("%Y-%m-%d")
+    made = 0
+    for i in (data or {}).get("ideas", [])[:n]:
+        if not i.get("title"):
+            continue
+        ref = refs.get(str(i.get("signal", "")).strip(), {})
+        db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,why_now,expires_at)
+                  VALUES(?,?,?,?,'','short',?,?,'inbox','radar',?,?,?)""",
+               (p["id"], i["title"][:300], i.get("hook", ""), i.get("angle", ""), i.get("why", ""), int(i.get("score") or 0),
+                json.dumps(ref, ensure_ascii=False), i.get("why_now", ""), exp))
+        made += 1
+    return made
+
+
+def radar_weekly(pid, n=5):
+    """Raz týždenne: výťah trendov a konkurencie + naše výsledky -> 5 nápadov do schránky (1 volanie)."""
+    from . import radar
+    p = _project(pid)
+    sig = radar.signals(pid)
+    if not sig and not p.get("learnings"):
+        return {"created": 0, "note": "zatiaľ nič nové"}
+    return {"created": _radar_ideas(p, sig, n, "radar_weekly", "creative")}
+
+
+def radar_quick(pid, ref):
+    """„Nápad z tohto“: 2 nápady z jedného trendu alebo videa konkurencie (malé volanie)."""
+    p = _project(pid)
+    if ref.get("trend"):
+        from . import radar
+        t = next((x for x in radar.project_trends(pid, 80) if x["key"] == ref["trend"]), None)
+        if not t:
+            raise ai.AIError("Trend už nie je aktuálny")
+        sig = [{"id": "T1", "mk": t["langs"] or "all", "txt": f'"{t["label"]}" {t["stage"]}; ctx: {t["ctx"][:200]}',
+                "ref": {"trend": t["key"], "label": t["label"]}}]
+    else:
+        c = db.one("SELECT * FROM comp_posts WHERE id=?", (int(ref["comp_post"]),))
+        sig = [{"id": "K1", "mk": "all", "txt": f'competitor video "{c["title"]}" {c["ratio"]}x its normal, {c["views"]} views',
+                "ref": {"comp_post": c["id"], "label": c["title"][:80]}}]
+    return {"created": _radar_ideas(p, sig, 2, "radar_quick", "cheap", "Make both ideas about this signal.")}
 
 
 TASKS = {

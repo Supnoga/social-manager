@@ -101,6 +101,28 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS ai_cache (hash TEXT PRIMARY KEY, response TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE TABLE IF NOT EXISTS tm (h TEXT, lang TEXT, text TEXT, PRIMARY KEY(h, lang));
 CREATE TABLE IF NOT EXISTS footage (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, source_id TEXT, path TEXT, tags TEXT DEFAULT '', kind TEXT DEFAULT 'video', w INTEGER DEFAULT 0, h INTEGER DEFAULT 0, dur REAL DEFAULT 0, license_url TEXT DEFAULT '', used INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS competitors (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER, platform TEXT, mode TEXT DEFAULT 'auto',
+  url TEXT DEFAULT '', handle TEXT DEFAULT '', external_id TEXT DEFAULT '', uploads_playlist TEXT DEFAULT '', name TEXT DEFAULT '',
+  followers INTEGER DEFAULT 0, lang TEXT DEFAULT '', active INTEGER DEFAULT 1, baseline_short REAL DEFAULT 0, baseline_long REAL DEFAULT 0,
+  last_checked TEXT DEFAULT '', last_error TEXT DEFAULT '', UNIQUE(project_id, platform, external_id));
+CREATE TABLE IF NOT EXISTS comp_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, competitor_id INTEGER, external_id TEXT, url TEXT DEFAULT '',
+  title TEXT DEFAULT '', thumb TEXT DEFAULT '', published_at TEXT DEFAULT '', duration INTEGER DEFAULT 0, is_short INTEGER DEFAULT 1,
+  views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, comments INTEGER DEFAULT 0, ratio REAL DEFAULT 0, status TEXT DEFAULT '',
+  last_checked TEXT DEFAULT '', UNIQUE(competitor_id, external_id));
+CREATE TABLE IF NOT EXISTS trend_items (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, country TEXT DEFAULT '', lang TEXT DEFAULT '',
+  term TEXT, norm TEXT, context TEXT DEFAULT '', volume REAL DEFAULT 0, url TEXT DEFAULT '', extra TEXT DEFAULT '{}',
+  first_seen TEXT, last_seen TEXT, seen_count INTEGER DEFAULT 1);
+CREATE INDEX IF NOT EXISTS idx_trend_seen ON trend_items(last_seen);
+CREATE INDEX IF NOT EXISTS idx_trend_norm ON trend_items(source, country, norm);
+CREATE TABLE IF NOT EXISTS project_keywords (project_id INTEGER, lang TEXT, core TEXT DEFAULT '[]', related TEXT DEFAULT '[]',
+  negative TEXT DEFAULT '[]', entities TEXT DEFAULT '[]', updated_at TEXT DEFAULT (datetime('now','localtime')), PRIMARY KEY(project_id, lang));
+CREATE TABLE IF NOT EXISTS trend_status (project_id INTEGER, cluster_key TEXT, status TEXT, label TEXT DEFAULT '',
+  PRIMARY KEY(project_id, cluster_key));
+CREATE TABLE IF NOT EXISTS intel_jobs (name TEXT PRIMARY KEY, last_run TEXT, next_run TEXT, last_ok INTEGER DEFAULT 1, last_error TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS fetch_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT (datetime('now','localtime')), source TEXT,
+  key TEXT DEFAULT '', ok INTEGER DEFAULT 1, units INTEGER DEFAULT 0, note TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS post_stats (post_id INTEGER PRIMARY KEY, views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0,
+  comments INTEGER DEFAULT 0, shares INTEGER DEFAULT 0, ratio REAL DEFAULT 0, error TEXT DEFAULT '', fetched_at TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS ai_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT DEFAULT (datetime('now','localtime')),
@@ -126,6 +148,12 @@ MIGRATIONS = [
     "ALTER TABLE projects ADD COLUMN voices TEXT DEFAULT '{}'",
     "ALTER TABLE projects ADD COLUMN voice_rate REAL DEFAULT 1.0",
     "ALTER TABLE scripts ADD COLUMN voice_engine TEXT DEFAULT ''",
+    "ALTER TABLE ideas ADD COLUMN source TEXT DEFAULT ''",
+    "ALTER TABLE ideas ADD COLUMN source_ref TEXT DEFAULT ''",
+    "ALTER TABLE ideas ADD COLUMN why_now TEXT DEFAULT ''",
+    "ALTER TABLE ideas ADD COLUMN expires_at TEXT DEFAULT ''",
+    "ALTER TABLE projects ADD COLUMN radar_scope TEXT DEFAULT 'narrow'",
+    "ALTER TABLE projects ADD COLUMN learnings TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN platforms TEXT DEFAULT '[\"youtube\",\"tiktok\",\"instagram\",\"facebook\"]'",
 ]
 

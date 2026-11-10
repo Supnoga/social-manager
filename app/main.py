@@ -70,7 +70,7 @@ def index(code: str = "", state: str = "", error: str = ""):
     if code and state.startswith("yt:"):
         info = _oauth_states.pop(state, {})
         try:
-            youtube.callback(code, info.get("project_id"), info.get("lang", ""))
+            youtube.callback(code, info.get("project_id"), info.get("lang", ""), info.get("client", 0))
             return RedirectResponse("/#/ucty?ok=youtube")
         except Exception as e:
             return RedirectResponse(f"/#/ucty?err={str(e)[:200]}")
@@ -202,13 +202,18 @@ def api_meta():
                                                           ("ttb_ai_label", False), ("cf_tunnel_token", ""),
                                                           ("jitter_min", 10), ("verify_files", {}),
                                                           ("mt_azure_region", ""), ("mt_google", False),
-                                                          ("require_approval", True)]},
+                                                          ("require_approval", True), ("plan_per_day", 1),
+                                                          ("auto_plan_week", False), ("radar_enabled", True),
+                                                          ("radar_weekly", True)]},
+        "inbox_count": db.one("SELECT COUNT(*) n FROM ideas WHERE status='inbox'")["n"],
+        "yt_key": bool(db.get_setting("yt_api_key", "")),
         "ttb_redirect": tiktok_business.redirect_uri(),
         "tunnel": tunnel.status(),
         "has": {"yt_client": bool(db.get_setting("yt_client")), "tt_creds": bool(db.get_setting("tt_client_key")),
                 "ttb_creds": bool(db.get_setting("ttb_app_id")),
                 "li_creds": bool(db.get_setting("li_client_id")), "li_org": bool(db.get_setting("li_org_client_id"))},
         "scheduler": scheduler.state,
+        "yt_usage": youtube.usage(),
         "ffmpeg": bool(media.ffmpeg()),
         "google_tts": voices.google_usage(),
         "mt": __import__("app.translate", fromlist=["usage"]).usage(),
@@ -224,7 +229,8 @@ def api_settings(data: dict = Body(...)):
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min",
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
-               "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images"}
+               "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -284,7 +290,7 @@ PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_la
 @app.get("/api/projects")
 def projects():
     rows = db.q("""SELECT p.*, (SELECT COUNT(*) FROM videos v WHERE v.project_id=p.id) videos,
-                   (SELECT COUNT(*) FROM ideas i WHERE i.project_id=p.id) ideas FROM projects p ORDER BY p.id""")
+                   (SELECT COUNT(*) FROM ideas i WHERE i.project_id=p.id AND i.status NOT IN ('rejected','inbox','snoozed')) ideas FROM projects p ORDER BY p.id""")
     for r in rows:
         r["languages"] = json.loads(r["languages"] or "[]")
         r["strategy"] = json.loads(r["strategy"]) if r["strategy"] else None
@@ -453,7 +459,7 @@ def board(pid: int):
            WHERE s.idea_id=i.id AND p.status IN ('queued','uploading','review')) queued,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
            WHERE s.idea_id=i.id AND p.status='failed') failed
-        FROM ideas i WHERE i.project_id=? AND i.status!='rejected' ORDER BY i.id DESC""", (pid,))
+        FROM ideas i WHERE i.project_id=? AND i.status NOT IN ('rejected','inbox','snoozed') ORDER BY i.id DESC""", (pid,))
     for r in rows:
         if r["posted"] or r["queued"] or r["failed"]:
             r["stage"] = "siete"
@@ -963,9 +969,10 @@ def accounts():
 def account_update(aid: int, data: dict = Body(...)):
     if data.get("name"):
         db.run("UPDATE accounts SET name=? WHERE id=?", (data["name"], aid))
-        if "lang" not in data:
-            return {"ok": True}
-    db.run("UPDATE accounts SET project_id=?, lang=? WHERE id=?", (data.get("project_id") or None, data.get("lang", ""), aid))
+    if "project_id" in data:
+        db.run("UPDATE accounts SET project_id=? WHERE id=?", (data.get("project_id") or None, aid))
+    if "lang" in data:
+        db.run("UPDATE accounts SET lang=? WHERE id=?", (data.get("lang") or "", aid))
     return {"ok": True}
 
 
@@ -985,15 +992,16 @@ async def yt_client(file: UploadFile = File(...)):
     c = data.get("installed") or data.get("web")
     if not c or not c.get("client_id"):
         raise HTTPException(400, "V súbore chýba client_id - stiahni JSON OAuth klienta (typ Desktop app).")
-    db.set_setting("yt_client", data)
-    return {"ok": True}
+    n = youtube.add_client(data)
+    return {"ok": True, "projects": n}
 
 
 @app.get("/api/accounts/youtube/connect")
 def yt_connect(project_id: int = 0, lang: str = ""):
     st = "yt:" + secrets.token_urlsafe(12)
-    _oauth_states[st] = {"project_id": project_id or None, "lang": lang}
-    return RedirectResponse(youtube.auth_url(st))
+    idx = youtube.pick_client()
+    _oauth_states[st] = {"project_id": project_id or None, "lang": lang, "client": idx}
+    return RedirectResponse(youtube.auth_url(st, idx))
 
 
 @app.post("/api/accounts/meta")
@@ -1245,6 +1253,8 @@ async def update_zip(file: UploadFile = File(...)):
 # ---------------- Komentáre (samostatný modul) ----------------
 from . import comments  # noqa: E402
 app.include_router(comments.router)
+from . import radar_api  # noqa: E402
+app.include_router(radar_api.router)
 
 
 def main():
@@ -1279,6 +1289,11 @@ def main():
     try:
         from . import anim
         anim.ensure_installed()  # animácie: Chromium sa stiahne raz na pozadí
+    except Exception:
+        pass
+    try:
+        from . import radar
+        radar.start()  # trendy, konkurencia, čísla našich videí (na pozadí, bez AI)
     except Exception:
         pass
     updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()))

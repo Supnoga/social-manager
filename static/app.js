@@ -56,7 +56,7 @@ const PL = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', faceb
 const PLATS = Object.keys(PL);
 const plat = (p, withName = true) => `<span class="plat-ic">${I(p)}${withName ? PL[p] : ''}</span>`;
 const ST = { review: ['Na schválenie', 'warn'], queued: ['Naplánované', 'acc'], uploading: ['Nahráva sa', 'warn'], done: ['Zverejnené', 'ok'], failed: ['Chyba', 'bad'] };
-const langName = c => (S.meta?.languages.find(l => l.code === c) || {}).name || c || '—';
+const langName = c => (S.meta?.languages.find(l => l.code === c) || {}).name || (c || '—').toUpperCase();
 const STAGES = [
   ['napad', 'Nápad', 'bulb', 'Čo natočiť'],
   ['prototyp', 'Prototyp', 'phone', 'Scenár a náhľad'],
@@ -133,6 +133,7 @@ function sidebar() {
     ${nav('', 'home', 'Prehľad', !cur)}
     <a class="nav ${cur === 'kontrola' ? 'on' : ''}" href="#/kontrola">${I('eye')}Kontrola${S.meta.review_count ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.meta.review_count}</span>` : ''}</a>
     ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
+    <a class="nav ${cur === 'radar' ? 'on' : ''}" href="#/radar">${I('radar')}Radar${S.meta.inbox_count ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.meta.inbox_count}</span>` : ''}</a>
     <a class="nav ${cur === 'komentare' ? 'on' : ''}" href="#/komentare">${I('message')}Komentáre${S.cmCount ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.cmCount}</span>` : ''}</a>
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${cur === 'p' && +r[1] === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt">${p.ideas}</span></a>`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
@@ -156,6 +157,7 @@ async function render() {
     else if (r[0] === 'kalendar') await pCalendar(m);
     else if (r[0] === 'kontrola') await pReview(m);
     else if (r[0] === 'komentare') await pComments(m);
+    else if (r[0] === 'radar') await pRadar(m);
     else if (r[0] === 'ucty') await pAccounts(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
     else if (r[0] === 'novy') pProjectForm(m, null);
@@ -303,7 +305,8 @@ function pProjectForm(m, p) {
     <label class="l">Neprekladať (názvy značky, produktov, mená – oddeľ čiarkou)</label><input id="pGloss" value="${esc(p.glossary || '')}" placeholder="Zdravé recepty, FitBox, Oliver">
     <label class="l">Siete</label><div class="pick">${PLATS.map(x => `<label><input type="checkbox" name="pl" value="${x}" ${p.platforms.includes(x) ? 'checked' : ''}>${I(x, 's')}${PL[x]}</label>`).join('')}</div>
     <label class="l">Jazyky <a class="small" onclick="$$('[name=lang]').forEach(c=>c.checked=true)">vybrať všetky</a> · <a class="small" onclick="$$('[name=lang]').forEach(c=>c.checked=false)">zrušiť</a></label>
-    <div class="pick">${S.meta.languages.map(l => `<label><input type="checkbox" name="lang" value="${l.code}" ${p.languages.includes(l.code) ? 'checked' : ''}>${l.name}</label>`).join('')}</div>
+    <div class="pick">${S.meta.languages.map(l => `<label title="${esc(l.countries || '')}"><input type="checkbox" name="lang" value="${l.code}" ${p.languages.includes(l.code) ? 'checked' : ''}>${l.name}</label>`).join('')}</div>
+    <p class="small dim">Podrž myš na jazyku a uvidíš krajiny, pre ktoré je.</p>
     <div class="row" style="margin-top:18px"><button class="btn" onclick="saveProject(${p.id || 0})">${I('check')}${isNew ? 'Vytvoriť projekt' : 'Uložiť'}</button>
     ${isNew ? '' : `<span class="sp"></span><button class="btn bad sm" onclick="delProject(${p.id})">${I('trash', 's')}Zmazať projekt</button>`}</div></div>
   ${isNew ? `<div class="card"><h2>${I('palette')}Dizajn</h2><p class="muted">Po vytvorení projektu sem môžeš vložiť MD dizajn (napr. z Claude Design) – farby, štýl a tón značky. AI ho potom použije pri všetkých videách.</p></div>` : `
@@ -631,6 +634,7 @@ async function pCalendar(m) {
   const days = {}; posts.forEach(p => (days[p.scheduled_at.slice(0, 10)] ||= []).push(p));
   const dn = d => new Date(d + 'T12:00').toLocaleDateString('sk', { weekday: 'long', day: 'numeric', month: 'long' });
   m.innerHTML = `<div class="top"><div><h1>Publikovanie</h1><p class="sub">Appka nahráva videá sama v naplánovaný čas, keď je zapnutá. Pri chybe to skúsi ešte 2×.</p></div><span class="sp"></span>
+    <button class="btn" onclick="planDialog()">${I('calendar')}Naplánovať týždeň</button>
     <button class="btn ${paused ? '' : 'sec'}" onclick="api('/api/settings',{method:'POST',body:{paused:${!paused}}}).then(render)">${I(paused ? 'play' : 'pause')}${paused ? 'Spustiť plánovač' : 'Pozastaviť'}</button></div>
   <div class="seg" style="margin-bottom:16px">${[['review', 'Na schválenie'], ['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash='#/kalendar?f=${k}'">${n}</button>`).join('')}</div>
   ${Object.keys(days).length ? Object.entries(days).map(([d, list]) => `<div class="card"><h2>${I('calendar', 's')}${dn(d)} <span class="chip">${list.length}</span></h2><table>${list.map(p => `<tr>
@@ -649,14 +653,23 @@ async function pAccounts(m) {
   const c = (icon, title, body) => `<div class="card"><h2>${I(icon)}${title}</h2>${body}</div>`;
   const ok = '<span class="chip ok">' + I('check', 's') + 'uložené</span>';
   m.innerHTML = `<div class="top"><div><h1>Účty a siete</h1><p class="sub">Pripoj kanály a pri každom nastav projekt a jazyk – appka potom vie, kam ktoré video patrí.</p></div></div>
-  <div class="card" style="margin-bottom:14px"><h2>${I('link')}Pripojené účty <span class="chip">${accs.length}</span></h2>${accs.length ? `<table><tr><th>Sieť</th><th>Účet</th><th>Projekt</th><th>Jazyk</th><th></th></tr>${accs.map(a => `<tr>
-    <td>${plat(a.platform)}</td><td><input value="${esc(a.name)}" onchange="api('/api/accounts/${a.id}',{method:'PUT',body:{name:this.value}}).then(()=>toast('Uložené'))"></td>
+  <div class="card" style="margin-bottom:14px"><div class="row"><h2 style="margin:0">${I('link')}Pripojené účty <span class="chip">${accs.length}</span></h2><span class="sp"></span>
+    ${PLATS.filter(x => accs.some(a => a.platform === x)).map(x => `<span class="chip">${I(x, 's')}${accs.filter(a => a.platform === x).length}</span>`).join('')}</div>
+    ${accs.length ? `<div class="row" style="margin:12px 0"><input id="accQ" placeholder="Hľadať účet…" style="flex:1;min-width:160px" oninput="accFilter()">
+      <select id="accPf" onchange="accFilter()" style="max-width:170px"><option value="">Všetky siete</option>${PLATS.map(x => `<option value="${x}">${PL[x]}</option>`).join('')}</select>
+      <select id="accPr" onchange="accFilter()" style="max-width:200px"><option value="">Všetky projekty</option><option value="0">Bez projektu</option>${S.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+    <div class="row small" style="margin-bottom:8px;gap:8px"><span class="dim">Označeným:</span><select id="bkP" style="max-width:200px"><option value="">projekt…</option><option value="0">Všetky projekty</option>${S.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+      <select id="bkL" style="max-width:180px"><option value="">jazyk…</option><option value="-">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select><button class="btn sec sm" onclick="accBulk()">${I('check', 's')}Nastaviť</button></div>
+    <table id="accT"><tr><th><input type="checkbox" onchange="$$('#accT tr:not([hidden]) .aS').forEach(c=>c.checked=this.checked)"></th><th>Sieť</th><th>Účet</th><th>Projekt</th><th>Jazyk</th><th></th></tr>${accs.map(a => `<tr data-pf="${a.platform}" data-pr="${a.project_id || 0}" data-n="${esc((a.name || '').toLowerCase())}">
+    <td><input type="checkbox" class="aS" value="${a.id}"></td><td>${plat(a.platform)}</td><td><input value="${esc(a.name)}" onchange="api('/api/accounts/${a.id}',{method:'PUT',body:{name:this.value}}).then(()=>toast('Uložené'))"></td>
     <td><select class="aP" onchange="accSet(${a.id},this.closest('tr'))"><option value="">Všetky projekty</option>${S.projects.map(p => `<option value="${p.id}" ${p.id === a.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td>
     <td><select class="aL" onchange="accSet(${a.id},this.closest('tr'))"><option value="">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}" ${l.code === a.lang ? 'selected' : ''}>${l.name}</option>`).join('')}</select></td>
     <td><button class="btn ghost sm" onclick="if(confirm('Odpojiť účet?'))api('/api/accounts/${a.id}',{method:'DELETE'}).then(render)">${I('trash', 's')}</button></td></tr>`).join('')}</table>` : empty('link', 'Zatiaľ žiadne. Pripoj ich nižšie.')}</div>
   <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
-  ${c('youtube', 'YouTube', `<p class="small muted">1) Nahraj JSON z Google Cloud (OAuth klient „Desktop app“). 2) Pripoj kanál – pre viac kanálov klikni viackrát.</p>${h.yt_client ? ok : ''}
-    <input type="file" id="ytJson" accept=".json" style="margin:8px 0"><div class="row"><button class="btn sec sm" onclick="uploadYt()">${I('upload', 's')}Nahrať JSON</button><a class="btn sm" href="/api/accounts/youtube/connect">${I('link', 's')}Pripojiť kanál</a></div>`)}
+  ${c('youtube', 'YouTube', `<p class="small muted">1) Nahraj JSON z Google Cloud (OAuth klient „Desktop app“). 2) Klikni Pripojiť kanál a v Google okne vyber kanál. Pre ďalší kanál klikni znova – aj keď sú všetky pod jedným Google účtom, Google ti ponúkne na výber každý kanál zvlášť.</p>
+    ${(S.meta.yt_usage || []).length ? `<table class="small">${S.meta.yt_usage.map(u => `<tr><td>Google projekt ${u.n}</td><td>${u.channels} kanálov</td><td>dnes ${u.today}/${u.limit} nahratí</td></tr>`).join('')}</table>` : ''}
+    <input type="file" id="ytJson" accept=".json" style="margin:8px 0"><div class="row"><button class="btn sec sm" onclick="uploadYt()">${I('upload', 's')}${h.yt_client ? 'Pridať ďalší Google projekt' : 'Nahrať JSON'}</button><a class="btn sm" href="/api/accounts/youtube/connect">${I('link', 's')}Pripojiť kanál</a></div>
+    <p class="small dim">Jeden Google projekt zvládne cca 100 nahratí denne. Pri 40 kanáloch a 1–2 videách denne stačí jeden, pri viac pridaj druhý (rovnaký postup, nový projekt v Google Cloud) – nové kanály sa rozložia samé. Keď sa limit minie, video počká do rána.</p>`)}
   ${c('facebook', 'Facebook + Instagram', `<p class="small muted">Vlož System User token z Meta Business. Appka sama načíta všetky stránky aj prepojené Instagram účty.</p>
     <textarea id="metaTok" placeholder="EAAG…" style="min-height:70px"></textarea><button class="btn sm" style="margin-top:8px" onclick="connectMeta()">${I('link', 's')}Pripojiť</button>`)}
   ${c('tiktok', 'TikTok – veľa účtov', `<p class="small muted">Business API: verejne na tvoje vlastné účty (aj 50+). Potrebuje verejnú adresu v Nastaveniach.</p>${h.ttb_creds ? ok : ''}
@@ -678,7 +691,9 @@ async function pAccounts(m) {
     <p class="small dim">Prihlásenie platí 60 dní, appka ťa upozorní.</p>`)}
   </div>`;
 }
-async function uploadYt() { const f = $('#ytJson').files[0]; if (!f) return toast('Vyber JSON súbor', true); const fd = new FormData(); fd.append('file', f); await api('/api/accounts/youtube/client', { method: 'POST', body: fd }); toast('Uložené, teraz klikni Pripojiť kanál'); render(); }
+async function uploadYt() { const f = $('#ytJson').files[0]; if (!f) return toast('Vyber JSON súbor', true); const fd = new FormData(); fd.append('file', f); const r = await api('/api/accounts/youtube/client', { method: 'POST', body: fd }); toast(`Uložené (Google projektov: ${r.projects}), teraz klikni Pripojiť kanál`); S.meta = await api('/api/meta'); render(); }
+function accFilter() { const q = $('#accQ').value.toLowerCase(), pf = $('#accPf').value, pr = $('#accPr').value; $$('#accT tr[data-pf]').forEach(tr => { tr.hidden = (q && !tr.dataset.n.includes(q)) || (pf && tr.dataset.pf !== pf) || (pr !== '' && tr.dataset.pr !== pr); }); }
+async function accBulk() { const ids = $$('.aS:checked').map(c => +c.value), pv = $('#bkP').value, lv = $('#bkL').value; if (!ids.length) return toast('Označ účty', true); if (!pv && !lv) return toast('Vyber projekt alebo jazyk', true); const body = {}; if (pv !== '') body.project_id = +pv || null; if (lv) body.lang = lv === '-' ? '' : lv; for (const id of ids) await api('/api/accounts/' + id, { method: 'PUT', body }); toast(`Nastavené pre ${ids.length} účtov`); render(); }
 async function connectMeta() { const r = await api('/api/accounts/meta', { method: 'POST', body: { token: $('#metaTok').value } }, 'Načítavam stránky a Instagram…'); toast(`Pripojených ${r.created} účtov`); render(); }
 async function saveTt() { await api('/api/accounts/tiktok/creds', { method: 'POST', body: { client_key: $('#ttKey').value, client_secret: $('#ttSec').value, mode: $('#ttMode').value } }); toast('Uložené'); render(); }
 async function saveTtb() { await api('/api/accounts/ttb/creds', { method: 'POST', body: { app_id: $('#ttbId').value, secret: $('#ttbSec').value } }); toast('Uložené'); render(); }
@@ -735,6 +750,17 @@ async function pSettings(m) {
     <div class="g2"><div><label class="l">Microsoft kľúč</label><input id="mtAz" type="password" placeholder="${S.meta.mt?.azure?.enabled ? 'uložený' : ''}"></div><div><label class="l">Microsoft región</label><input id="mtAzR" value="${esc(st.mt_azure_region || '')}" placeholder="westeurope"></div>
     <div><label class="l">DeepL kľúč</label><input id="mtDl" type="password" placeholder="${S.meta.mt?.deepl?.enabled ? 'uložený' : ''}"></div><div><label class="l">Google</label><label class="small" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="mtGo" ${st.mt_google ? 'checked' : ''}>Použiť Google kľúč z hlasu</label></div></div>
     <button class="btn sm" style="margin-top:10px" onclick="saveMt()">${I('check', 's')}Uložiť</button></div>
+  <div class="card"><h2>${I('radar')}Radar a plánovanie</h2>
+    <p class="small muted">Radar sám zbiera trendy (Google, Wikipédia, správy), videá konkurencie a čísla tvojich videí – zadarmo, bez AI. Claude dostane raz týždenne krátky výťah a navrhne 5 nápadov na projekt.</p>
+    <label class="row"><input type="checkbox" ${st.radar_enabled !== false ? 'checked' : ''} onchange="api('/api/settings',{method:'POST',body:{radar_enabled:this.checked}}).then(()=>toast('Uložené'))"> Sledovať trendy a konkurenciu</label>
+    <label class="row" style="margin-top:6px"><input type="checkbox" ${st.radar_weekly !== false ? 'checked' : ''} onchange="api('/api/settings',{method:'POST',body:{radar_weekly:this.checked}}).then(()=>toast('Uložené'))"> Každý pondelok navrhnúť nové nápady (1 volanie Claude na projekt)</label>
+    <label class="row" style="margin-top:6px"><input type="checkbox" ${st.auto_plan_week ? 'checked' : ''} onchange="api('/api/settings',{method:'POST',body:{auto_plan_week:this.checked}}).then(()=>toast('Uložené'))"> Každú nedeľu večer naplánovať ďalší týždeň samé</label>
+    <label class="l">YouTube kľúč (zadarmo, na sledovanie konkurencie) ${S.meta.yt_key ? '<span class="chip ok">uložený</span>' : ''}</label>
+    <div class="row"><input id="ytKey" type="password" style="flex:1" placeholder="AIza…"><button class="btn sm" onclick="saveYtKey()">${I('check', 's')}Uložiť</button></div>
+    <details><summary class="small">Ako získam kľúč (3 minúty)</summary><ol class="small muted">
+      <li>Otvor <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank">YouTube Data API v3</a> v tom istom Google projekte ako hlas a klikni <b>Enable</b> (ak už je zapnuté, preskoč).</li>
+      <li>Choď do <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Credentials</a> → <b>Create credentials → API key</b>.</li>
+      <li>Pri kľúči daj <b>Restrict key</b> → povoľ len <i>YouTube Data API v3</i>. Skopíruj ho sem. Je zadarmo, appka minie najviac 8 000 z 10 000 bodov denne.</li></ol></details></div>
   <div class="card"><h2>${I('refresh')}Aktualizácie</h2><div id="updBox" class="small muted">Kontrolujem…</div>
     <p class="small dim">Nové verzie si appka sťahuje sama (pri zapnutí a každé 4 hodiny). Projekty, videá, účty a nastavenia ostávajú.</p>
     <label class="l">Nový zip appky</label><input type="file" id="updZip" accept=".zip"><button class="btn sm" style="margin-top:8px" onclick="updZip()">${I('upload', 's')}Aktualizovať zo zipu</button>
@@ -804,3 +830,4 @@ async function saveRepo() { await api('/api/settings', { method: 'POST', body: {
 async function updGh() { const r = await api('/api/update/github', { method: 'POST' }, 'Sťahujem aktualizáciu…'); if (r.updated) waitRestart(); else { toast(r.latest ? 'Máš najnovšiu verziu' : (r.error || 'Hotovo')); loadUpd(); } }
 
 render();
+async function saveYtKey() { const key = $('#ytKey').value.trim(); if (!key) return toast('Vlož kľúč', true); await api('/api/radar/yt-key', { method: 'POST', body: { key } }, 'Skúšam kľúč…'); toast('Kľúč funguje a je uložený'); S.meta = await api('/api/meta'); render(); }
