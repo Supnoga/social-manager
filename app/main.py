@@ -249,10 +249,11 @@ def dashboard():
     c = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM posts GROUP BY status")}
     import time as _t
     expiring = []
-    for a in db.q("SELECT id, name, tokens FROM accounts WHERE platform='linkedin'"):
+    for a in db.q("SELECT id, name, tokens, external_id FROM accounts WHERE platform='linkedin'"):
         exp = json.loads(a["tokens"] or "{}").get("expires_at", 0)
         if exp and exp < _t.time() + 7 * 86400:
-            expiring.append({"name": a["name"], "days": max(0, int((exp - _t.time()) / 86400))})
+            expiring.append({"name": a["name"], "days": max(0, int((exp - _t.time()) / 86400)),
+                             "org": (a["external_id"] or "").startswith("urn:li:organization")})
     return {
         "projects": db.one("SELECT COUNT(*) n FROM projects")["n"],
         "videos": db.one("SELECT COUNT(*) n FROM videos")["n"],
@@ -960,8 +961,13 @@ def videos_bulk(data: dict = Body(...)):
 # ---------------- Účty ----------------
 @app.get("/api/accounts")
 def accounts():
-    rows = db.q("SELECT a.id, a.platform, a.name, a.external_id, a.project_id, a.lang, p.name project_name "
+    import time as _t
+    rows = db.q("SELECT a.id, a.platform, a.name, a.external_id, a.project_id, a.lang, a.tokens, p.name project_name "
                 "FROM accounts a LEFT JOIN projects p ON p.id=a.project_id ORDER BY a.platform, a.name")
+    for r in rows:
+        exp = json.loads(r.pop("tokens") or "{}").get("expires_at", 0) if r["platform"] == "linkedin" else 0
+        r["days_left"] = max(0, int((exp - _t.time()) / 86400)) if exp else None
+        r["org"] = (r["external_id"] or "").startswith("urn:li:organization")
     return rows
 
 
