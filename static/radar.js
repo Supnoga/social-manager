@@ -15,12 +15,13 @@ async function pRadar(m) {
   if (!S.projects.length) { m.innerHTML = `<div class="card">${empty('radar', 'Najprv vytvor projekt.')}</div>`; return; }
   const pid = +r[1] || S.radarP || S.projects[0].id; S.radarP = pid;
   const p = S.projects.find(x => x.id === pid) || S.projects[0];
-  const tabs = [['napady', 'inbox', 'Nápady'], ['trendy', 'trend', 'Trendy'], ['konkurencia', 'users', 'Konkurencia'], ['vysledky', 'chart', 'Výsledky']];
+  const tabs = [['napady', 'inbox', 'Nápady'], ['udalosti', 'calendar', 'Udalosti'], ['trendy', 'trend', 'Trendy'], ['konkurencia', 'users', 'Konkurencia'], ['vysledky', 'chart', 'Výsledky']];
   m.innerHTML = `<div class="top"><div><h1>Radar</h1><p class="sub">Appka sama sleduje trendy, konkurenciu a čísla tvojich videí. Claude z toho raz týždenne navrhne nápady.</p></div><span class="sp"></span>
     <select onchange="go('radar/'+this.value+'/${tab}')" style="max-width:240px">${S.projects.map(x => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
   <div class="tabs">${tabs.map(([k, ic, n]) => `<a href="#/radar/${p.id}/${k}" class="${tab === k ? 'on' : ''}">${I(ic, 's')}${n}</a>`).join('')}</div><div id="rbody"></div>`;
   const b = $('#rbody');
   if (tab === 'napady') await rInbox(b, p);
+  else if (tab === 'udalosti') await rEvents(b, p);
   else if (tab === 'trendy') await rTrends(b, p);
   else if (tab === 'konkurencia') await rComp(b, p);
   else await rResults(b, p);
@@ -29,7 +30,7 @@ async function pRadar(m) {
 async function rInbox(b, p) {
   const d = await api(`/api/radar/${p.id}/inbox`);
   const card = (i, snoozed) => `<div class="card" style="margin-bottom:10px"><div class="row" style="align-items:flex-start">
-    <div style="flex:1"><div class="row" style="gap:6px;margin-bottom:4px">${i.source === 'repeat' ? `<span class="chip ok">${I('repeat', 's')}variácia úspešného</span>` : `<span class="chip acc">${I('radar', 's')}Radar</span>`}<span class="chip">skóre ${i.score}</span>${i.ref?.label ? `<span class="small dim">z: ${esc(i.ref.label)}</span>` : ''}</div>
+    <div style="flex:1"><div class="row" style="gap:6px;margin-bottom:4px">${i.source === 'repeat' ? `<span class="chip ok">${I('repeat', 's')}variácia úspešného</span>` : i.source === 'event' ? `<span class="chip acc">${I('calendar', 's')}udalosť ${esc((i.due_date || '').slice(8, 10) + '.' + (i.due_date || '').slice(5, 7) + '.')}</span>` : `<span class="chip acc">${I('radar', 's')}Radar</span>`}<span class="chip">skóre ${i.score}</span>${i.ref?.label ? `<span class="small dim">z: ${esc(i.ref.label)}</span>` : ''}</div>
       <h2 style="margin:4px 0">${esc(i.title)}</h2><div class="muted">„${esc(i.hook)}“</div>
       ${i.why_now ? `<div class="small" style="margin-top:6px">${I('clock', 's')} ${esc(i.why_now)}</div>` : ''}${i.why ? `<div class="small dim" style="margin-top:4px">${esc(i.why)}</div>` : ''}</div>
     <div class="row" style="flex-direction:column;gap:6px"><button class="btn sm" onclick="rIdea(${i.id},'accept')">${I('check', 's')}Beriem</button>
@@ -120,3 +121,27 @@ async function planRun() {
     ${r.empty.length || r.short.length ? `<p class="small dim">Chýbajúce videá: ${esc([...r.empty, ...r.short].slice(0, 20).join(', '))}${r.empty.length + r.short.length > 20 ? '…' : ''}. Vyrob ďalšie videá a klikni znova – doplní sa len to, čo chýba.</p>` : ''}
     ${r.review ? `<a class="btn" href="#/kontrola" onclick="closeModal()">${I('eye')}Otvoriť Kontrolu</a>` : `<button class="btn" onclick="closeModal();render()">${I('check')}OK</button>`}`);
 }
+
+// ---------- Udalosti a sviatky ----------
+const EVK = { 'sviatok': ['štátny sviatok', ''], 'prianie': ['na prianie', 'acc'], 'deň': ['bežný deň', ''], 'sezóna': ['sezóna', ''], 'téma': ['téma projektu', 'ok'] };
+async function rEvents(b, p) {
+  const d = await api(`/api/events/${p.id}?days=75`);
+  const dn = x => new Date(x + 'T12:00').toLocaleDateString('sk', { weekday: 'short', day: 'numeric', month: 'long' });
+  b.innerHTML = `<div class="g2" style="align-items:start;grid-template-columns:2fr 1fr"><div class="card"><h2>${I('calendar')}Blíži sa (75 dní)</h2>
+    <p class="small dim">Štátne sviatky krajín tvojich jazykov, bežné dni (Vianoce, Halloween…) a tematické dni projektu. Nápady k udalostiam o 1–3 týždne pribudnú v pondelok samé. Video k udalosti sa pri plánovaní dá presne na jej deň a len na účty krajín, kde sa oslavuje.</p>
+    ${d.events.length ? `<table>${d.events.map(e => `<tr><td style="width:120px"><b>${dn(e.date)}</b><div class="small ${e.days_left <= 7 ? 'bad-t' : 'dim'}">${e.days_left ? 'o ' + e.days_left + ' dní' : 'dnes'}</div></td>
+      <td><b>${esc(e.name)}</b> <span class="chip ${EVK[e.kind]?.[1] || ''}">${EVK[e.kind]?.[0] || e.kind}</span>${e.has_idea ? ' <span class="chip ok">nápad je</span>' : ''}
+        <div class="small dim">${e.all ? 'všetky jazyky' : (e.countries.length ? e.countries.join(' ') : e.langs.join(' ').toUpperCase())}${e.why && e.why !== e.name ? ' · ' + esc(e.why) : ''}</div></td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn sm" onclick="evIdea(${p.id},'${esc(e.key)}','video')">${I('sparkles', 's')}Video</button>
+        <button class="btn sec sm" onclick="evIdea(${p.id},'${esc(e.key)}','greeting')">${I('send', 's')}Prianie</button>
+        <button class="btn ghost sm" title="Nezaujíma ma" onclick="api('/api/events/${p.id}/ignore',{method:'POST',body:{key:'${esc(e.key)}'}}).then(render)">${I('x', 's')}</button></td></tr>`).join('')}</table>`
+      : empty('calendar', 'Nič v najbližších týždňoch.')}</div>
+  <div class="card"><h2>${I('target')}Tematické dni projektu</h2>
+    <p class="small dim">Dni, ktoré zaujímajú tvoje publikum (napr. Deň Zeme, Deň tepelných čerpadiel). Claude ich navrhne raz podľa popisu projektu, môžeš pridať aj vlastné. Dátumy over, či sedia.</p>
+    ${d.custom.length ? `<table>${d.custom.map(c => `<tr><td><b>${esc(c.name)}</b><div class="small dim">${esc(c.rule)}${c.why ? ' · ' + esc(c.why) : ''}</div></td><td style="text-align:right"><button class="btn ghost sm" onclick="api('/api/events/custom/${c.id}',{method:'DELETE'}).then(render)">${I('trash', 's')}</button></td></tr>`).join('')}</table>` : ''}
+    <div class="row" style="margin-top:10px"><input id="evN" placeholder="Názov dňa" style="flex:2"><input id="evD" placeholder="22.4." style="flex:1;max-width:90px"><button class="btn sec sm" onclick="evAdd(${p.id})">${I('plus', 's')}</button></div>
+    <button class="btn sec sm" style="margin-top:10px" onclick="evSuggest(${p.id})">${I('sparkles', 's')}Navrhnúť dni pre projekt</button></div></div>`;
+}
+async function evIdea(pid, key, kind) { const r = await api(`/api/events/${pid}/idea`, { method: 'POST', body: { key, kind } }, kind === 'greeting' ? 'Claude píše prianie…' : 'Claude vymýšľa…'); toast(`Nápady v schránke: ${r.created}`); S.meta = await api('/api/meta'); go(`radar/${pid}/napady`); }
+async function evAdd(pid) { await api(`/api/events/${pid}/custom`, { method: 'POST', body: { name: $('#evN').value, rule: $('#evD').value } }); render(); }
+async function evSuggest(pid) { const r = await api(`/api/events/${pid}/suggest`, { method: 'POST' }, 'Claude hľadá dni pre projekt…'); toast(`Pridaných dní: ${r.added}`); render(); }

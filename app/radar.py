@@ -434,6 +434,14 @@ def _housekeeping():
                 content.radar_keywords(p["id"])
             except Exception as e:
                 STATE["last_error"] = f"Kľúčové slová: {e}"[:300]
+    from . import events
+    for p in _projects():  # tematické dni projektu: raz (1 lacné volanie)
+        if not db.get_setting(f"events_suggested_{p['id']}") and (p["description"] or p["strategy_short"]):
+            db.set_setting(f"events_suggested_{p['id']}", "trying")
+            try:
+                events.suggest(p["id"])
+            except Exception as e:
+                STATE["last_error"] = f"Udalosti: {e}"[:300]
     try:
         planner.weekly_auto()
     except Exception as e:
@@ -514,6 +522,11 @@ def signals(pid, n_trends=6, n_comp=4):
     for i, t in enumerate(project_trends(pid, n_trends)):
         out.append({"id": f"T{i + 1}", "mk": t["langs"] or "all", "txt": f'"{t["label"]}" heat {t["heat"]} {t["stage"]}, {len(t["sources"])} sources'
                     + (f'; ctx: {t["ctx"][:90]}' if t["ctx"] else ""), "ref": {"trend": t["key"], "label": t["label"]}})
+    try:
+        from . import events
+        out += events.signals(pid)
+    except Exception:
+        pass
     for i, o in enumerate(outliers(pid)[:n_comp]):
         out.append({"id": f"K{i + 1}", "mk": "all", "txt": f'competitor {"short" if o["is_short"] else "video"} "{o["title"][:90]}" {o["ratio"]}x channel normal, {o["views"]} views',
                     "ref": {"comp_post": o["id"], "label": o["title"][:80]}})

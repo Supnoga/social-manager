@@ -149,6 +149,8 @@ MIGRATIONS = [
     "ALTER TABLE projects ADD COLUMN voice_rate REAL DEFAULT 1.0",
     "ALTER TABLE scripts ADD COLUMN voice_engine TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN source TEXT DEFAULT ''",
+    "ALTER TABLE ideas ADD COLUMN due_date TEXT DEFAULT ''",
+    "ALTER TABLE ideas ADD COLUMN markets TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN source_ref TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN why_now TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN expires_at TEXT DEFAULT ''",

@@ -1261,6 +1261,10 @@ from . import comments  # noqa: E402
 app.include_router(comments.router)
 from . import radar_api  # noqa: E402
 app.include_router(radar_api.router)
+from . import profiles  # noqa: E402
+app.include_router(profiles.router)
+from . import events  # noqa: E402
+app.include_router(events.router)
 
 
 def main():

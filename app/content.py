@@ -267,7 +267,7 @@ def _radar_ideas(p, sig, n, purpose, kind, extra=""):
     lines = "\n".join(f'{s["id"]} [{",".join(s["mk"]) if isinstance(s["mk"], list) else s["mk"]}] {s["txt"]}' for s in sig)
     data = ai.ask(f"""{_ctx(p)}
 {('Our results: ' + p['learnings']) if p.get('learnings') else ''}
-Signals this week (T = trend, K = competitor video far above its normal views):
+Signals this week (T = trend, K = competitor video far above its normal views, E = upcoming event/holiday: video must be ready for that date):
 {lines or 'none'}
 {extra}
 Already have (don't repeat): {'; '.join(r['title'][:50] for r in prev) or 'none'}
@@ -282,6 +282,16 @@ Write in {languages.english(p['source_lang'])}.""", purpose, kind)
         if not i.get("title"):
             continue
         ref = refs.get(str(i.get("signal", "")).strip(), {})
+        if ref.get("event"):
+            from . import events
+            events._db()
+            db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,why_now,
+                      expires_at,due_date,markets) VALUES(?,?,?,?,'','short',?,?,'inbox','event',?,?,?,?,?)""",
+                   (p["id"], i["title"][:300], i.get("hook", ""), i.get("angle", ""), i.get("why", ""), int(i.get("score") or 0),
+                    ref["event"], i.get("why_now", ""), ref["date"], ref["date"],
+                    "" if set(ref.get("langs") or []) >= set(p["languages"]) else ",".join(ref.get("langs") or [])))
+            made += 1
+            continue
         db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,why_now,expires_at)
                   VALUES(?,?,?,?,'','short',?,?,'inbox','radar',?,?,?)""",
                (p["id"], i["title"][:300], i.get("hook", ""), i.get("angle", ""), i.get("why", ""), int(i.get("score") or 0),

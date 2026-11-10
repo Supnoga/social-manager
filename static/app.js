@@ -139,6 +139,7 @@ function sidebar() {
     ${S.projects.map(p => `<a class="nav ${cur === 'p' && +r[1] === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt">${p.ideas}</span></a>`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Nastavenie</div>
     ${nav('ucty', 'link', 'Účty a siete', cur === 'ucty')}
+    ${nav('profily', 'user', 'Vzhľad účtov', cur === 'profily')}
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
     <div class="side-foot">
       <div class="status"><i class="${ai.cli_found ? '' : 'w'}"></i>Claude ${ai.cli_found ? 'pripojený' : 'v ručnom režime'}</div>
@@ -158,6 +159,7 @@ async function render() {
     else if (r[0] === 'kontrola') await pReview(m);
     else if (r[0] === 'komentare') await pComments(m);
     else if (r[0] === 'radar') await pRadar(m);
+    else if (r[0] === 'profily') await pProfiles(m);
     else if (r[0] === 'ucty') await pAccounts(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
     else if (r[0] === 'novy') pProjectForm(m, null);

@@ -64,11 +64,16 @@ V **Nastavenia → Preklady zadarmo** vlož kľúč Microsoft Translator (Free F
 V **Nastavenia → Zábery a hudba** vlož bezplatný kľúč **Pexels** (a voliteľne Pixabay). Svoje vlastné zábery daj do priečinka **Moje zábery** (tlačidlo ho otvorí) a pomenuj ich podľa obsahu, napr. `varenie-cestoviny.mp4` – appka ich uprednostní. Hudbu (mp3) daj do priečinka **Hudba**.
 Video potom vyzerá takto: nový záber každé 2–3 s, fotky sa pohybujú, titulky slovo po slove (aktuálne slovo vo farbe projektu), text scény hore. Zábery sa vyberú raz a platia pre všetky jazyky; v kroku **Video** ich vidíš po scénach a môžeš ich vymeniť.
 
+## 3c2. Vzhľad účtov (profilovka, pozadie, popis)
+
+V menu *Vzhľad účtov*: nahraj raz profilovú fotku, pozadie a napíš popis. Appka obrázky oreže pre každú sieť a popis preloží do jazyka každého účtu (bezplatný prekladač). Tlačidlo *Nastaviť označeným* zmení samo YouTube (popis, pozadie) a Facebook (popis, pozadie, profilovka). Instagram, TikTok a LinkedIn zmenu zvonka nedovolia: pri nich je tlačidlo na skopírovanie popisu, odkaz rovno na úpravu profilu a obrázky v priečinku. Po vložení klikni *Hotovo*. YouTube profilovku tiež treba nahrať ručne (Google to nedovolí).
+
 ## 3d. Radar, výsledky a plánovanie na týždeň
 
 - **Radar** (v menu): appka sama sleduje trendy (Google Trendy, Google Správy, Wikipédia, YouTube), videá konkurencie (YouTube kanály, ktoré pridáš v karte Konkurencia) a čísla tvojich videí. Všetko zadarmo a bez AI.
 - **Nápady**: každý pondelok Claude z krátkeho výťahu navrhne 5 nápadov na projekt (1 volanie). Klikneš *Beriem*, *Neskôr* alebo *Nie*. Pri trende alebo videe konkurencie je aj tlačidlo *Nápad z tohto*.
 - **YouTube kľúč** na sledovanie konkurencie: Nastavenia → Radar a plánovanie (návod je tam, 3 minúty, zadarmo).
+- **Udalosti** (Radar → Udalosti): štátne sviatky krajín tvojich jazykov, bežné dni (Vianoce, Nový rok, Halloween, Valentín…) a tematické dni projektu (napr. Deň Zeme). Pri každej je tlačidlo *Video* a *Prianie*. Nápady k udalostiam o 1–3 týždne pribudnú v pondelok samé. Video k udalosti sa naplánuje presne na jej deň a len na účty krajín, kde sa oslavuje.
 - **Výsledky**: čísla zo sietí sa sťahujú každých 6 hodín. Appka vie, ktoré videá sa darili, a posiela to Claudovi pri vymýšľaní, aby staval na tom, čo funguje.
 - **Naplánovať týždeň** (Publikovanie): jedným klikom rozdelí hotové videá na všetky účty na 7 dní, v najlepšie časy pre každý účet. Kým nie sú vlastné čísla, používa štandardné časy podľa siete a krajiny. Dá sa zapnúť, aby to robila sama každú nedeľu večer.
 - **Zopakovať úspešné** (Radar → Výsledky): úspešné videá idú pri plánovaní prvé na účty, kde ešte neboli, a Claude k nim navrhne nové variácie. Rovnaké video na ten istý účet znova nedávame, siete to trestajú.

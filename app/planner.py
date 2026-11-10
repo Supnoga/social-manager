@@ -18,7 +18,8 @@ def _fmt(t):
 
 def _candidates(acc, platforms_of):
     """Hotové videá pre účet, ktoré na ňom ešte neboli (ani naplánované). Jedno video na nápad."""
-    rows = db.q("""SELECT v.*, COALESCE(i.score,0) score, s.idea_id, i.source isrc FROM videos v
+    rows = db.q("""SELECT v.*, COALESCE(i.score,0) score, s.idea_id, i.source isrc, COALESCE(i.due_date,'') due,
+                   COALESCE(i.markets,'') markets FROM videos v
                    LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
                    WHERE v.status='ready' AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND p.account_id=?
                          AND p.status!='failed')
@@ -32,6 +33,10 @@ def _candidates(acc, platforms_of):
         if acc["platform"] not in platforms_of.get(v["project_id"], [acc["platform"]]):
             continue
         if acc["lang"] and v["lang"] and acc["lang"] != v["lang"]:
+            continue
+        if v["markets"] and acc["lang"] and acc["lang"] not in v["markets"].split(","):
+            continue
+        if v["due"] and v["due"] < dt.date.today().isoformat():
             continue
         if v["idea_id"] and (v["idea_id"] in used_ideas or v["idea_id"] in seen):
             continue
@@ -70,10 +75,23 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
                 break
             have = db.one("""SELECT COUNT(*) n FROM posts WHERE account_id=? AND status IN ('queued','review','uploading','done')
                              AND substr(scheduled_at,1,10)=?""", (a["id"], day.isoformat()))["n"]
+            dated = [v for v in cand if v["due"] == day.isoformat()]
+            for v in dated:  # video k udalosti: presne v jej deň (aj nad bežný počet)
+                cand.remove(v)
+                h = slots[0]
+                when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
+                if not dry:
+                    db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
+                           (v["id"], a["id"], _fmt(when), "public", status))
+                n += 1
+                have += 1
             for h in slots[have:]:
-                if not cand:
+                cand = [v for v in cand if not v["due"] or v["due"] > day.isoformat()]
+                undated = [v for v in cand if not v["due"]]
+                if not undated:
                     break
-                v = cand.pop(0)
+                v = undated[0]
+                cand.remove(v)
                 when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
                 if not dry:
                     db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
