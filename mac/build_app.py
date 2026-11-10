@@ -56,7 +56,7 @@ def build():
     for it in CODE_ITEMS:
         src = ROOT / it
         if src.is_dir():
-            shutil.copytree(src, res / "social-manager" / it, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            shutil.copytree(src, res / "social-manager" / it, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "download"))
         else:
             shutil.copy(src, res / "social-manager" / it)
     z = OUT / "Social-Manager-Mac.zip"
