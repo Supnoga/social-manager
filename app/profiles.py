@@ -301,6 +301,9 @@ def set_bio(aid: int, data: dict = Body(...)):
 @router.post("/api/profiles/{pid}/apply")
 def apply(pid: int, data: dict = Body(default={})):
     """Zmení, čo sieť dovolí. Vráti, čo je hotové a čo treba kliknúť ručne."""
+    from .scheduler import dry_run
+    if dry_run():
+        raise RuntimeError("Režim nasucho: nič sa neodosiela ani nepublikuje.")
     _db()
     ids = set(data.get("account_ids") or [])
     what = set(data.get("what") or ["bio", "avatar", "banner"])

@@ -1,14 +1,16 @@
 """SQLite databáza - jeden súbor data/app.db, nič netreba inštalovať."""
 import json
+import os
 import sqlite3
 import threading
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+# na serveri sa dáta dajú presunúť (napr. do Docker zväzku) premennou SM_DATA_DIR
+DATA_DIR = Path(os.environ["SM_DATA_DIR"]) if os.environ.get("SM_DATA_DIR") else BASE_DIR / "data"
 MEDIA_DIR = DATA_DIR / "media"
 DB_PATH = DATA_DIR / "app.db"
-DATA_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 MEDIA_DIR.mkdir(exist_ok=True)
 
 _lock = threading.RLock()
@@ -130,6 +132,10 @@ CREATE TABLE IF NOT EXISTS ai_log (
   input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
   cached INTEGER DEFAULT 0, ok INTEGER DEFAULT 1, note TEXT DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS terms (project_id INTEGER, src TEXT, lang TEXT, target TEXT, note TEXT DEFAULT '',
+  PRIMARY KEY(project_id, src, lang));
+CREATE TABLE IF NOT EXISTS ai_batches (id TEXT PRIMARY KEY, purpose TEXT, meta TEXT DEFAULT '{}', status TEXT DEFAULT 'pending',
+  created_at TEXT DEFAULT (datetime('now','localtime')), done_at TEXT DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_videos_project ON videos(project_id, lang);
 CREATE INDEX IF NOT EXISTS idx_ideas_project ON ideas(project_id, status);
@@ -157,6 +163,10 @@ MIGRATIONS = [
     "ALTER TABLE ideas ADD COLUMN expires_at TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN radar_scope TEXT DEFAULT 'narrow'",
     "ALTER TABLE projects ADD COLUMN learnings TEXT DEFAULT ''",
+    "ALTER TABLE scripts ADD COLUMN approved_at TEXT DEFAULT ''",
+    "ALTER TABLE scripts ADD COLUMN src_hash TEXT DEFAULT ''",
+    "ALTER TABLE scripts ADD COLUMN review TEXT DEFAULT ''",
+    "ALTER TABLE scripts ADD COLUMN review_note TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN platforms TEXT DEFAULT '[\"youtube\",\"tiktok\",\"instagram\",\"facebook\"]'",
 ]
 

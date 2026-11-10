@@ -1,4 +1,9 @@
-"""AI cez Claude Code CLI = používa tvoj Claude Max plán (nie platené API).
+"""AI: na Macu cez Claude Code CLI (osobný Max plán), na serveri cez firemné API (SM_AI_BACKEND=api).
+
+Firemná automatika nemá bežať na osobnom Max pláne. Na serveri preto ide AI cez API kľúč firmy:
+- najlacnejší model (Haiku 5.5) na preklady a opravy, Sonnet 5.5 len na tvorbu,
+- dávky (Batch API) za polovičnú cenu, kde sa nečaká na odpoveď,
+- denný strop tokenov (ai_daily_token_cap), po ňom AI stojí do ďalšieho dňa.
 
 Šetrenie tokenov:
 - vlastný krátky systémový prompt (namiesto veľkého predvoleného), žiadne nástroje, žiadne MCP
@@ -33,6 +38,117 @@ class NeedManual(Exception):
 
 class AIError(Exception):
     pass
+
+
+# skratky z nastavení -> presné modely API
+API_MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
+DEFAULT_DAILY_CAP = 300_000  # tokenov denne (vstup + výstup) pre API; pri Haiku je to rádovo pár centov
+
+
+def backend():
+    """'api' = firemné API (server), 'cli' = Claude Code s Max plánom (Mac)."""
+    return (os.environ.get("SM_AI_BACKEND") or db.get_setting("ai_backend", "cli") or "cli").strip().lower()
+
+
+def api_model(short):
+    return API_MODELS.get(short, short)
+
+
+def _api_params(model, prompt, max_tokens=4000):
+    """Krátke, lacné volanie: bez premýšľania (Haiku) alebo s nízkym úsilím, systémový prompt sa cache-uje."""
+    p = {"model": model, "max_tokens": max_tokens,
+         "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+         "messages": [{"role": "user", "content": prompt}],
+         "output_config": {"effort": "low"}}
+    if model.startswith("claude-haiku"):
+        p["thinking"] = {"type": "disabled"}
+    return p
+
+
+def tokens_today():
+    r = db.one("SELECT COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0) n FROM ai_log "
+               "WHERE cached=0 AND ts >= datetime('now','localtime','start of day')")
+    return (r or {}).get("n", 0) or 0
+
+
+def _check_cap(extra=0):
+    cap = int(db.get_setting("ai_daily_token_cap", DEFAULT_DAILY_CAP) or DEFAULT_DAILY_CAP)
+    if tokens_today() + extra > cap:
+        raise AIError(f"Denný strop AI ({cap:,} tokenov) je minutý, AI pokračuje zajtra.".replace(",", " "))
+
+
+def _client():
+    try:
+        import anthropic
+    except ImportError:
+        raise AIError("Chýba knižnica anthropic (pip install anthropic).")
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        raise AIError("Na serveri chýba ANTHROPIC_API_KEY (patrí do súboru s nastaveniami servera, nie do kódu).")
+    return anthropic.Anthropic()
+
+
+def _text(msg):
+    return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+
+
+def _ask_api(prompt, purpose, model):
+    _check_cap()
+    import anthropic
+    try:
+        msg = _client().messages.create(**_api_params(model, prompt))
+    except anthropic.APIStatusError as e:
+        _log(purpose, model, ok=0, note=str(e)[:400])
+        raise AIError(f"Claude API ({e.status_code}): {str(e)[:300]}")
+    except anthropic.APIConnectionError as e:
+        _log(purpose, model, ok=0, note=str(e)[:400])
+        raise AIError("Claude API nie je dostupné, skús neskôr.")
+    u = msg.usage
+    it = (u.input_tokens or 0) + (getattr(u, "cache_creation_input_tokens", 0) or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0)
+    _log(purpose, model, it, u.output_tokens or 0)
+    if msg.stop_reason == "refusal":
+        raise AIError("Claude túto požiadavku odmietol.")
+    return extract_json(_text(msg))
+
+
+# ---------- dávky (Batch API, polovičná cena) ----------
+def submit_batch(prompts, purpose, kind="cheap", meta=None):
+    """prompts: {id: prompt}. Pošle všetko naraz ako jednu dávku. Vráti id dávky (alebo None, ak nič netreba)."""
+    if not prompts:
+        return None
+    if backend() != "api":
+        raise AIError("Dávky idú len cez firemné API (server).")
+    _check_cap()
+    model = api_model(models()[kind])
+    reqs = [{"custom_id": str(cid)[:64], "params": _api_params(model, pr)} for cid, pr in prompts.items()]
+    b = _client().messages.batches.create(requests=reqs)
+    db.run("INSERT INTO ai_batches(id,purpose,meta) VALUES(?,?,?)",
+           (b.id, purpose, json.dumps({**(meta or {}), "model": model}, ensure_ascii=False)))
+    return b.id
+
+
+def batch_results(batch_id):
+    """Ak je dávka hotová, vráti {id: JSON odpoveď alebo None}. Ak ešte beží, vráti None."""
+    c = _client()
+    b = c.messages.batches.retrieve(batch_id)
+    if b.processing_status != "ended":
+        return None
+    row = db.one("SELECT * FROM ai_batches WHERE id=?", (batch_id,)) or {}
+    model = json.loads(row.get("meta") or "{}").get("model", "")
+    out = {}
+    for r in c.messages.batches.results(batch_id):
+        if r.result.type != "succeeded":
+            out[r.custom_id] = None
+            continue
+        m = r.result.message
+        u = m.usage
+        _log(row.get("purpose", "batch"), model, (u.input_tokens or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0),
+             u.output_tokens or 0, note="dávka")
+        try:
+            out[r.custom_id] = extract_json(_text(m))
+        except Exception:
+            out[r.custom_id] = None
+    db.run("UPDATE ai_batches SET status='done', done_at=datetime('now','localtime') WHERE id=?", (batch_id,))
+    return out
 
 
 def find_claude():
@@ -101,6 +217,11 @@ def ask(prompt, purpose, kind="creative", use_cache=True, timeout=600):
         if c:
             _log(purpose, model, cached=1)
             return json.loads(c["response"])
+
+    if backend() == "api":
+        data = _ask_api(prompt, purpose, api_model(model))
+        db.run("INSERT OR REPLACE INTO ai_cache(hash,response) VALUES(?,?)", (h, json.dumps(data, ensure_ascii=False)))
+        return data
 
     path = find_claude()
     mode = db.get_setting("ai_mode", "auto")

@@ -100,12 +100,29 @@ def supports(p, lang):
     return lang in languages.LANGUAGES  # Azure aj Google majú všetky jazyky appky
 
 
-# ---------- glosár (neprekladať) ----------
-def _protect(text, glossary):
+# ---------- glosár (neprekladať) a slovník pojmov krajiny ----------
+def terms_for(project_id, lang):
+    """Slovník pojmov: zdrojový pojem -> schválený pojem pre daný jazyk (napr. „tepelné čerpadlo“ -> „Wärmepumpe“)."""
+    if not project_id:
+        return {}
+    return {r["src"]: r["target"] for r in db.q("SELECT src, target FROM terms WHERE project_id=? AND lang=?", (project_id, lang))
+            if (r["src"] or "").strip() and (r["target"] or "").strip()}
+
+
+def _mapping(glossary, terms):
+    m = {g: g for g in glossary}
+    m.update(terms or {})
+    return m
+
+
+def _protect(text, glossary, terms=None):
+    """Pojmy zo slovníka a glosára sa vložia rovno v cieľovom tvare a prekladač ich nesmie meniť."""
     t = html.escape(text or "", quote=False).replace("\n", "<br>")
-    for g in sorted(glossary, key=len, reverse=True):
-        ge = html.escape(g, quote=False)
-        t = re.sub(r"(?<![\w>])" + re.escape(ge) + r"(?![\w<])", f'<span translate="no" class="notranslate">{ge}</span>', t)
+    for src, tgt in sorted(_mapping(glossary, terms).items(), key=lambda kv: len(kv[0]), reverse=True):
+        se, te = html.escape(src, quote=False), html.escape(tgt, quote=False)
+        flags = re.I if src != tgt else 0
+        t = re.sub(r"(?<![\w>])" + re.escape(se) + r"(?![\w<])", lambda _m: f'<span translate="no" class="notranslate">{te}</span>', t,
+                   flags=flags)
     return t
 
 
@@ -149,15 +166,19 @@ def _call(p, texts, src, tgt):
     return [x["translatedText"] for x in r.json()["data"]["translations"]]
 
 
-def translate_texts(texts, src, tgt, glossary=()):
-    """Preloží zoznam textov. Vráti (preklady, poskytovateľ) alebo vyhodí chybu, ak nie je voľný poskytovateľ."""
+def translate_texts(texts, src, tgt, glossary=(), terms=None):
+    """Preloží zoznam textov. Vráti (preklady, poskytovateľ) alebo vyhodí chybu, ak nie je voľný poskytovateľ.
+    Čo už raz bolo preložené (rovnaký text, glosár aj slovník), ide z pamäte a nič nestojí."""
     out = [None] * len(texts)
     todo, hashes = [], []
     for i, t in enumerate(texts):
         if not (t or "").strip():
             out[i] = t or ""
             continue
-        h = hashlib.sha1(f"{src}|{'|'.join(sorted(glossary))}|{t}".encode()).hexdigest()
+        key = '|'.join(sorted(glossary))
+        if terms:
+            key += "|T:" + json.dumps(terms, sort_keys=True, ensure_ascii=False)
+        h = hashlib.sha1(f"{src}|{key}|{t}".encode()).hexdigest()
         c = db.one("SELECT text FROM tm WHERE h=? AND lang=?", (h, tgt))
         if c:
             out[i] = c["text"]
@@ -166,7 +187,7 @@ def translate_texts(texts, src, tgt, glossary=()):
             hashes.append(h)
     if not todo:
         return out, "pamäť"
-    payload = [_protect(texts[i], glossary) for i in todo]
+    payload = [_protect(texts[i], glossary, terms) for i in todo]
     need = sum(len(x) for x in payload)
     errors = []
     for p in ("deepl", "azure", "google"):
@@ -199,7 +220,7 @@ def _to_tag(words):
 
 
 # ---------- kontroly bez AI ----------
-def check(src, tgt, glossary):
+def check(src, tgt, glossary, terms=None):
     if not (src or "").strip():
         return ""
     if not (tgt or "").strip():
@@ -214,14 +235,25 @@ def check(src, tgt, glossary):
     for g in glossary:
         if g in src and g not in tgt:
             return f"chýba „{g}“"
+    for a, b in (terms or {}).items():
+        if re.search(r"(?<!\w)" + re.escape(a) + r"(?!\w)", src, re.I) and b.lower() not in tgt.lower():
+            return f"chýba pojem „{b}“"
     return ""
+
+
+def source_hash(src_row):
+    """Odtlačok zdroja: keď sa zdroj nezmení, preklad sa znova nerobí."""
+    scenes = [s.get("onscreen", "") for s in json.loads(src_row.get("scenes") or "[]")]
+    payload = json.dumps([src_row.get(f) or "" for f in FIELDS] + scenes + [src_row.get("hashtags") or ""], ensure_ascii=False)
+    return hashlib.sha1(payload.encode()).hexdigest()
 
 
 FIELDS = ("title", "voiceover", "description", "caption")
 
 
-def machine_translate(script_id, langs):
-    """Preloží scenár do jazykov strojovo. Vráti (hotové jazyky, jazyky pre AI zálohu, na kontrolu, poznámky)."""
+def machine_translate(script_id, langs, skip_unchanged=False):
+    """Preloží scenár do jazykov strojovo. Vráti (hotové jazyky, jazyky pre AI zálohu, na kontrolu, poznámky).
+    skip_unchanged: jazyk, ktorý už má preklad z rovnakého zdroja, sa preskočí (prekladá sa len nové)."""
     src = db.one("SELECT * FROM scripts WHERE id=?", (script_id,))
     proj = db.one("SELECT * FROM projects WHERE id=?", (src["project_id"],))
     glossary = [g.strip() for g in re.split(r"[\n,;]", (proj or {}).get("glossary") or "") if g.strip()]
@@ -234,11 +266,19 @@ def machine_translate(script_id, langs):
     anim_flat = [x for _, xs in anim_txt for x in xs]
     texts = [src[f] or "" for f in FIELDS] + [s.get("onscreen", "") for s in scenes] + [_tag_words(t) for t in tr_tags] + anim_flat
     done, rest, flags, used = [], [], {}, set()
+    shash = source_hash(src)
     for lang in langs:
         if lang == src["lang"]:
             continue
+        if skip_unchanged:
+            have = db.one("SELECT src_hash, title FROM scripts WHERE idea_id=? AND lang=?", (src["idea_id"], lang))
+            if have and have["src_hash"] == shash and (have["title"] or "").strip():
+                used.add("bez zmeny")
+                done.append(lang)
+                continue
+        terms = terms_for(src["project_id"], lang)
         try:
-            res, prov = translate_texts(texts, src["lang"], lang, glossary)
+            res, prov = translate_texts(texts, src["lang"], lang, glossary, terms)
         except RuntimeError as e:
             rest.append(lang)
             used.add(str(e)[:120])
@@ -255,14 +295,15 @@ def machine_translate(script_id, langs):
             sc[i]["anim"] = anim.with_texts(scenes[i]["anim"], res[pos:pos + len(xs)])
             pos += len(xs)
         hashtags = " ".join(dict.fromkeys([x for x in new_tags if x] + keep_tags))
-        bad = {f: check(src[f], t[f], glossary) for f in FIELDS}
+        bad = {f: check(src[f], t[f], glossary, terms) for f in FIELDS}
         bad = {f: why for f, why in bad.items() if why}
-        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption)
-                  VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
+        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption,src_hash)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
                   voiceover=excluded.voiceover, scenes=excluded.scenes, description=excluded.description,
-                  hashtags=excluded.hashtags, caption=excluded.caption, voice_path=''""",
+                  hashtags=excluded.hashtags, caption=excluded.caption, voice_path='', src_hash=excluded.src_hash,
+                  review='', review_note=''""",
                (src["project_id"], src["idea_id"], lang, 0, t["title"], t["voiceover"], json.dumps(sc, ensure_ascii=False),
-                t["description"], hashtags, t["caption"]))
+                t["description"], hashtags, t["caption"], shash))
         if bad:
             flags[lang] = bad
         done.append(lang)

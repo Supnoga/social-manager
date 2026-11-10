@@ -393,21 +393,35 @@ Return JSON: {{"<scene number>":"words"}}""", "queries", "cheap")
     return scenes
 
 
-def fix_flagged(script_id, flags):
-    """Malé AI volanie: opraví len polia, ktoré neprešli automatickou kontrolou (všetky jazyky naraz)."""
+def fix_prompt(script_id, flags):
+    """Krátky prompt: opraviť len polia, ktoré neprešli automatickou kontrolou (všetky jazyky naraz)."""
     src = db.one("SELECT * FROM scripts WHERE id=?", (script_id,))
     items = {}
     for lang, fields in flags.items():
         t = db.one("SELECT * FROM scripts WHERE idea_id=? AND lang=?", (src["idea_id"], lang))
         items[lang] = {f: t[f] for f in fields}
-    prompt = f"""Fix these machine translations of a short video script (problems: {json.dumps(flags, ensure_ascii=False)}).
-Keep numbers and brand names, natural native style, similar length to source.
+    from . import translate
+    terms = {l: translate.terms_for(src["project_id"], l) for l in flags}
+    terms = {l: t for l, t in terms.items() if t}
+    return f"""Fix these machine translations of a short video script (problems: {json.dumps(flags, ensure_ascii=False)}).
+Keep numbers and brand names, natural native style, similar length to source.{(" Required terms per language: " + json.dumps(terms, ensure_ascii=False)) if terms else ""}
 Source ({languages.english(src['lang'])}): {json.dumps({f: src[f] for fs in flags.values() for f in fs}, ensure_ascii=False)}
 Translations: {json.dumps(items, ensure_ascii=False)}
 Return JSON with the same shape: {{"<lang>":{{"<field>":"fixed text"}}}}"""
-    data = ai.ask(prompt, "fix", "cheap")
+
+
+def apply_fix(script_id, flags, data):
+    src = db.one("SELECT * FROM scripts WHERE id=?", (script_id,))
+    fixed = 0
     for lang, fields in (data or {}).items():
         if lang in flags and isinstance(fields, dict):
             for f, v in fields.items():
                 if f in ("title", "voiceover", "description", "caption") and isinstance(v, str) and v.strip():
                     db.run(f"UPDATE scripts SET {f}=?, qa='' WHERE idea_id=? AND lang=?", (v, src["idea_id"], lang))
+                    fixed += 1
+    return fixed
+
+
+def fix_flagged(script_id, flags):
+    """Malé AI volanie: opraví len polia, ktoré neprešli automatickou kontrolou (všetky jazyky naraz)."""
+    return apply_fix(script_id, flags, ai.ask(fix_prompt(script_id, flags), "fix", "cheap"))

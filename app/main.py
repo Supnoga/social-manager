@@ -56,6 +56,8 @@ def _start():
     db.con()
     scheduler.start()
     tunnel.start()
+    from . import redakcia as _r
+    _r.background()
 
 
 def _page():
@@ -1280,6 +1282,10 @@ app.include_router(profiles.router)
 from . import events  # noqa: E402
 app.include_router(events.router)
 
+from . import redakcia  # noqa: E402
+
+app.include_router(redakcia.router)
+
 
 def main():
     import sys
@@ -1325,7 +1331,7 @@ def main():
     if os.environ.get("SM_NO_BROWSER") != "1":
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     try:
-        uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning", log_config=None)
+        uvicorn.run(app, host=os.environ.get("SM_HOST", "127.0.0.1"), port=PORT, log_level="warning", log_config=None)
     except BaseException as e:
         logging.getLogger("app").error("Server skončil: %r", e, exc_info=True)
         raise

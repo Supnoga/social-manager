@@ -225,6 +225,9 @@ def _translate_replies():
 
 # ---------------- odoslanie ----------------
 def send(ids):
+    from .scheduler import dry_run
+    if dry_run():
+        raise RuntimeError("Režim nasucho: nič sa neodosiela ani nepublikuje.")
     _db()
     ok = fail = 0
     for cid in ids:
