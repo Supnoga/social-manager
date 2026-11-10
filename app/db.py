@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS posts (
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS ai_cache (hash TEXT PRIMARY KEY, response TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
 CREATE TABLE IF NOT EXISTS tm (h TEXT, lang TEXT, text TEXT, PRIMARY KEY(h, lang));
+CREATE TABLE IF NOT EXISTS footage (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, source_id TEXT, path TEXT, tags TEXT DEFAULT '', kind TEXT DEFAULT 'video', w INTEGER DEFAULT 0, h INTEGER DEFAULT 0, dur REAL DEFAULT 0, license_url TEXT DEFAULT '', used INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS ai_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT DEFAULT (datetime('now','localtime')),
@@ -117,6 +118,7 @@ MIGRATIONS = [
     "ALTER TABLE projects ADD COLUMN design_md TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN design_summary TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN design_colors TEXT DEFAULT '[]'",
+    "ALTER TABLE scripts ADD COLUMN shots TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN glossary TEXT DEFAULT ''",
     "ALTER TABLE scripts ADD COLUMN qa TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN sources TEXT DEFAULT '[]'",

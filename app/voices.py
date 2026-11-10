@@ -158,9 +158,24 @@ def _run(coro):
 def _edge_tts(text, voice, out_path, rate=1.0):
     import edge_tts
     pct = f"{int(round((rate - 1) * 100)):+d}%"
-    _run(edge_tts.Communicate(text, voice, rate=pct).save(str(out_path)))
+    words = []
+
+    async def go():
+        com = edge_tts.Communicate(text, voice, rate=pct, boundary="WordBoundary")
+        with open(out_path, "wb") as f:
+            async for ch in com.stream():
+                if ch["type"] == "audio":
+                    f.write(ch["data"])
+                elif ch["type"] == "WordBoundary":  # časovanie slov pre titulky (zadarmo)
+                    words.append({"w": ch["text"], "s": ch["offset"] / 1e7, "e": (ch["offset"] + ch["duration"]) / 1e7})
+    try:
+        _run(go())
+    except TypeError:  # staršie edge-tts bez parametra boundary
+        _run(edge_tts.Communicate(text, voice, rate=pct).save(str(out_path)))
     if not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
         raise RuntimeError("Microsoft hlas nevrátil zvuk")
+    if words:
+        Path(str(out_path) + ".words.json").write_text(json.dumps(words, ensure_ascii=False))
 
 
 def edge_voices():

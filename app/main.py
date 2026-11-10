@@ -12,7 +12,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import ai, content, db, languages, media, scheduler, tunnel, updater, voices
+from . import ai, content, db, footage, languages, media, scheduler, tunnel, updater, voices
 from .platforms import linkedin, meta, tiktok, tiktok_business, youtube
 from .platforms.common import PORT, PlatformError
 
@@ -212,6 +212,7 @@ def api_meta():
         "ffmpeg": bool(media.ffmpeg()),
         "google_tts": voices.google_usage(),
         "mt": __import__("app.translate", fromlist=["usage"]).usage(),
+        "footage": footage.status(),
         "review_count": db.one("SELECT COUNT(*) n FROM posts WHERE status='review'")["n"],
     }
 
@@ -221,7 +222,8 @@ def api_settings(data: dict = Body(...)):
     allowed = {"ai_mode", "model_creative", "model_cheap", "paused", "claude_path", "meta_api_version", "tt_mode",
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min",
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
-               "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval"}
+               "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
+               "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -632,9 +634,32 @@ def voice_test(data: dict = Body(...)):
     return {"voice_path": path}
 
 
+def _shots_for(s):
+    """Zábery sa vyberú raz pre originál a použijú vo všetkých jazykoch."""
+    src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (s["idea_id"],)) or s
+    if src.get("shots"):
+        return json.loads(src["shots"])
+    scenes = json.loads(src["scenes"] or "[]")
+    if any(not sc.get("q") for sc in scenes):
+        try:
+            scenes = content.scene_queries(scenes, src["title"])
+            db.run("UPDATE scripts SET scenes=? WHERE id=?", (json.dumps(scenes, ensure_ascii=False), src["id"]))
+        except Exception:
+            for sc in scenes:
+                sc.setdefault("q", src["title"])
+    shots = footage.pick_for_scenes(scenes)
+    db.run("UPDATE scripts SET shots=? WHERE id=?", (json.dumps(shots), src["id"]))
+    return shots
+
+
+def _broll_ready():
+    st = footage.status()
+    return st["pexels"] or st["pixabay"] or st["own"] > 0 or st["ai"]
+
+
 @app.post("/api/scripts/{sid}/to-video")
 def script_to_video(sid: int, data: dict = Body(default={})):
-    """Vytvorí video: buď tvoje video + hlas, alebo jednoduché video (farba + hlas)."""
+    """Vytvorí video: zábery z internetu/tvoje + titulky slovo po slove (predvolené), tvoje podkladové video, alebo farby dizajnu."""
     s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
     if not s["voice_path"] or not Path(s["voice_path"]).exists():
         script_voice(sid, {})
@@ -645,16 +670,85 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     colors = json.loads(proj.get("design_colors") or "[]") or [proj.get("color") or "#FF6B00"]
     scenes = json.loads(s["scenes"] or "[]")
     base = db.one("SELECT * FROM videos WHERE id=?", (base_id,)) if base_id else None
-    try:
-        media.scene_video(scenes, s["voice_path"], out, colors, base["file_path"] if base else None)
-    except Exception:
-        # záloha: jednoduchšia verzia
-        if base:
-            media.merge_voice(base["file_path"], s["voice_path"], out)
-        else:
-            media.image_video(s["voice_path"], out)
+    style = data.get("style") or ("base" if base else "broll" if _broll_ready() else "color")
+    done = False
+    if style == "broll":
+        try:
+            media.broll_video(scenes, _shots_for(s), s["voice_path"], out, colors[0], s["lang"], s["voiceover"],
+                              footage.music_track(sid) if data.get("music", True) else None)
+            done = True
+        except Exception as e:
+            print("broll:", e)
+    if not done:
+        try:
+            media.scene_video(scenes, s["voice_path"], out, colors, base["file_path"] if base else None)
+        except Exception:
+            # záloha: jednoduchšia verzia
+            if base:
+                media.merge_voice(base["file_path"], s["voice_path"], out)
+            else:
+                media.image_video(s["voice_path"], out)
     vid = _add_video(s["project_id"], str(out), out.name, s["lang"], s)
-    return {"video_id": vid}
+    return {"video_id": vid, "style": style if done or style != "broll" else "color"}
+
+
+@app.get("/api/ideas/{iid}/shots")
+def idea_shots(iid: int):
+    src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    if not src:
+        return {"scenes": []}
+    scenes = json.loads(src["scenes"] or "[]")
+    shots = json.loads(src["shots"] or "[]") if src.get("shots") else []
+    out = []
+    for i, sc in enumerate(scenes):
+        fs = [db.one("SELECT id, kind, path, source, license_url FROM footage WHERE id=?", (f,)) for f in (shots[i] if i < len(shots) else [])]
+        out.append({"q": sc.get("q", ""), "onscreen": sc.get("onscreen", ""), "shots": [f for f in fs if f]})
+    return {"scenes": out, "ready": _broll_ready(), "status": footage.status()}
+
+
+@app.post("/api/ideas/{iid}/shots")
+def idea_shots_change(iid: int, data: dict = Body(default={})):
+    """Vyber zábery (ak ešte nie sú) alebo vymeň zábery jednej scény za ďalšie (bez AI)."""
+    src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    if not src:
+        raise HTTPException(400, "Najprv sprav prototyp")
+    if "scene" not in data:
+        db.run("UPDATE scripts SET shots='' WHERE id=?", (src["id"],))
+        _shots_for(src)
+        return idea_shots(iid)
+    i = int(data["scene"])
+    scenes = json.loads(src["scenes"] or "[]")
+    shots = json.loads(src["shots"] or "[]") if src.get("shots") else _shots_for(src)
+    if data.get("q"):
+        scenes[i]["q"] = data["q"]
+        db.run("UPDATE scripts SET scenes=? WHERE id=?", (json.dumps(scenes, ensure_ascii=False), src["id"]))
+    used = {f for sh in shots for f in sh}
+    new = []
+    for _ in range(2):
+        r = footage.find(scenes[i].get("q", ""), scenes[i].get("alt", ""), used | set(new))
+        if r:
+            new.append(r["id"])
+    if not new:
+        raise HTTPException(400, "Nenašiel som iné zábery – skús iné slová")
+    while len(shots) <= i:
+        shots.append([])
+    shots[i] = new
+    db.run("UPDATE scripts SET shots=? WHERE id=?", (json.dumps(shots), src["id"]))
+    return idea_shots(iid)
+
+
+@app.post("/api/open-folder")
+def open_folder(data: dict = Body(...)):
+    """Otvorí priečinok Moje zábery / Hudba vo Finderi."""
+    import subprocess
+    import sys
+    d = footage.OWN if data.get("which") == "own" else footage.MUSIC
+    cmd = ["open", str(d)] if sys.platform == "darwin" else ["explorer", str(d)] if os.name == "nt" else ["xdg-open", str(d)]
+    try:
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, start_new_session=True)
+    except Exception:
+        pass
+    return {"path": str(d)}
 
 
 @app.post("/api/scripts/{sid}/attach-video")

@@ -204,3 +204,169 @@ def scene_video(scenes, voice, out, colors=None, base_video=None):
         if r.returncode != 0:
             raise RuntimeError("ffmpeg: " + r.stderr[-500:])
     return str(out)
+
+
+# ---------- Video zo záberov (B-roll) + titulky slovo po slove ----------
+W, H = 1080, 1920
+SAFE_TOP, CAP_Y = 300, 1180   # bezpečná zóna: mimo horných ikon, spodného popisu a pravých tlačidiel
+LONG_WORD_LANGS = {"de", "fi", "hu", "nl", "et", "is"}
+
+
+def _run_ff(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="ignore", stdin=subprocess.DEVNULL, start_new_session=True)
+    if r.returncode != 0:
+        raise RuntimeError("ffmpeg: " + r.stderr[-500:])
+
+
+def word_times(voice, text):
+    """Časy slov: z Microsoft hlasu (presné) alebo odhad podľa dĺžky slov (Google hlas)."""
+    wj = Path(str(voice) + ".words.json")
+    if wj.exists():
+        try:
+            w = json.loads(wj.read_text())
+            if w:
+                return w
+        except Exception:
+            pass
+    total = duration(voice) or 10
+    words = (text or "").split()
+    if not words:
+        return []
+    weights = [len(x) + 2 + (6 if x[-1:] in ".!?…" else 2 if x[-1:] in ",;:" else 0) for x in words]
+    unit, t, out = total * 0.97 / sum(weights), 0.12, []
+    for x, wt in zip(words, weights):
+        d = wt * unit
+        out.append({"w": x, "s": t, "e": t + d * 0.85})
+        t += d
+    return out
+
+
+def _chunks(words, lang):
+    maxc = 14 if lang in LONG_WORD_LANGS else 20
+    out, cur = [], []
+    for w in words:
+        if cur and (len(" ".join(x["w"] for x in cur + [w])) > maxc or len(cur) >= 3 or cur[-1]["w"][-1:] in ".!?…,"):
+            out.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _caption_frame(path, chunk, active, accent, banner=""):
+    from PIL import Image, ImageDraw
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    if banner:
+        bf = _font(56)
+        lines = _wrap(d, banner, bf, W - 260)[:3]
+        y = SAFE_TOP
+        for ln in lines:
+            tw = d.textlength(ln, font=bf)
+            x = (W - 180 - tw) / 2 + 40
+            d.rounded_rectangle([x - 22, y - 10, x + tw + 22, y + 66], 16, fill=(0, 0, 0, 170))
+            d.text((x, y), ln, font=bf, fill=(255, 255, 255, 255))
+            y += 82
+    if chunk:
+        text = " ".join(w["w"] for w in chunk)
+        size = 92
+        font = _font(size)
+        while d.textlength(text.upper(), font=font) > W - 260 and size > 50:
+            size -= 6
+            font = _font(size)
+        words = [w["w"].upper() for w in chunk]
+        space = d.textlength(" ", font=font)
+        total = sum(d.textlength(w, font=font) for w in words) + space * (len(words) - 1)
+        x = (W - 180 - total) / 2 + 40
+        for i, w in enumerate(words):
+            col = accent if i == active else (255, 255, 255)
+            d.text((x, CAP_Y), w, font=font, fill=col + (255,), stroke_width=7, stroke_fill=(0, 0, 0, 255))
+            x += d.textlength(w, font=font) + space
+    img.save(path)
+
+
+def broll_video(scenes, shots, voice, out, accent="#FF6B00", lang="", text="", music=None):
+    """Strih zo záberov: každé 2-3 s nový záber, fotky v pohybe (Ken Burns), titulky slovo po slove, hudba potichu."""
+    import random
+    import tempfile
+    ff = ffmpeg()
+    total = duration(voice) or 10
+    acc = _hex(accent)
+    pool = [[db.one("SELECT * FROM footage WHERE id=?", (fid,)) for fid in ids] for ids in shots]
+    pool = [[f for f in p if f and Path(f["path"]).exists()] for p in pool]
+    flat = [f for p in pool for f in p]
+    if not flat:
+        raise RuntimeError("Nenašiel som žiadne zábery (zadaj kľúč Pexels/Pixabay alebo pridaj vlastné zábery)")
+    n = max(1, len(scenes))
+    per = total / n
+    rnd = random.Random(str(out))
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        clips, t, k = [], 0.0, 0
+        for i in range(n):
+            cand = pool[i] if i < len(pool) and pool[i] else flat
+            cuts = max(1, round(per / 2.6))
+            for c in range(cuts):
+                dur = per / cuts
+                if i == n - 1 and c == cuts - 1:
+                    dur = total - t + 0.3
+                f = cand[c % len(cand)]
+                cp = tmp / f"c{k:03d}.mp4"
+                if f["kind"] == "photo":
+                    frames = max(1, int(dur * 30))
+                    zin = rnd.choice(["min(zoom+0.0011,1.15)", "if(eq(on,0),1.15,max(zoom-0.0011,1.0))"])
+                    vf = (f"scale=2160:3840:force_original_aspect_ratio=increase,crop=2160:3840,"
+                          f"zoompan=z='{zin}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps=30,setsar=1")
+                    _run_ff([ff, "-y", "-i", f["path"], "-vf", vf, "-frames:v", str(frames), "-c:v", "libx264", "-preset", "veryfast",
+                             "-crf", "23", "-pix_fmt", "yuv420p", "-an", str(cp)])
+                else:
+                    fd = f["dur"] or duration(f["path"]) or dur
+                    start = 0.5 if (i == 0 and c == 0) else max(0.0, rnd.uniform(0, max(0.0, fd - dur - 0.2)))
+                    _run_ff([ff, "-y", "-ss", f"{start:.2f}", "-stream_loop", "-1", "-i", f["path"], "-t", f"{dur:.3f}",
+                             "-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps=30,setsar=1",
+                             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-an", str(cp)])
+                clips.append(cp)
+                t += dur
+                k += 1
+        lst = tmp / "clips.txt"
+        lst.write_text("".join(f"file '{c}'\n" for c in clips))
+        body = tmp / "body.mp4"
+        _run_ff([ff, "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(body)])
+        # titulky: jeden priehľadný obrázok na každé slovo, poskladané do priehľadnej video vrstvy
+        words = word_times(voice, text)
+        frames, cur = [], 0.0
+        blank = tmp / "blank.png"
+        banner_at = lambda tt: (scenes[min(n - 1, int(tt / per))].get("onscreen") or "").strip() if scenes else ""
+        idx = 0
+        for ch in _chunks(words, lang):
+            for j, w in enumerate(ch):
+                s0 = w["s"]
+                e0 = ch[j + 1]["s"] if j + 1 < len(ch) else w["e"] + 0.15
+                if s0 > cur + 0.02:
+                    p = tmp / f"g{idx:04d}.png"
+                    _caption_frame(p, None, -1, acc, banner_at(cur))
+                    frames.append((p, s0 - cur))
+                    idx += 1
+                p = tmp / f"w{idx:04d}.png"
+                _caption_frame(p, ch, j, acc, banner_at(s0))
+                frames.append((p, max(0.04, e0 - s0)))
+                cur = s0 + max(0.04, e0 - s0)
+                idx += 1
+        _caption_frame(blank, None, -1, acc, "")
+        frames.append((blank, max(0.1, total - cur + 0.5)))
+        cl = tmp / "caps.txt"
+        cl.write_text("".join(f"file '{p}'\nduration {d:.3f}\n" for p, d in frames) + f"file '{blank}'\n")
+        caps = tmp / "caps.mov"
+        _run_ff([ff, "-y", "-f", "concat", "-safe", "0", "-i", str(cl), "-vf", "fps=30,format=rgba", "-c:v", "png", str(caps)])
+        cmd = [ff, "-y", "-i", str(body), "-i", str(caps), "-i", str(voice)]
+        if music:
+            cmd += ["-stream_loop", "-1", "-i", str(music)]
+            afil = "[3:a]volume=0.12[m];[2:a][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]"
+        else:
+            afil = "[2:a]anull[a]"
+        cmd += ["-filter_complex", f"[0:v][1:v]overlay=0:0:format=auto,format=yuv420p[v];{afil}", "-map", "[v]", "-map", "[a]",
+                "-t", f"{total + 0.2:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-r", "30",
+                "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
+        _run_ff(cmd)
+    return str(out)

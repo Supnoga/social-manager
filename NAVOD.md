@@ -54,6 +54,10 @@ Zvonka je viditeľné **len** video pod tajným odkazom a overovací súbor, ni�
 ## 3b. Preklady zadarmo (bez tokenov)
 V **Nastavenia → Preklady zadarmo** vlož kľúč Microsoft Translator (Free F0, 2 mil. znakov mesačne) – návod je priamo tam. Voliteľne DeepL Free (500 tis.) a Google (500 tis.). Potom preklady nestoja žiadne Claude tokeny; Claude len opraví sporné kúsky. V projekte vyplň **Neprekladať** (názov značky, produktov). V kroku **Text a hlas** tlačidlo **Vyrobiť všetky jazyky** spraví preklad, hlasy aj videá naraz.
 
+## 3c. Obraz videí (zábery + titulky)
+V **Nastavenia → Zábery a hudba** vlož bezplatný kľúč **Pexels** (a voliteľne Pixabay). Svoje vlastné zábery daj do priečinka **Moje zábery** (tlačidlo ho otvorí) a pomenuj ich podľa obsahu, napr. `varenie-cestoviny.mp4` – appka ich uprednostní. Hudbu (mp3) daj do priečinka **Hudba**.
+Video potom vyzerá takto: nový záber každé 2–3 s, fotky sa pohybujú, titulky slovo po slove (aktuálne slovo vo farbe projektu), text scény hore. Zábery sa vyberú raz a platia pre všetky jazyky; v kroku **Video** ich vidíš po scénach a môžeš ich vymeniť.
+
 ## 4. AI a spotreba
 
 - AI ide cez **Claude Code s tvojím Max plánom** – nič sa neplatí navyše. Ak Claude Code nie je, appka ponúkne **ručný režim** (skopíruješ text do claude.ai a odpoveď vložíš späť).

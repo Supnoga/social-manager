@@ -116,7 +116,7 @@ use pattern interrupts, end with a natural CTA (follow/save/comment). Spoken tex
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Captions/hashtags optimized for TikTok/Reels/Shorts.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"max 90 chars, curiosity-driven","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short on-screen text"}}],
+"scenes":[{{"visual":"what to show","onscreen":"short on-screen text","q":"2-5 English words to search stock footage"}}] (4-7 scenes; scene 1 = hook: strongest, moving, concrete shot),
 "description":"YouTube description 2-4 sentences + CTA","caption":"social caption max 150 chars","hashtags":"#a #b (5-8)"}}]}}
 Write in {languages.english(p['source_lang'])}."""
 
@@ -276,6 +276,21 @@ def translate_all(script_id, langs, chunk=6):
     for i in range(0, len(rest), chunk):
         total += run_task("translate", {"script_id": script_id, "langs": rest[i:i + chunk]})["created"]
     return {"created": total, "machine": len(done), "ai": len(rest), "by": used, "check": flags}
+
+
+def scene_queries(scenes, title=""):
+    """Pre staršie scenáre bez 'q': krátke anglické výrazy na hľadanie záberov (1 malé lacné volanie)."""
+    need = [i for i, sc in enumerate(scenes) if not sc.get("q")]
+    if not need:
+        return scenes
+    items = {str(i): (scenes[i].get("visual") or scenes[i].get("onscreen") or "")[:160] for i in need}
+    data = ai.ask(f"""Video: {title}. For each scene give 2-5 English words to search stock video (concrete, visual, no text).
+Scenes: {json.dumps(items, ensure_ascii=False)}
+Return JSON: {{"<scene number>":"words"}}""", "queries", "cheap")
+    for k, v in (data or {}).items():
+        if k.isdigit() and int(k) < len(scenes) and isinstance(v, str):
+            scenes[int(k)]["q"] = v
+    return scenes
 
 
 def fix_flagged(script_id, flags):

@@ -479,19 +479,36 @@ function editLang(sid) {
 async function sVideo(b, { p, scripts, src, iid }) {
   if (!src) return sProto(b, { p, src, iid });
   const lib = (await api(`/api/videos?project_id=${p.id}`)).filter(v => !v.script_id);
+  const fs = S.meta.footage || {}, ready = fs.pexels || fs.pixabay || fs.own || fs.ai;
   b.innerHTML = `<div class="card"><h2>${I('zap')}Vytvoriť videá pre všetky jazyky</h2>
-    <p class="muted small">Vyber podkladové video (napr. tvoje zábery bez hovoreného slova) a appka doň vloží hlas v každom jazyku. Texty na obrazovku zo scenára sa do videa pridajú automaticky. Bez podkladu urobí video vo farbách tvojho dizajnu.</p>
-    <div class="row"><select id="baseVid" style="max-width:420px"><option value="">Bez podkladu (farby dizajnu + texty + hlas)</option>${lib.map(v => `<option value="${v.id}">${esc(v.title || v.original_name)}</option>`).join('')}</select>
-    <button class="btn" onclick="videosAll(${iid})">${I('film')}Vytvoriť videá</button><span class="small dim">alebo nahraj vlastné video ku každému jazyku nižšie</span></div></div>
+    <div class="g2" style="align-items:end"><div><label class="l">Štýl videa</label><select id="vStyle" onchange="$('#baseWrap').style.display=this.value==='base'?'':'none';$('#shotsWrap').style.display=this.value==='broll'?'':'none'">
+      <option value="broll" ${ready ? 'selected' : ''}>Zábery + titulky slovo po slove (odporúčam)</option><option value="color" ${ready ? '' : 'selected'}>Farby dizajnu + texty</option><option value="base">Moje podkladové video + hlas</option></select></div>
+    <div id="baseWrap" style="display:none"><label class="l">Podkladové video</label><select id="baseVid"><option value="">—</option>${lib.map(v => `<option value="${v.id}">${esc(v.title || v.original_name)}</option>`).join('')}</select></div></div>
+    ${ready ? '' : `<div class="hint" style="margin-top:12px">${I('alert')}<div>Na zábery zadaj bezplatný kľúč Pexels v <a href="#/nastavenia">Nastaveniach → Zábery a hudba</a>, alebo daj svoje zábery do priečinka Moje zábery.</div></div>`}
+    <div class="row" style="margin-top:14px"><button class="btn" onclick="videosAll(${iid})">${I('film')}Vytvoriť videá vo všetkých jazykoch</button><span class="small dim">alebo nahraj vlastné video ku každému jazyku nižšie</span></div></div>
+  <div class="card" id="shotsWrap" style="${ready ? '' : 'display:none'}"><div class="row"><h2 style="margin:0">${I('film')}Zábery po scénach</h2><span class="sp"></span><button class="btn sec sm" onclick="shotsPick(${iid})">${I('refresh', 's')}Vybrať zábery</button></div>
+    <p class="small dim">Rovnaké zábery sa použijú vo všetkých jazykoch. Nepáči sa ti záber? Zmeň slová a daj „Vymeniť“.</p><div id="shotsBox" class="small dim">Načítavam…</div></div>
   <div class="card"><h2>${I('film')}Videá podľa jazyka</h2>
     ${scripts.map(s => { const v = s.videos[0]; return `<div class="lang-row" style="grid-template-columns:150px 1fr auto"><div><b>${langName(s.lang)}</b></div>
       <div class="row">${v ? `<video src="/api/file?path=${encodeURIComponent(v.file_path)}" preload="metadata" style="height:90px;aspect-ratio:9/16;object-fit:cover" controls></video><span class="small muted">${v.duration ? Math.round(v.duration) + ' s' : ''}${s.videos.length > 1 ? ` · ${s.videos.length} verzie` : ''}</span>` : '<span class="small dim">bez videa</span>'}</div>
       <div class="row"><label class="btn sec sm" style="cursor:pointer">${I('upload', 's')}Vlastné<input type="file" accept="video/*" class="hidden" onchange="attachVid(${s.id},this.files[0])"></label>
       <button class="btn ghost sm" onclick="oneVideo(${s.id})" title="Vytvoriť znova">${I('refresh', 's')}</button></div></div>`; }).join('')}</div>
   <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="go('p/${p.id}/v/${iid}/siete')">Ďalej: siete${I('right')}</button></div>`;
+  loadShots(iid);
 }
-async function videosAll(iid) { const base = $('#baseVid').value; const r = await api(`/api/ideas/${iid}/videos-all`, { method: 'POST', body: base ? { base_video_id: +base } : {} }, 'Vytváram hlasy a videá…'); toast(`Hotových ${r.created} videí` + (r.errors.length ? ' · chyby: ' + r.errors.join('; ') : ''), !!r.errors.length); render(); }
-async function oneVideo(sid) { const base = $('#baseVid').value; await api(`/api/scripts/${sid}/to-video`, { method: 'POST', body: base ? { base_video_id: +base } : {} }, 'Vytváram video…'); render(); }
+function vOpts() { const st = $('#vStyle')?.value || 'color', base = $('#baseVid')?.value; return st === 'base' && base ? { style: 'base', base_video_id: +base } : { style: st === 'base' ? 'color' : st }; }
+async function loadShots(iid) {
+  const box = $('#shotsBox'); if (!box) return;
+  const d = await api(`/api/ideas/${iid}/shots`);
+  if (!d.scenes.some(sc => sc.shots.length)) { box.innerHTML = 'Zábery ešte nie sú vybrané – vyberú sa samé pri vytvorení videa, alebo klikni „Vybrať zábery“.'; return; }
+  box.innerHTML = d.scenes.map((sc, i) => `<div class="vrow" style="align-items:center;flex-wrap:wrap"><b style="min-width:22px">${i + 1}.</b>
+    ${sc.shots.map(f => f.kind === 'photo' ? `<img src="/api/file?path=${encodeURIComponent(f.path)}" style="height:96px;aspect-ratio:9/16;object-fit:cover;border-radius:8px">` : `<video src="/api/file?path=${encodeURIComponent(f.path)}#t=1" muted preload="metadata" style="height:96px;aspect-ratio:9/16;object-fit:cover;border-radius:8px" onmouseenter="this.play()" onmouseleave="this.pause()"></video>`).join('') || '<span class="dim">nič</span>'}
+    <div style="flex:1;min-width:180px"><div class="small muted">${esc(sc.onscreen || '')}</div><div class="row" style="margin-top:6px"><input id="sq${i}" value="${esc(sc.q)}" style="flex:1"><button class="btn sec sm" onclick="shotSwap(${iid},${i})">${I('refresh', 's')}Vymeniť</button></div></div></div>`).join('') + '<p class="small dim" style="margin-top:8px">Zábery: Pexels, Pixabay (bezplatná licencia) a tvoje vlastné.</p>';
+}
+async function shotsPick(iid) { await api(`/api/ideas/${iid}/shots`, { method: 'POST', body: {} }, 'Hľadám zábery…'); loadShots(iid); }
+async function shotSwap(iid, i) { await api(`/api/ideas/${iid}/shots`, { method: 'POST', body: { scene: i, q: $('#sq' + i).value } }, 'Hľadám iný záber…'); loadShots(iid); }
+async function videosAll(iid) { const r = await api(`/api/ideas/${iid}/videos-all`, { method: 'POST', body: vOpts() }, 'Vytváram hlasy a videá… (pár minút)'); toast(`Hotových ${r.created} videí` + (r.errors.length ? ' · chyby: ' + r.errors.join('; ') : ''), !!r.errors.length); render(); }
+async function oneVideo(sid) { await api(`/api/scripts/${sid}/to-video`, { method: 'POST', body: vOpts() }, 'Vytváram video…'); render(); }
 async function attachVid(sid, f) { if (!f) return; const fd = new FormData(); fd.append('file', f); await api(`/api/scripts/${sid}/attach-video`, { method: 'POST', body: fd }, 'Nahrávam video…'); toast('Video pridané'); render(); }
 
 async function sSocial(b, { p, scripts, src, iid }) {
@@ -694,6 +711,17 @@ async function pSettings(m) {
     <button class="btn sm" onclick="saveVoiceSet()">${I('check', 's')}Uložiť</button>
     <label class="l" style="margin-top:16px">Vypočuj si hlasy</label><div class="row"><select id="tL" onchange="loadVoiceList()">${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select></div>
     <div id="vList" class="vlist"></div></div>
+  <div class="card"><h2>${I('film')}Zábery a hudba</h2>
+    <p class="small muted">Videá sa skladajú zo záberov: najprv tvoje vlastné (priečinok Moje zábery, názov súboru = o čom je záber, napr. <i>varenie-cestoviny.mp4</i>), potom bezplatné Pexels a Pixabay, a keď nič nenájde, AI obrázok (Cloudflare, zadarmo denne). Stiahnuté zábery si appka pamätá. V knižnici: <b>${S.meta.footage?.library || 0}</b> · tvojich: <b>${S.meta.footage?.own || 0}</b> · hudby: <b>${S.meta.footage?.music || 0}</b></p>
+    <div class="row" style="margin-bottom:10px"><button class="btn sec sm" onclick="api('/api/open-folder',{method:'POST',body:{which:'own'}})">${I('upload', 's')}Otvoriť Moje zábery</button><button class="btn sec sm" onclick="api('/api/open-folder',{method:'POST',body:{which:'music'}})">${I('volume', 's')}Otvoriť Hudbu</button></div>
+    <details><summary class="small">Ako získam kľúče (zadarmo)</summary><ol class="small muted">
+      <li><b>Pexels</b>: <a href="https://www.pexels.com/api/new/" target="_blank">pexels.com/api</a> → prihlás sa → vyplň krátky formulár → skopíruj API key.</li>
+      <li><b>Pixabay</b>: <a href="https://pixabay.com/api/docs/" target="_blank">pixabay.com/api/docs</a> → prihlás sa → kľúč je priamo na stránke (zelený).</li>
+      <li><b>AI obrázky</b> (voliteľné): <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank">Cloudflare → API Tokens</a> → Create Token → šablóna <i>Workers AI</i>. Account ID nájdeš vpravo na <a href="https://dash.cloudflare.com/" target="_blank">hlavnej stránke</a>.</li>
+      <li><b>Hudba</b>: stiahni bezplatné skladby (napr. Pixabay Music alebo YouTube Audio Library) do priečinka Hudba. Hrá potichu pod hlasom.</li></ol></details>
+    <div class="g2"><div><label class="l">Pexels kľúč</label><input id="fxPx" type="password" placeholder="${S.meta.footage?.pexels ? 'uložený' : ''}"></div><div><label class="l">Pixabay kľúč</label><input id="fxPb" type="password" placeholder="${S.meta.footage?.pixabay ? 'uložený' : ''}"></div>
+    <div><label class="l">Cloudflare Account ID</label><input id="fxCa" type="password" placeholder="${S.meta.footage?.ai ? 'uložené' : ''}"></div><div><label class="l">Cloudflare token</label><input id="fxCt" type="password" placeholder="${S.meta.footage?.ai ? 'uložený' : ''}"></div></div>
+    <button class="btn sm" style="margin-top:10px" onclick="saveFx()">${I('check', 's')}Uložiť</button></div>
   <div class="card"><h2>${I('globe')}Preklady zadarmo (bez tokenov)</h2>
     <p class="small muted">Preklady do jazykov urobí bezplatný prekladač namiesto Clauda – Max limit ostane na vymýšľanie. Stačí jeden, najlepšie Microsoft (2 mil. znakov mesačne ≈ 55 videí v 36 jazykoch). Appka sa zastaví pred limitom, nič sa neplatí.</p>
     ${Object.entries(S.meta.mt || {}).map(([k, u]) => `<div class="vrow"><span style="min-width:90px"><b>${u.name}</b></span><span class="small ${u.enabled ? 'ok-t' : 'dim'}">${u.enabled ? 'zapnutý' : 'nenastavený'}</span><span style="flex:1"><div class="bar"><i style="width:${Math.min(100, Math.round(u.used / u.free * 100))}%"></i></div></span><span class="small dim">${Math.round(u.used / 1000)}k / ${u.free / 1000}k</span></div>`).join('')}
@@ -739,6 +767,7 @@ function voiceUsageHTML(g) {
   const pct = Math.min(100, Math.round(g.used / g.free * 100));
   return `<div class="hint">${I('check')}<div style="flex:1">Google hlasy zapnuté. Tento mesiac: <b>${g.used.toLocaleString('sk')}</b> z ${g.free.toLocaleString('sk')} znakov zadarmo (cca ${g.minutes} min)${g.spent ? ` · navyše cca <b>${g.spent} €</b>` : ''}.<div class="bar"><i style="width:${pct}%"></i></div></div></div>`;
 }
+async function saveFx() { const b = {}; [['fxPx', 'pexels_key'], ['fxPb', 'pixabay_key'], ['fxCa', 'cf_account'], ['fxCt', 'cf_ai_token']].forEach(([i, k]) => { const v = $('#' + i).value.trim(); if (v) b[k] = v; }); if (!Object.keys(b).length) return toast('Vlož aspoň jeden kľúč', true); await api('/api/settings', { method: 'POST', body: b }); toast('Uložené'); S.meta = await api('/api/meta'); render(); }
 async function saveMt() { const b = { mt_azure_region: $('#mtAzR').value.trim(), mt_google: $('#mtGo').checked }; if ($('#mtAz').value.trim()) b.mt_azure_key = $('#mtAz').value.trim(); if ($('#mtDl').value.trim()) b.mt_deepl_key = $('#mtDl').value.trim(); await api('/api/settings', { method: 'POST', body: b }); toast('Uložené'); S.meta = await api('/api/meta'); render(); }
 async function saveVoiceSet() { await api('/api/settings', { method: 'POST', body: { ...($('#gKey').value.trim() ? { google_tts_key: $('#gKey').value.trim() } : {}), google_tts_budget: +$('#gBud').value || 0 } }); toast('Uložené'); for (const k in VCACHE) delete VCACHE[k]; S.meta = await api('/api/meta'); render(); }
 const VCACHE = {};
