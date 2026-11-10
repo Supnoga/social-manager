@@ -306,6 +306,9 @@ def _send_one(acc, dm, text):
 
 
 def send(ids):
+    from .scheduler import dry_run
+    if dry_run():
+        raise RuntimeError("Režim nasucho: nič sa neodosiela ani nepublikuje.")
     _db()
     ok = fail = 0
     for did in ids:

@@ -62,7 +62,7 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
     if project_ids:
         accs = [a for a in accs if not a["project_id"] or a["project_id"] in project_ids]
     now = dt.datetime.now()
-    created, per_acc, empty, short = 0, [], [], []
+    created, per_acc, empty, short, items = 0, [], [], [], []
     for a in accs:
         cand = _candidates(a, platforms_of)
         if project_ids:
@@ -85,6 +85,9 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
                 cand.remove(v)
                 h = slots[0]
                 when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
+                items.append({"when": _fmt(when), "account": a["name"], "platform": a["platform"],
+                              "country": a.get("country") or "", "lang": v["lang"] or a["lang"] or "",
+                              "title": v["title"] or v["original_name"] or "", "video_id": v["id"]})
                 if not dry:
                     db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
                            (v["id"], a["id"], _fmt(when), "public", status))
@@ -98,6 +101,9 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
                 v = undated[0]
                 cand.remove(v)
                 when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
+                items.append({"when": _fmt(when), "account": a["name"], "platform": a["platform"],
+                              "country": a.get("country") or "", "lang": v["lang"] or a["lang"] or "",
+                              "title": v["title"] or v["original_name"] or "", "video_id": v["id"]})
                 if not dry:
                     db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
                            (v["id"], a["id"], _fmt(when), "public", status))
@@ -109,7 +115,7 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
         elif n < per_day * days:
             short.append(a["name"])
     return {"created": created, "accounts": per_acc, "empty": empty, "short": short, "review": status == "review",
-            "per_day": per_day}
+            "per_day": per_day, "items": sorted(items, key=lambda x: x["when"]), "dry": bool(dry)}
 
 
 def repeat_winners(pid, variations=True):

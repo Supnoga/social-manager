@@ -1,0 +1,15 @@
+# Alternatíva bez Dockeru: /etc/systemd/system/social-manager.service
+[Unit]
+Description=Social Manager (marketingová redakcia)
+After=network-online.target
+
+[Service]
+User=socialmanager
+WorkingDirectory=/opt/social-manager
+EnvironmentFile=/opt/social-manager/deploy/server.env
+Environment=SM_DATA_DIR=/var/lib/social-manager SM_NO_BROWSER=1 SM_SKIP_UPDATE=1 SM_AI_BACKEND=api
+ExecStart=/opt/social-manager/venv/bin/python -m app.main
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

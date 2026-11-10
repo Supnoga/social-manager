@@ -1,4 +1,5 @@
 """Plánovač: každých 30 s pozrie frontu a nahrá videá, ktorým nastal čas. Pri chybe skúsi znova (max 3x)."""
+import os
 import random
 import threading
 import time
@@ -27,6 +28,8 @@ def now_str():
 
 
 def process_one(post):
+    if dry_run():
+        return  # nasucho: nikdy nič nenahrať
     acc = db.one("SELECT * FROM accounts WHERE id=?", (post["account_id"],))
     vid = db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],))
     if not acc or not vid:
@@ -62,9 +65,17 @@ def process_one(post):
         state["current"] = None
 
 
+def dry_run():
+    """Režim nasucho (server, kým Oliver ostré publikovanie nepovolí): plánovač nič nenahráva, príspevky čakajú vo fronte."""
+    return os.environ.get("SM_DRY_RUN", "") == "1" or bool(db.get_setting("publish_dry_run", False))
+
+
 def tick():
     state["last_tick"] = now_str()
     if db.get_setting("paused", False):
+        return
+    if dry_run():
+        state["dry_run"] = True
         return
     due = db.q("SELECT * FROM posts WHERE status='queued' AND scheduled_at<=? ORDER BY scheduled_at LIMIT 5", (now_str(),))
     for p in due:
