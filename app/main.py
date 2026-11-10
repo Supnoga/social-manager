@@ -201,7 +201,8 @@ def api_meta():
                                                           ("claude_path", ""), ("public_base_url", ""), ("ttb_draft", False),
                                                           ("ttb_ai_label", False), ("cf_tunnel_token", ""),
                                                           ("jitter_min", 10), ("verify_files", {}),
-                                                          ("mt_azure_region", ""), ("mt_google", False)]},
+                                                          ("mt_azure_region", ""), ("mt_google", False),
+                                                          ("require_approval", True)]},
         "ttb_redirect": tiktok_business.redirect_uri(),
         "tunnel": tunnel.status(),
         "has": {"yt_client": bool(db.get_setting("yt_client")), "tt_creds": bool(db.get_setting("tt_client_key")),
@@ -211,6 +212,7 @@ def api_meta():
         "ffmpeg": bool(media.ffmpeg()),
         "google_tts": voices.google_usage(),
         "mt": __import__("app.translate", fromlist=["usage"]).usage(),
+        "review_count": db.one("SELECT COUNT(*) n FROM posts WHERE status='review'")["n"],
     }
 
 
@@ -219,7 +221,7 @@ def api_settings(data: dict = Body(...)):
     allowed = {"ai_mode", "model_creative", "model_cheap", "paused", "claude_path", "meta_api_version", "tt_mode",
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min",
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
-               "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google"}
+               "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -248,7 +250,7 @@ def dashboard():
         "ideas": db.one("SELECT COUNT(*) n FROM ideas WHERE status IN ('new','approved')")["n"],
         "accounts": db.one("SELECT COUNT(*) n FROM accounts")["n"],
         "posts": c,
-        "upcoming": _posts("p.status IN ('queued','uploading')", "p.scheduled_at", 12),
+        "upcoming": _posts("p.status IN ('queued','uploading','review')", "p.scheduled_at", 12),
         "recent": _posts("p.status IN ('done','failed')", "p.updated_at DESC", 12),
         "ai": ai.usage_summary(),
         "scheduler": scheduler.state,
@@ -445,7 +447,7 @@ def board(pid: int):
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
            WHERE s.idea_id=i.id AND p.status='done') posted,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
-           WHERE s.idea_id=i.id AND p.status IN ('queued','uploading')) queued,
+           WHERE s.idea_id=i.id AND p.status IN ('queued','uploading','review')) queued,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
            WHERE s.idea_id=i.id AND p.status='failed') failed
         FROM ideas i WHERE i.project_id=? AND i.status!='rejected' ORDER BY i.id DESC""", (pid,))
@@ -989,6 +991,7 @@ def schedule(data: dict = Body(...)):
     per_day = int(data.get("per_day") or len(times))
     privacy = data.get("privacy", "public")
     immediately = data.get("now", False)
+    status = "review" if db.get_setting("require_approval", True) and not data.get("approved") else "queued"
     all_acc = db.q("SELECT * FROM accounts")
     per_account = {}
     skipped = []
@@ -1009,7 +1012,7 @@ def schedule(data: dict = Body(...)):
     # pokračuj za posledným naplánovaným postom daného účtu, nech sa nenahromadia
     created = 0
     for aid, vids in per_account.items():
-        last = db.one("SELECT MAX(scheduled_at) m FROM posts WHERE account_id=? AND status='queued'", (aid,))["m"]
+        last = db.one("SELECT MAX(scheduled_at) m FROM posts WHERE account_id=? AND status IN ('queued','review')", (aid,))["m"]
         st = start
         if last and not immediately and not data.get("start"):
             st = max(start, datetime.fromisoformat(last) + timedelta(minutes=1))
@@ -1017,10 +1020,74 @@ def schedule(data: dict = Body(...)):
         for vid in vids:
             jit = int(db.get_setting("jitter_min", 10) or 0)
             when = datetime.now() if immediately else next(gen) + timedelta(minutes=random.randint(0, jit) if jit else 0)
-            db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy) VALUES(?,?,?,?)",
-                   (vid, aid, when.strftime("%Y-%m-%d %H:%M:%S"), privacy))
+            db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
+                   (vid, aid, when.strftime("%Y-%m-%d %H:%M:%S"), privacy, status))
             created += 1
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "skipped": skipped, "review": status == "review"}
+
+
+# ---------------- Kontrola pred zverejnením ----------------
+def _review_rows():
+    return db.q("""SELECT p.id post_id, p.scheduled_at, a.platform, a.name account, v.id video_id, v.lang, v.title,
+                          v.caption, v.hashtags, v.file_path, v.project_id, v.original_name, s.idea_id, s.is_source
+                   FROM posts p JOIN videos v ON v.id=p.video_id JOIN accounts a ON a.id=p.account_id
+                   LEFT JOIN scripts s ON s.id=v.script_id WHERE p.status='review' ORDER BY p.scheduled_at""")
+
+
+@app.get("/api/review")
+def review_list():
+    """Na schválenie: zoskupené podľa nápadu (originál + všetky jazyky), aby sa schvaľovalo jedným klikom."""
+    groups = {}
+    for r in _review_rows():
+        key = f"i{r['idea_id']}" if r["idea_id"] else f"v{r['video_id']}"
+        g = groups.setdefault(key, {"key": key, "project_id": r["project_id"], "first": r["scheduled_at"],
+                                    "langs": {}, "accounts": set(), "posts": 0, "platforms": set()})
+        g["posts"] += 1
+        g["accounts"].add(r["account"])
+        g["platforms"].add(r["platform"])
+        L = g["langs"].setdefault(r["lang"] or "-", {"lang": r["lang"], "video_id": r["video_id"], "title": r["title"] or r["original_name"],
+                                                       "caption": r["caption"], "hashtags": r["hashtags"], "file": r["file_path"],
+                                                       "source": bool(r["is_source"]), "posts": 0})
+        L["posts"] += 1
+    out = []
+    for g in groups.values():
+        langs = sorted(g["langs"].values(), key=lambda x: (not x["source"], x["lang"] or ""))
+        out.append({"key": g["key"], "project_id": g["project_id"], "first": g["first"], "posts": g["posts"],
+                    "accounts": len(g["accounts"]), "platforms": sorted(g["platforms"]), "langs": langs,
+                    "title": langs[0]["title"]})
+    return out
+
+
+def _review_ids(keys):
+    ids = []
+    for r in _review_rows():
+        key = f"i{r['idea_id']}" if r["idea_id"] else f"v{r['video_id']}"
+        if keys == "all" or key in keys:
+            ids.append(r["post_id"])
+    return ids
+
+
+@app.post("/api/review/approve")
+def review_approve(data: dict = Body(...)):
+    """Schváli a pustí von. Čo už malo byť zverejnené, pôjde hneď (rozložené po minútach)."""
+    ids = _review_ids(data.get("keys") or "all")
+    now = datetime.now()
+    for i, pid in enumerate(ids):
+        row = db.one("SELECT scheduled_at FROM posts WHERE id=?", (pid,))
+        when = row["scheduled_at"]
+        if datetime.fromisoformat(when) < now:
+            when = (now + timedelta(minutes=i // 3, seconds=random.randint(0, 50))).strftime("%Y-%m-%d %H:%M:%S")
+        db.run("UPDATE posts SET status='queued', scheduled_at=? WHERE id=?", (when, pid))
+    return {"approved": len(ids)}
+
+
+@app.post("/api/review/reject")
+def review_reject(data: dict = Body(...)):
+    """Vráti na úpravu: zruší naplánovanie (videá ostanú, po oprave ich naplánuješ znova)."""
+    ids = _review_ids(data.get("keys") or [])
+    for pid in ids:
+        db.run("DELETE FROM posts WHERE id=?", (pid,))
+    return {"rejected": len(ids)}
 
 
 @app.get("/api/posts")

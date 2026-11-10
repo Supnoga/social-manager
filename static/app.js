@@ -18,6 +18,7 @@ const IC = {
   film: '<rect x="2" y="2" width="20" height="20" rx="2.18"/><path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5"/>',
   send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/>',
   trash: '<path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   play: '<polygon points="6 3 20 12 6 21 6 3"/>',
@@ -54,7 +55,7 @@ const I = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24">${IC[n] || ''}
 const PL = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', facebook: 'Facebook', linkedin: 'LinkedIn' };
 const PLATS = Object.keys(PL);
 const plat = (p, withName = true) => `<span class="plat-ic">${I(p)}${withName ? PL[p] : ''}</span>`;
-const ST = { queued: ['Naplánované', 'acc'], uploading: ['Nahráva sa', 'warn'], done: ['Zverejnené', 'ok'], failed: ['Chyba', 'bad'] };
+const ST = { review: ['Na schválenie', 'warn'], queued: ['Naplánované', 'acc'], uploading: ['Nahráva sa', 'warn'], done: ['Zverejnené', 'ok'], failed: ['Chyba', 'bad'] };
 const langName = c => (S.meta?.languages.find(l => l.code === c) || {}).name || c || '—';
 const STAGES = [
   ['napad', 'Nápad', 'bulb', 'Čo natočiť'],
@@ -130,6 +131,7 @@ function sidebar() {
   $('#side').innerHTML = `
     <div class="logo"><div class="mark">${I('play')}</div>Social Manager</div>
     ${nav('', 'home', 'Prehľad', !cur)}
+    <a class="nav ${cur === 'kontrola' ? 'on' : ''}" href="#/kontrola">${I('eye')}Kontrola${S.meta.review_count ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.meta.review_count}</span>` : ''}</a>
     ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${cur === 'p' && +r[1] === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt">${p.ideas}</span></a>`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
@@ -151,6 +153,7 @@ async function render() {
   try {
     if (!r[0]) await pHome(m);
     else if (r[0] === 'kalendar') await pCalendar(m);
+    else if (r[0] === 'kontrola') await pReview(m);
     else if (r[0] === 'ucty') await pAccounts(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
     else if (r[0] === 'novy') pProjectForm(m, null);
@@ -577,8 +580,29 @@ function scheduleDialog(pid) {
 async function doSchedule(ids, now) {
   const times = $('#sTimes').value.split(',').map(s => s.trim()).filter(Boolean);
   const r = await api('/api/posts/schedule', { method: 'POST', body: { video_ids: ids, platforms: $$('[name=pp]:checked').map(c => c.value), start: $('#sStart').value, times, per_day: times.length, privacy: $('#sPriv').value, now } });
-  closeModal(); toast(`Naplánovaných ${r.created}` + (r.skipped.length ? ` · ${r.skipped.length} videí nemá účet` : ''), !r.created); render();
+  closeModal(); toast(`Naplánovaných ${r.created}` + (r.review ? ' · čakajú na tvoje schválenie v Kontrole' : '') + (r.skipped.length ? ` · ${r.skipped.length} videí nemá účet` : ''), !r.created); render();
 }
+
+// ================= KONTROLA PRED ZVEREJNENÍM =================
+async function pReview(m) {
+  const groups = await api('/api/review');
+  const total = groups.reduce((a, g) => a + g.posts, 0);
+  m.innerHTML = `<div class="top"><div><h1>Kontrola</h1><p class="sub">Pozri si video a pusti ho von jedným klikom – naraz vo všetkých jazykoch a na všetkých účtoch.</p></div>
+    ${groups.length ? `<button class="btn" onclick="revApprove('all')">${I('check')}Schváliť všetko (${groups.length})</button>` : ''}</div>
+  ${groups.length ? groups.map((g, gi) => { const proj = S.projects.find(p => p.id === g.project_id) || {}; const L = g.langs[0]; return `<div class="card rev" style="margin-bottom:14px">
+    <div class="rev-v"><video id="rv${gi}" src="/api/file?path=${encodeURIComponent(L.file)}" controls playsinline preload="metadata"></video></div>
+    <div class="rev-b"><div class="small dim"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${proj.color || '#666'};margin-right:6px"></span>${esc(proj.name || '')} · od ${esc(g.first.slice(0, 16).replace('T', ' '))}</div>
+      <h2 style="margin:6px 0 4px">${esc(g.title)}</h2>
+      <div class="small muted">${g.langs.length} ${g.langs.length === 1 ? 'jazyk' : g.langs.length < 5 ? 'jazyky' : 'jazykov'} · ${g.accounts} ${g.accounts === 1 ? 'účet' : g.accounts < 5 ? 'účty' : 'účtov'} · ${g.platforms.map(x => I(x, 's')).join(' ')} · spolu ${g.posts} zverejnení</div>
+      <div class="pick" style="margin:12px 0">${g.langs.map((l, li) => `<label class="${li ? '' : 'on'}" onclick="revLang(${gi},${li},this)" style="cursor:pointer">${esc(langName(l.lang))}${l.source ? ' ★' : ''}</label>`).join('')}</div>
+      <div id="rc${gi}" class="small" style="${L.caption || L.hashtags ? "" : "display:none;"}white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:140px;overflow:auto">${esc((L.caption || '') + (L.hashtags ? '\n' + L.hashtags : ''))}</div>
+      <div class="row" style="margin-top:14px"><button class="btn" onclick="revApprove(['${g.key}'])">${I('check')}Schváliť a pustiť</button><button class="btn sec" onclick="revReject('${g.key}')">${I('x')}Vrátiť na úpravu</button></div>
+    </div></div>`; }).join('') : `<div class="card empty">${I('check', 'l')}<p>Nič nečaká na schválenie.</p><p class="small dim">Keď naplánuješ videá, objavia sa tu. Kým ich neschváliš, nikam sa neodošlú.</p></div>`}`;
+  window._rev = groups;
+}
+function revLang(gi, li, el) { const l = window._rev[gi].langs[li]; $('#rv' + gi).src = '/api/file?path=' + encodeURIComponent(l.file); $('#rc' + gi).style.display = (l.caption || l.hashtags) ? '' : 'none'; $('#rc' + gi).textContent = (l.caption || '') + (l.hashtags ? '\n' + l.hashtags : ''); el.parentNode.querySelectorAll('label').forEach(x => x.classList.remove('on')); el.classList.add('on'); }
+async function revApprove(keys) { const r = await api('/api/review/approve', { method: 'POST', body: { keys } }); toast(`Schválené: ${r.approved} zverejnení ide von`); S.meta = await api('/api/meta'); render(); }
+async function revReject(key) { if (!confirm('Zrušiť naplánovanie tohto videa vo všetkých jazykoch? Videá ostanú, po oprave ich naplánuješ znova.')) return; const r = await api('/api/review/reject', { method: 'POST', body: { keys: [key] } }); toast(`Vrátené (${r.rejected})`); S.meta = await api('/api/meta'); render(); }
 
 // ================= PUBLIKOVANIE =================
 async function pCalendar(m) {
@@ -589,7 +613,7 @@ async function pCalendar(m) {
   const dn = d => new Date(d + 'T12:00').toLocaleDateString('sk', { weekday: 'long', day: 'numeric', month: 'long' });
   m.innerHTML = `<div class="top"><div><h1>Publikovanie</h1><p class="sub">Appka nahráva videá sama v naplánovaný čas, keď je zapnutá. Pri chybe to skúsi ešte 2×.</p></div><span class="sp"></span>
     <button class="btn ${paused ? '' : 'sec'}" onclick="api('/api/settings',{method:'POST',body:{paused:${!paused}}}).then(render)">${I(paused ? 'play' : 'pause')}${paused ? 'Spustiť plánovač' : 'Pozastaviť'}</button></div>
-  <div class="seg" style="margin-bottom:16px">${[['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash='#/kalendar?f=${k}'">${n}</button>`).join('')}</div>
+  <div class="seg" style="margin-bottom:16px">${[['review', 'Na schválenie'], ['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash='#/kalendar?f=${k}'">${n}</button>`).join('')}</div>
   ${Object.keys(days).length ? Object.entries(days).map(([d, list]) => `<div class="card"><h2>${I('calendar', 's')}${dn(d)} <span class="chip">${list.length}</span></h2><table>${list.map(p => `<tr>
     <td style="width:60px" class="muted">${p.scheduled_at.slice(11, 16)}</td><td style="width:150px">${plat(p.platform)}<div class="small dim">${esc(p.account_name)}</div></td>
     <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color || '#666'};margin-right:6px"></span>${esc(p.title || p.original_name)} <span class="chip">${esc((p.lang || '').toUpperCase())}</span>${p.error ? `<div class="small ${p.status === 'failed' ? 'bad-t' : 'dim'}">${esc(p.error.slice(0, 260))}</div>` : ''}${p.url && !p.url.startsWith('http') ? `<div class="small muted">${esc(p.url)}</div>` : ''}</td>
@@ -703,6 +727,7 @@ async function pSettings(m) {
     <label class="l">Náhodný posun času publikovania (min)</label><input id="jit" type="number" value="${st.jitter_min}" style="max-width:120px">
     <div style="margin-top:12px"><button class="btn sm" onclick="savePub()">${I('check', 's')}Uložiť</button></div></div>
   <div class="card"><h2>${I('settings')}Ostatné</h2><p class="small muted">Video nástroj: ${S.meta.ffmpeg ? '<span class="ok-t">OK</span>' : '<span class="bad-t">chýba</span>'} · Dáta sú v priečinku <code>data</code> vedľa appky.</p>
+    <label class="row" style="margin-top:4px"><input type="checkbox" id="reqApp" ${st.require_approval !== false ? 'checked' : ''} onchange="api('/api/settings',{method:'POST',body:{require_approval:this.checked}}).then(()=>toast('Uložené'))"> Pred zverejnením chcem videá schváliť (Kontrola)</label>
     <label class="l">Verzia Meta API</label><input id="metaV" value="${esc(st.meta_api_version)}" style="max-width:160px"></div>
   </div></div>`;
   loadUpd(); loadVoiceList();

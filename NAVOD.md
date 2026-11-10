@@ -27,7 +27,8 @@ Odvtedy stačí **dvojklik na ikonku**. Appka beží na pozadí bez čierneho ok
    5. **Siete** – tabuľka jazyky × siete, naplánuješ alebo zverejníš hneď.
 3. **Knižnica** – hromadné videá: pretiahni ich alebo pridaj celý priečinok (jazyk sa spozná z názvu `recept_de.mp4` alebo z priečinka `/de/`).
 4. **Účty a siete** – pripoj kanály a pri každom nastav **projekt a jazyk**.
-5. **Publikovanie** – kalendár po dňoch, chyby sa dajú zopakovať jedným klikom.
+5. **Kontrola** – všetko naplánované najprv čaká tu. Pozrieš video (prepínaš jazyky), a **Schváliť a pustiť** ho pošle vo všetkých jazykoch na všetky účty naraz. **Vrátiť na úpravu** zruší naplánovanie. Vypnúť sa dá v Nastaveniach → Ostatné.
+6. **Publikovanie** – kalendár po dňoch, chyby sa dajú zopakovať jedným klikom.
 
 ## 3. Pripojenie platforiem
 
