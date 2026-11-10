@@ -11,15 +11,15 @@ setInterval(cmRefreshCount, 5 * 60000); setTimeout(cmRefreshCount, 1500);
 async function pComments(m) {
   const q = new URLSearchParams(location.hash.split('?')[1] || '');
   const f = q.has('f') ? q.get('f') : 'new';
-  const d = await api('/api/comments?status=' + encodeURIComponent(f));
+  const d = await api('/api/comments?status=' + encodeURIComponent(f) + (S.pf ? '&project_id=' + S.pf : ''));
   S.cmCount = (d.counts.new || 0) + (d.counts.draft || 0); sidebar();
   const nNew = d.counts.new || 0, nDraft = d.counts.draft || 0, st = d.settings;
   const errs = Object.values(d.errors || {});
-  m.innerHTML = `<div class="top"><div><h1>Komentáre</h1><p class="sub">Komentáre zo všetkých účtov na jednom mieste. AI navrhne odpoveď v jazyku komentára, ty ju schváliš.</p></div><div class="sp"></div>
+  m.innerHTML = `<div class="top"><div>${pTitle('Komentáre')}<p class="sub">Komentáre zo všetkých účtov na jednom mieste. AI navrhne odpoveď v jazyku komentára, ty ju schváliš.</p></div><div class="sp"></div>
     <button class="btn sec" onclick="cmFetch()">${I('refresh')}Načítať nové</button>
     ${nNew ? `<button class="btn sec" onclick="cmDraft()">${I('bot')}Navrhnúť odpovede (${nNew})</button>` : ''}
     ${nDraft ? `<button class="btn" onclick="cmSendAll(${nDraft})">${I('send')}Odoslať všetky návrhy (${nDraft})</button>` : ''}</div>
-  <div class="seg" style="margin-bottom:14px">${[['new', 'Na vybavenie'], ['sent', 'Odoslané'], ['skip', 'Preskočené'], ['answered', 'Už zodpovedané'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash='#/komentare?f=${k}'">${n}</button>`).join('')}</div>
+  <div class="seg" style="margin-bottom:14px">${[['new', 'Na vybavenie'], ['sent', 'Odoslané'], ['skip', 'Preskočené'], ['answered', 'Už zodpovedané'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash=here()+'?f=${k}'">${n}</button>`).join('')}</div>
   <div class="small dim" style="margin-bottom:10px">${d.state.running ? 'Práve načítavam…' : d.state.last_fetch ? 'Naposledy načítané ' + esc(d.state.last_fetch) : 'Komentáre sa načítajú samé každé 3 hodiny.'}</div>
   ${errs.length ? `<div class="hint" style="margin-bottom:14px;background:var(--warnSoft);border-color:rgba(245,176,0,.35)">${I('alert')}<div>${errs.map(e => `<div><b>${esc(PL[e.platform] || e.platform)} · ${esc(e.name)}:</b> ${esc(e.error)}</div>`).join('')}</div></div>` : ''}
   ${d.items.length ? d.items.map(cmCard).join('') : `<div class="card">${empty('message', f === 'new' ? 'Žiadne nové komentáre. Komentáre sa zbierajú z videí zverejnených cez appku.' : 'Nič tu nie je.')}</div>`}

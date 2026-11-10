@@ -291,7 +291,11 @@ PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_la
 @app.get("/api/projects")
 def projects():
     rows = db.q("""SELECT p.*, (SELECT COUNT(*) FROM videos v WHERE v.project_id=p.id) videos,
-                   (SELECT COUNT(*) FROM ideas i WHERE i.project_id=p.id AND i.status NOT IN ('rejected','inbox','snoozed')) ideas FROM projects p ORDER BY p.id""")
+                   (SELECT COUNT(*) FROM ideas i WHERE i.project_id=p.id AND i.status NOT IN ('rejected','inbox','snoozed')) ideas,
+                   (SELECT COUNT(*) FROM ideas i WHERE i.project_id=p.id AND i.status='inbox') inbox,
+                   (SELECT COUNT(*) FROM posts po JOIN videos v ON v.id=po.video_id WHERE v.project_id=p.id AND po.status='review') review,
+                   (SELECT COUNT(*) FROM posts po JOIN videos v ON v.id=po.video_id WHERE v.project_id=p.id AND po.status='failed') failed
+                   FROM projects p ORDER BY p.id""")
     for r in rows:
         r["languages"] = json.loads(r["languages"] or "[]")
         r["strategy"] = json.loads(r["strategy"]) if r["strategy"] else None

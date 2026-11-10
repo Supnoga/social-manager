@@ -203,3 +203,7 @@ input[type=range]{accent-color:var(--acc);width:100%}
 .rev-b{flex:1;min-width:0}
 .pick label.on{border-color:var(--acc);color:var(--acc)}
 @media (max-width:760px){.rev{flex-direction:column}.rev-v video{width:100%}}
+
+.subnav{margin:2px 0 8px 14px;padding-left:10px;border-left:1px solid var(--line)}
+.nav.sub{padding:7px 10px;font-size:13px}
+.nav.sub svg{width:15px;height:15px}

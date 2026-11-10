@@ -114,7 +114,7 @@ function manualAI(d) {
 }
 
 // ---------- routing ----------
-// #/  #/kalendar  #/ucty  #/nastavenia  #/p/ID/(videa|brief|kniznica|strategia)  #/p/ID/v/IDEA/STEP
+// #/  #/p/ID/(videa|kontrola|kalendar|radar/TAB|komentare|profily|brief|kniznica|strategia)  #/p/ID/v/IDEA/STEP  #/kontrola #/kalendar #/komentare (všetky projekty)
 const R = () => location.hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean);
 const go = h => { location.hash = '#/' + h; };
 window.addEventListener('hashchange', render);
@@ -125,21 +125,22 @@ async function loadBase() {
 }
 
 function sidebar() {
-  const r = R(), cur = r[0] || '';
-  const nav = (h, icon, label, on) => `<a class="nav ${on ? 'on' : ''}" href="#/${h}">${I(icon)}${label}</a>`;
+  const r = R(), cur = r[0] || '', inP = cur === 'p' ? +r[1] : 0, sec = inP ? (r[2] || 'videa') : '';
+  const nav = (h, icon, label, on, cnt) => `<a class="nav ${on ? 'on' : ''}" href="#/${h}">${I(icon)}${label}${cnt ? `<span class="cnt" style="color:var(--acc);font-weight:700">${cnt}</span>` : ''}</a>`;
+  const sub = (p, k, icon, label, cnt) => `<a class="nav sub ${inP === p.id && (sec === k || (k === 'videa' && ['videa', 'v', 'kniznica', 'strategia'].includes(sec))) ? 'on' : ''}" href="#/p/${p.id}/${k}">${I(icon, 's')}${label}${cnt ? `<span class="cnt" style="color:var(--acc);font-weight:700">${cnt}</span>` : ''}</a>`;
   const ai = S.meta.ai;
   $('#side').innerHTML = `
     <div class="logo"><div class="mark">${I('play')}</div>Social Manager</div>
     ${nav('', 'home', 'Prehľad', !cur)}
-    <a class="nav ${cur === 'kontrola' ? 'on' : ''}" href="#/kontrola">${I('eye')}Kontrola${S.meta.review_count ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.meta.review_count}</span>` : ''}</a>
-    ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
-    <a class="nav ${cur === 'radar' ? 'on' : ''}" href="#/radar">${I('radar')}Radar${S.meta.inbox_count ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.meta.inbox_count}</span>` : ''}</a>
-    <a class="nav ${cur === 'komentare' ? 'on' : ''}" href="#/komentare">${I('message')}Komentáre${S.cmCount ? `<span class="cnt" style="color:var(--acc);font-weight:700">${S.cmCount}</span>` : ''}</a>
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
-    ${S.projects.map(p => `<a class="nav ${cur === 'p' && +r[1] === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt">${p.ideas}</span></a>`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
+    ${S.projects.map(p => `<a class="nav ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
+      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
+    <div class="sec-t">Všetky projekty naraz</div>
+    ${nav('kontrola', 'eye', 'Kontrola', cur === 'kontrola', S.meta.review_count)}
+    ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
+    ${nav('komentare', 'message', 'Komentáre', cur === 'komentare', S.cmCount)}
     <div class="sec-t">Nastavenie</div>
     ${nav('ucty', 'link', 'Účty a siete', cur === 'ucty')}
-    ${nav('profily', 'user', 'Vzhľad účtov', cur === 'profily')}
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
     <div class="side-foot">
       <div class="status"><i class="${ai.cli_found ? '' : 'w'}"></i>Claude ${ai.cli_found ? 'pripojený' : 'v ručnom režime'}</div>
@@ -147,12 +148,17 @@ function sidebar() {
       <a class="small dim" style="display:block;margin-top:8px;cursor:pointer" onclick="quitApp()">Vypnúť appku</a>
     </div>`;
 }
+// aktuálny projekt (ak je stránka otvorená v projekte) – pre filtre a nadpisy
+const PF = () => S.pf ? S.projects.find(x => x.id === S.pf) : null;
+const here = () => location.hash.split('?')[0];
+const pTitle = t => { const p = PF(); return p ? `<div class="crumb"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color};margin-right:6px"></span>${esc(p.name)}</div><h1>${t}</h1>` : `<h1>${t}</h1>`; };
 
 async function render() {
   await loadBase();
   sidebar();
   const r = R(), m = $('#main');
   window.scrollTo(0, 0);
+  S.pf = r[0] === 'p' ? +r[1] : 0;
   try {
     if (!r[0]) await pHome(m);
     else if (r[0] === 'kalendar') await pCalendar(m);
@@ -166,18 +172,22 @@ async function render() {
     else if (r[0] === 'p') {
       const p = S.projects.find(x => x.id === +r[1]);
       if (!p) return go('');
-      if (r[2] === 'v') await pIdea(m, p, +r[3], r[4] || null);
-      else await pProject(m, p, r[2] || 'videa');
+      const sec = r[2] || 'videa';
+      if (sec === 'v') await pIdea(m, p, +r[3], r[4] || null);
+      else if (sec === 'kontrola') await pReview(m);
+      else if (sec === 'kalendar') await pCalendar(m);
+      else if (sec === 'radar') await pRadar(m);
+      else if (sec === 'komentare') await pComments(m);
+      else if (sec === 'profily') await pProfiles(m);
+      else await pProject(m, p, sec);
     }
   } catch (e) { console.error(e); }
   const q = new URLSearchParams(location.hash.split('?')[1] || '');
   if (q.get('ok')) { toast('Účet pripojený: ' + q.get('ok')); history.replaceState(null, '', location.hash.split('?')[0]); }
   if (q.get('err')) { toast('Chyba: ' + q.get('err'), true); history.replaceState(null, '', location.hash.split('?')[0]); }
 }
-// spätná kompatibilita pre presmerovania z OAuth (#ucty?ok=..)
-if (/^#ucty/.test(location.hash)) location.hash = '#/ucty' + (location.hash.includes('?') ? '?' + location.hash.split('?')[1] : '');
 
-// ================= PREHĽAD =================
+
 async function pHome(m) {
   const d = await api('/api/dashboard');
   const ai = S.meta.ai;
@@ -609,10 +619,10 @@ async function doSchedule(ids, now) {
 
 // ================= KONTROLA PRED ZVEREJNENÍM =================
 async function pReview(m) {
-  const groups = await api('/api/review');
+  const groups = (await api('/api/review')).filter(g => !S.pf || g.project_id === S.pf);
   const total = groups.reduce((a, g) => a + g.posts, 0);
-  m.innerHTML = `<div class="top"><div><h1>Kontrola</h1><p class="sub">Pozri si video a pusti ho von jedným klikom – naraz vo všetkých jazykoch a na všetkých účtoch.</p></div>
-    ${groups.length ? `<button class="btn" onclick="revApprove('all')">${I('check')}Schváliť všetko (${groups.length})</button>` : ''}</div>
+  m.innerHTML = `<div class="top"><div>${pTitle('Kontrola')}<p class="sub">Pozri si video a pusti ho von jedným klikom – naraz vo všetkých jazykoch a na všetkých účtoch.</p></div>
+    ${groups.length ? `<button class="btn" onclick="revApprove(${S.pf ? `[${groups.map(g => `'${g.key}'`).join(',')}]` : `'all'`})">${I('check')}Schváliť všetko (${groups.length})</button>` : ''}</div>
   ${groups.length ? groups.map((g, gi) => { const proj = S.projects.find(p => p.id === g.project_id) || {}; const L = g.langs[0]; return `<div class="card rev" style="margin-bottom:14px">
     <div class="rev-v"><video id="rv${gi}" src="/api/file?path=${encodeURIComponent(L.file)}" controls playsinline preload="metadata"></video></div>
     <div class="rev-b"><div class="small dim"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${proj.color || '#666'};margin-right:6px"></span>${esc(proj.name || '')} · od ${esc(g.first.slice(0, 16).replace('T', ' '))}</div>
@@ -631,14 +641,14 @@ async function revReject(key) { if (!confirm('Zrušiť naplánovanie tohto videa
 // ================= PUBLIKOVANIE =================
 async function pCalendar(m) {
   const f = new URLSearchParams(location.hash.split('?')[1] || '').get('f') ?? 'queued';
-  const posts = await api('/api/posts?status=' + f);
+  const posts = (await api('/api/posts?status=' + f)).filter(p => !S.pf || p.project_id === S.pf);
   const paused = S.meta.settings.paused;
   const days = {}; posts.forEach(p => (days[p.scheduled_at.slice(0, 10)] ||= []).push(p));
   const dn = d => new Date(d + 'T12:00').toLocaleDateString('sk', { weekday: 'long', day: 'numeric', month: 'long' });
-  m.innerHTML = `<div class="top"><div><h1>Publikovanie</h1><p class="sub">Appka nahráva videá sama v naplánovaný čas, keď je zapnutá. Pri chybe to skúsi ešte 2×.</p></div><span class="sp"></span>
+  m.innerHTML = `<div class="top"><div>${pTitle('Publikovanie')}<p class="sub">Appka nahráva videá sama v naplánovaný čas, keď je zapnutá. Pri chybe to skúsi ešte 2×.</p></div><span class="sp"></span>
     <button class="btn" onclick="planDialog()">${I('calendar')}Naplánovať týždeň</button>
     <button class="btn ${paused ? '' : 'sec'}" onclick="api('/api/settings',{method:'POST',body:{paused:${!paused}}}).then(render)">${I(paused ? 'play' : 'pause')}${paused ? 'Spustiť plánovač' : 'Pozastaviť'}</button></div>
-  <div class="seg" style="margin-bottom:16px">${[['review', 'Na schválenie'], ['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash='#/kalendar?f=${k}'">${n}</button>`).join('')}</div>
+  <div class="seg" style="margin-bottom:16px">${[['review', 'Na schválenie'], ['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash=here()+'?f=${k}'">${n}</button>`).join('')}</div>
   ${Object.keys(days).length ? Object.entries(days).map(([d, list]) => `<div class="card"><h2>${I('calendar', 's')}${dn(d)} <span class="chip">${list.length}</span></h2><table>${list.map(p => `<tr>
     <td style="width:60px" class="muted">${p.scheduled_at.slice(11, 16)}</td><td style="width:150px">${plat(p.platform)}<div class="small dim">${esc(p.account_name)}</div></td>
     <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color || '#666'};margin-right:6px"></span>${esc(p.title || p.original_name)} <span class="chip">${esc((p.lang || '').toUpperCase())}</span>${p.error ? `<div class="small ${p.status === 'failed' ? 'bad-t' : 'dim'}">${esc(p.error.slice(0, 260))}</div>` : ''}${p.url && !p.url.startsWith('http') ? `<div class="small muted">${esc(p.url)}</div>` : ''}</td>

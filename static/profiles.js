@@ -3,13 +3,13 @@ IC.user = '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0
 
 async function pProfiles(m) {
   if (!S.projects.length) { m.innerHTML = `<div class="card">${empty('user', 'Najprv vytvor projekt.')}</div>`; return; }
-  const r = R(), pid = +r[1] || S.profP || S.projects[0].id; S.profP = pid;
+  const r = R(), pid = S.pf || +r[1] || S.profP || S.projects[0].id; S.profP = pid;
   const p = S.projects.find(x => x.id === pid) || S.projects[0];
   const d = await api('/api/profiles/' + p.id);
   const k = d.kit, t = Date.now();
   const stc = { done: ['hotovo', 'ok'], manual: ['treba ručne', 'acc'], ready: ['pripravené', ''] };
-  m.innerHTML = `<div class="top"><div><h1>Vzhľad účtov</h1><p class="sub">Profilovka, pozadie a popis naraz pre všetky účty projektu. Popis sa preloží do jazyka každého účtu zadarmo.</p></div><span class="sp"></span>
-    <select onchange="go('profily/'+this.value)" style="max-width:240px">${S.projects.map(x => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+  m.innerHTML = `<div class="top"><div>${pTitle('Vzhľad účtov')}<p class="sub">Profilovka, pozadie a popis naraz pre všetky účty projektu. Popis sa preloží do jazyka každého účtu zadarmo.</p></div><span class="sp"></span>
+    ${S.pf ? '' : `<select onchange="go('p/'+this.value+'/profily')" style="max-width:240px">${S.projects.map(x => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}</div>
   <div class="card"><h2>${I('palette')}1. Spoločný vzhľad projektu</h2>
     <div class="g2"><div><label class="l">Profilová fotka (logo, štvorec)</label>
       ${k.avatar_ok ? `<img src="/api/profiles/${p.id}/img/profilovka.jpg?${t}" style="width:96px;height:96px;border-radius:50%;object-fit:cover;display:block;margin-bottom:8px">` : ''}

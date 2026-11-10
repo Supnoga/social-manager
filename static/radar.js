@@ -11,14 +11,14 @@ const STAGE = { rastie: ['rastie', 'ok'], vrchol: ['vrchol', 'acc'], slabne: ['s
 const SRC = { gtrends: 'Google Trendy', news: 'Správy', wiki: 'Wikipédia', yt_pop: 'YouTube' };
 
 async function pRadar(m) {
-  const r = R(), tab = r[2] || 'napady';
+  const r = R(), tab = (S.pf ? r[3] : r[2]) || 'napady';
   if (!S.projects.length) { m.innerHTML = `<div class="card">${empty('radar', 'Najprv vytvor projekt.')}</div>`; return; }
-  const pid = +r[1] || S.radarP || S.projects[0].id; S.radarP = pid;
+  const pid = S.pf || +r[1] || S.radarP || S.projects[0].id; S.radarP = pid;
   const p = S.projects.find(x => x.id === pid) || S.projects[0];
   const tabs = [['napady', 'inbox', 'Nápady'], ['udalosti', 'calendar', 'Udalosti'], ['trendy', 'trend', 'Trendy'], ['konkurencia', 'users', 'Konkurencia'], ['vysledky', 'chart', 'Výsledky']];
-  m.innerHTML = `<div class="top"><div><h1>Radar</h1><p class="sub">Appka sama sleduje trendy, konkurenciu a čísla tvojich videí. Claude z toho raz týždenne navrhne nápady.</p></div><span class="sp"></span>
-    <select onchange="go('radar/'+this.value+'/${tab}')" style="max-width:240px">${S.projects.map(x => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
-  <div class="tabs">${tabs.map(([k, ic, n]) => `<a href="#/radar/${p.id}/${k}" class="${tab === k ? 'on' : ''}">${I(ic, 's')}${n}</a>`).join('')}</div><div id="rbody"></div>`;
+  m.innerHTML = `<div class="top"><div>${pTitle('Radar')}<p class="sub">Appka sama sleduje trendy, konkurenciu a čísla tvojich videí. Claude z toho raz týždenne navrhne nápady.</p></div><span class="sp"></span>
+    ${S.pf ? '' : `<select onchange="go('p/'+this.value+'/radar/${tab}')" style="max-width:240px">${S.projects.map(x => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}</div>
+  <div class="tabs">${tabs.map(([k, ic, n]) => `<a href="#/p/${p.id}/radar/${k}" class="${tab === k ? 'on' : ''}">${I(ic, 's')}${n}</a>`).join('')}</div><div id="rbody"></div>`;
   const b = $('#rbody');
   if (tab === 'napady') await rInbox(b, p);
   else if (tab === 'udalosti') await rEvents(b, p);
@@ -59,7 +59,7 @@ async function rTrends(b, p) {
       <button class="btn ghost sm" title="Nezaujíma ma" onclick="rTrend(${p.id},'${t.key}','ignored')">${I('trash', 's')}</button></td></tr>`).join('')}</table></div>`
     : `<div class="card">${empty('trend', 'Zatiaľ žiadne trendy k tomuto projektu. Radar zbiera dáta na pozadí – prvé výsledky do hodiny. Ak projekt nemá popis, doplň ho, nech appka vie, čo hľadať.')}</div>`}`;
 }
-async function rTrend(pid, key, action) { const r = await api(`/api/radar/${pid}/trend`, { method: 'POST', body: { key, action } }, action === 'idea' ? 'Claude vymýšľa…' : null); if (action === 'idea') { toast(`Nápady v schránke: ${r.created}`); S.meta = await api('/api/meta'); return go(`radar/${pid}/napady`); } render(); }
+async function rTrend(pid, key, action) { const r = await api(`/api/radar/${pid}/trend`, { method: 'POST', body: { key, action } }, action === 'idea' ? 'Claude vymýšľa…' : null); if (action === 'idea') { toast(`Nápady v schránke: ${r.created}`); S.meta = await api('/api/meta'); return go(`p/${pid}/radar/napady`); } render(); }
 async function rKw(pid) { const r = await api(`/api/radar/${pid}/keywords`, { method: 'POST', body: {} }, 'Pripravujem kľúčové slová…'); toast(`Slová pre ${r.langs} jazykov`); render(); }
 async function rRun() { await api('/api/radar/run', { method: 'POST' }); toast('Radar beží na pozadí, o pár minút obnov stránku'); }
 
@@ -77,7 +77,7 @@ async function rComp(b, p) {
       <td style="text-align:right;white-space:nowrap"><button class="btn sm" onclick="rCompIdea(${p.id},${o.id})">${I('sparkles', 's')}Nápad</button><button class="btn ghost sm" onclick="api('/api/radar/${p.id}/comp-post/${o.id}',{method:'POST',body:{action:'hide'}}).then(render)">${I('x', 's')}</button></td></tr>`).join('')}</table>` : empty('zap', 'Zatiaľ nič výnimočné.')}</div></div>`;
 }
 async function rCompAdd(pid) { const r = await api(`/api/radar/${pid}/competitors`, { method: 'POST', body: { urls: $('#cUrls').value } }, 'Pridávam…'); toast(`Pridané: ${r.added.length}` + (r.errors.length ? ' · ' + r.errors.join('; ') : ''), !!r.errors.length); render(); }
-async function rCompIdea(pid, id) { const r = await api(`/api/radar/${pid}/comp-post/${id}`, { method: 'POST', body: { action: 'idea' } }, 'Claude vymýšľa…'); toast(`Nápady v schránke: ${r.created}`); S.meta = await api('/api/meta'); go(`radar/${pid}/napady`); }
+async function rCompIdea(pid, id) { const r = await api(`/api/radar/${pid}/comp-post/${id}`, { method: 'POST', body: { action: 'idea' } }, 'Claude vymýšľa…'); toast(`Nápady v schránke: ${r.created}`); S.meta = await api('/api/meta'); go(`p/${pid}/radar/napady`); }
 
 async function rResults(b, p) {
   const d = await api(`/api/results/${p.id}`);
@@ -97,14 +97,14 @@ async function rResults(b, p) {
   ${d.learnings ? `<div class="card"><h2>${I('bulb')}Čo appka posiela Claudovi</h2><p class="small dim">Pri vymýšľaní nápadov dostane Claude tento krátky výťah, aby staval na tom, čo funguje:</p><p class="small muted">${esc(d.learnings)}</p></div>` : ''}
   </div></div>`;
 }
-async function rRepeat(pid) { const r = await api(`/api/results/${pid}/repeat`, { method: 'POST' }, 'Claude vymýšľa variácie…'); toast(`Nových variácií v schránke: ${r.ideas}`); S.meta = await api('/api/meta'); go(`radar/${pid}/napady`); }
+async function rRepeat(pid) { const r = await api(`/api/results/${pid}/repeat`, { method: 'POST' }, 'Claude vymýšľa variácie…'); toast(`Nových variácií v schránke: ${r.ideas}`); S.meta = await api('/api/meta'); go(`p/${pid}/radar/napady`); }
 
 // ---------- Naplánovať týždeň ----------
 function planDialog() {
   const st = S.meta.settings;
   modal(`<h2>${I('calendar')}Naplánovať týždeň</h2>
   <p class="muted small">Appka rozdelí hotové videá na všetky účty na 7 dní dopredu: každý účet dostane videá svojho projektu a jazyka, ktoré na ňom ešte neboli, v najlepšie časy pre ten účet. Úspešné videá idú prvé.</p>
-  <label class="l">Projekty</label><div class="pick">${S.projects.map(p => `<label><input type="checkbox" name="pwp" value="${p.id}" checked><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</label>`).join('')}</div>
+  <label class="l">Projekty</label><div class="pick">${S.projects.map(p => `<label><input type="checkbox" name="pwp" value="${p.id}" ${!S.pf || S.pf === p.id ? 'checked' : ''}><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</label>`).join('')}</div>
   <label class="l">Koľko videí denne na jeden účet</label><select id="pwN">${[1, 2, 3].map(n => `<option ${n === +st.plan_per_day ? 'selected' : ''}>${n}</option>`).join('')}</select>
   <label class="row" style="margin-top:12px"><input type="checkbox" id="pwAuto" ${st.auto_plan_week ? 'checked' : ''}> Každú nedeľu večer naplánovať ďalší týždeň samé</label>
   ${st.require_approval !== false ? `<p class="small dim">${I('eye', 's')} Videá najprv čakajú v Kontrole na tvoje schválenie.</p>` : ''}
@@ -119,7 +119,7 @@ async function planRun() {
   modal(`<h2>${I('check')}Naplánovaných ${r.created} videí</h2>
     <p class="muted">${full} účtov má plný týždeň${r.short.length ? `, ${r.short.length} len čiastočne` : ''}${r.empty.length ? `, ${r.empty.length} nemá žiadne nové video` : ''}.</p>
     ${r.empty.length || r.short.length ? `<p class="small dim">Chýbajúce videá: ${esc([...r.empty, ...r.short].slice(0, 20).join(', '))}${r.empty.length + r.short.length > 20 ? '…' : ''}. Vyrob ďalšie videá a klikni znova – doplní sa len to, čo chýba.</p>` : ''}
-    ${r.review ? `<a class="btn" href="#/kontrola" onclick="closeModal()">${I('eye')}Otvoriť Kontrolu</a>` : `<button class="btn" onclick="closeModal();render()">${I('check')}OK</button>`}`);
+    ${r.review ? `<a class="btn" href="#/${S.pf ? 'p/' + S.pf + '/' : ''}kontrola" onclick="closeModal()">${I('eye')}Otvoriť Kontrolu</a>` : `<button class="btn" onclick="closeModal();render()">${I('check')}OK</button>`}`);
 }
 
 // ---------- Udalosti a sviatky ----------
@@ -142,6 +142,6 @@ async function rEvents(b, p) {
     <div class="row" style="margin-top:10px"><input id="evN" placeholder="Názov dňa" style="flex:2"><input id="evD" placeholder="22.4." style="flex:1;max-width:90px"><button class="btn sec sm" onclick="evAdd(${p.id})">${I('plus', 's')}</button></div>
     <button class="btn sec sm" style="margin-top:10px" onclick="evSuggest(${p.id})">${I('sparkles', 's')}Navrhnúť dni pre projekt</button></div></div>`;
 }
-async function evIdea(pid, key, kind) { const r = await api(`/api/events/${pid}/idea`, { method: 'POST', body: { key, kind } }, kind === 'greeting' ? 'Claude píše prianie…' : 'Claude vymýšľa…'); toast(`Nápady v schránke: ${r.created}`); S.meta = await api('/api/meta'); go(`radar/${pid}/napady`); }
+async function evIdea(pid, key, kind) { const r = await api(`/api/events/${pid}/idea`, { method: 'POST', body: { key, kind } }, kind === 'greeting' ? 'Claude píše prianie…' : 'Claude vymýšľa…'); toast(`Nápady v schránke: ${r.created}`); S.meta = await api('/api/meta'); go(`p/${pid}/radar/napady`); }
 async function evAdd(pid) { await api(`/api/events/${pid}/custom`, { method: 'POST', body: { name: $('#evN').value, rule: $('#evD').value } }); render(); }
 async function evSuggest(pid) { const r = await api(`/api/events/${pid}/suggest`, { method: 'POST' }, 'Claude hľadá dni pre projekt…'); toast(`Pridaných dní: ${r.added}`); render(); }
