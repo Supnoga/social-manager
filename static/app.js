@@ -134,11 +134,12 @@ function sidebar() {
     ${nav('', 'home', 'Prehľad', !cur)}
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
-      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
+      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Všetky projekty naraz</div>
     ${nav('kontrola', 'eye', 'Kontrola', cur === 'kontrola', S.meta.review_count)}
     ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
     ${nav('komentare', 'message', 'Komentáre', cur === 'komentare', S.cmCount)}
+    ${nav('spravy', 'inbox', 'Správy', cur === 'spravy', S.dmCount)}
     <div class="sec-t">Nastavenie</div>
     ${nav('ucty', 'link', 'Účty a siete', cur === 'ucty')}
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
@@ -164,6 +165,7 @@ async function render() {
     else if (r[0] === 'kalendar') await pCalendar(m);
     else if (r[0] === 'kontrola') await pReview(m);
     else if (r[0] === 'komentare') await pComments(m);
+    else if (r[0] === 'spravy') await pMessages(m);
     else if (r[0] === 'radar') await pRadar(m);
     else if (r[0] === 'profily') await pProfiles(m);
     else if (r[0] === 'ucty') await pAccounts(m);
@@ -178,6 +180,7 @@ async function render() {
       else if (sec === 'kalendar') await pCalendar(m);
       else if (sec === 'radar') await pRadar(m);
       else if (sec === 'komentare') await pComments(m);
+      else if (sec === 'spravy') await pMessages(m);
       else if (sec === 'profily') await pProfiles(m);
       else await pProject(m, p, sec);
     }
@@ -683,7 +686,7 @@ async function pAccounts(m) {
     ${(S.meta.yt_usage || []).length ? `<table class="small">${S.meta.yt_usage.map(u => `<tr><td>Google projekt ${u.n}</td><td>${u.channels} kanálov</td><td>dnes ${u.today}/${u.limit} nahratí</td></tr>`).join('')}</table>` : ''}
     <input type="file" id="ytJson" accept=".json" style="margin:8px 0"><div class="row"><button class="btn sec sm" onclick="uploadYt()">${I('upload', 's')}${h.yt_client ? 'Pridať ďalší Google projekt' : 'Nahrať JSON'}</button><a class="btn sm" href="/api/accounts/youtube/connect">${I('link', 's')}Pripojiť kanál</a></div>
     <p class="small dim">Jeden Google projekt zvládne cca 100 nahratí denne. Pri 40 kanáloch a 1–2 videách denne stačí jeden, pri viac pridaj druhý (rovnaký postup, nový projekt v Google Cloud) – nové kanály sa rozložia samé. Keď sa limit minie, video počká do rána.</p>`)}
-  ${c('facebook', 'Facebook + Instagram', `<p class="small muted">Vlož System User token z Meta Business. Appka sama načíta všetky stránky aj prepojené Instagram účty.</p>
+  ${c('facebook', 'Facebook + Instagram', `<p class="small muted">Vlož System User token z Meta Business. Appka sama načíta všetky stránky aj prepojené Instagram účty. Na odpisovanie na správy musí mať token aj práva pages_messaging, pages_manage_metadata a instagram_manage_messages.</p>
     <textarea id="metaTok" placeholder="EAAG…" style="min-height:70px"></textarea><button class="btn sm" style="margin-top:8px" onclick="connectMeta()">${I('link', 's')}Pripojiť</button>`)}
   ${c('tiktok', 'TikTok – veľa účtov', `<p class="small muted">Business API: verejne na tvoje vlastné účty (aj 50+). Potrebuje verejnú adresu v Nastaveniach.</p>${h.ttb_creds ? ok : ''}
     <input id="ttbId" placeholder="App ID" style="margin:6px 0"><input id="ttbSec" placeholder="Secret" type="password">

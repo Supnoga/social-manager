@@ -78,6 +78,17 @@ V menu *Vzhľad účtov*: nahraj raz profilovú fotku, pozadie a napíš popis. 
 - **Naplánovať týždeň** (Publikovanie): jedným klikom rozdelí hotové videá na všetky účty na 7 dní, v najlepšie časy pre každý účet. Kým nie sú vlastné čísla, používa štandardné časy podľa siete a krajiny. Dá sa zapnúť, aby to robila sama každú nedeľu večer.
 - **Zopakovať úspešné** (Radar → Výsledky): úspešné videá idú pri plánovaní prvé na účty, kde ešte neboli, a Claude k nim navrhne nové variácie. Rovnaké video na ten istý účet znova nedávame, siete to trestajú.
 
+## 3e. Súkromné správy (Facebook a Instagram)
+V menu **Správy** (pod každým projektom aj pre všetky projekty naraz) sú súkromné správy zo všetkých Facebook stránok a Instagram účtov. Appka ich načíta sama každú hodinu (zadarmo, bez AI). Klikni **Navrhnúť odpovede**, AI napíše odpoveď v jazyku zákazníka, pod ňou vidíš preklad do slovenčiny. Nič sa neodošle bez tvojho kliknutia.
+
+Čo treba nastaviť raz:
+- Meta token s právami pages_messaging, pages_manage_metadata a instagram_manage_messages (vlož ho znova v Účtoch).
+- V appke Instagram: Nastavenia → Správy → Pripojené nástroje → Povoliť prístup k správam (na každom účte).
+- Správy od bežných ľudí Meta pustí až po jednorazovom schválení appky (App Review) a overení firmy. Je to zadarmo. Dovtedy vidíš len správy od ľudí, ktorí spravujú stránku.
+
+Pravidlá sietí: odpísať sa dá do 24 hodín od poslednej správy človeka (karta ukazuje, koľko času ostáva). Keď Meta schváli povolenie „Human Agent“, zapni v nastavení správ odpisovanie do 7 dní.
+TikTok v Európe správy cez appky nepovoľuje a LinkedIn ich povoľuje len svojim partnerom, tam sa odpisuje priamo v ich appkách.
+
 ## 4. AI a spotreba
 
 - AI ide cez **Claude Code s tvojím Max plánom** – nič sa neplatí navyše. Ak Claude Code nie je, appka ponúkne **ručný režim** (skopíruješ text do claude.ai a odpoveď vložíš späť).
