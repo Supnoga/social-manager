@@ -1,0 +1,79 @@
+"""Plánovač: každých 30 s pozrie frontu a nahrá videá, ktorým nastal čas. Pri chybe skúsi znova (max 3x)."""
+import threading
+import time
+import traceback
+from datetime import datetime, timedelta
+
+from . import db
+from .platforms import linkedin, meta, tiktok, tiktok_business, youtube
+from .platforms.common import tokens
+
+UPLOADERS = {
+    "youtube": youtube.upload,
+    "facebook": meta.upload_facebook,
+    "instagram": meta.upload_instagram,
+    "linkedin": linkedin.upload,
+    "tiktok": lambda acc, vid, priv: (tiktok_business.upload if tokens(acc).get("api") == "business"
+                                      else tiktok.upload)(acc, vid, priv),
+}
+
+_running = False
+state = {"last_tick": None, "current": None}
+
+
+def now_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def process_one(post):
+    acc = db.one("SELECT * FROM accounts WHERE id=?", (post["account_id"],))
+    vid = db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],))
+    if not acc or not vid:
+        db.run("UPDATE posts SET status='failed', error='Účet alebo video už neexistuje' WHERE id=?", (post["id"],))
+        return
+    db.run("UPDATE posts SET status='uploading', attempts=attempts+1, updated_at=? WHERE id=?", (now_str(), post["id"]))
+    state["current"] = f"{acc['platform']}: {vid['title'] or vid['original_name']}"
+    try:
+        ext_id, url = UPLOADERS[acc["platform"]](acc, vid, post["privacy"])
+        db.run("UPDATE posts SET status='done', external_id=?, url=?, error='', updated_at=? WHERE id=?",
+               (str(ext_id), url or "", now_str(), post["id"]))
+    except Exception as e:
+        msg = str(e)[:800]
+        attempts = post["attempts"] + 1
+        if attempts < 3 and "vypršalo" not in msg and "Najprv" not in msg:
+            retry = (datetime.now() + timedelta(minutes=15 * attempts)).strftime("%Y-%m-%d %H:%M:%S")
+            db.run("UPDATE posts SET status='queued', scheduled_at=?, error=?, updated_at=? WHERE id=?",
+                   (retry, "Skúsim znova: " + msg, now_str(), post["id"]))
+        else:
+            db.run("UPDATE posts SET status='failed', error=?, updated_at=? WHERE id=?", (msg, now_str(), post["id"]))
+        traceback.print_exc()
+    finally:
+        state["current"] = None
+
+
+def tick():
+    state["last_tick"] = now_str()
+    if db.get_setting("paused", False):
+        return
+    due = db.q("SELECT * FROM posts WHERE status='queued' AND scheduled_at<=? ORDER BY scheduled_at LIMIT 5", (now_str(),))
+    for p in due:
+        process_one(p)
+
+
+def loop():
+    # po reštarte: čo ostalo 'uploading', vráť do fronty
+    db.run("UPDATE posts SET status='queued' WHERE status='uploading'")
+    while True:
+        try:
+            tick()
+        except Exception:
+            traceback.print_exc()
+        time.sleep(30)
+
+
+def start():
+    global _running
+    if _running:
+        return
+    _running = True
+    threading.Thread(target=loop, daemon=True).start()
