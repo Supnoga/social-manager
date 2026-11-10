@@ -713,6 +713,7 @@ async function pSettings(m) {
     <div id="vList" class="vlist"></div></div>
   <div class="card"><h2>${I('film')}Zábery a hudba</h2>
     <p class="small muted">Videá sa skladajú zo záberov: najprv tvoje vlastné (priečinok Moje zábery, názov súboru = o čom je záber, napr. <i>varenie-cestoviny.mp4</i>), potom bezplatné Pexels a Pixabay, a keď nič nenájde, AI obrázok (Cloudflare, zadarmo denne). Stiahnuté zábery si appka pamätá. V knižnici: <b>${S.meta.footage?.library || 0}</b> · tvojich: <b>${S.meta.footage?.own || 0}</b> · hudby: <b>${S.meta.footage?.music || 0}</b></p>
+    <p class="small muted">Animácie (počítadlá, grafy, zoznamy, porovnania): ${S.meta.anim?.ready ? '<span class="ok-t">pripravené</span>' : S.meta.anim?.installing ? 'pripravujem na pozadí (stiahne sa raz, pár minút)…' : 'pripravia sa samé po ďalšom zapnutí appky' + (S.meta.anim?.error ? ' <span class="bad-t">(' + esc(S.meta.anim.error.slice(-120)) + ')</span>' : '')}</p>
     <div class="row" style="margin-bottom:10px"><button class="btn sec sm" onclick="api('/api/open-folder',{method:'POST',body:{which:'own'}})">${I('upload', 's')}Otvoriť Moje zábery</button><button class="btn sec sm" onclick="api('/api/open-folder',{method:'POST',body:{which:'music'}})">${I('volume', 's')}Otvoriť Hudbu</button></div>
     <details><summary class="small">Ako získam kľúče (zadarmo)</summary><ol class="small muted">
       <li><b>Pexels</b>: <a href="https://www.pexels.com/api/new/" target="_blank">pexels.com/api</a> → prihlás sa → vyplň krátky formulár → skopíruj API key.</li>

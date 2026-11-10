@@ -287,6 +287,27 @@ def _caption_frame(path, chunk, active, accent, banner=""):
 
 
 def broll_video(scenes, shots, voice, out, accent="#FF6B00", lang="", text="", music=None):
+    """Obal: pridá animácie (ak sú v scenári a Chromium je pripravené)."""
+    from . import anim
+    total = duration(voice) or 10
+    n = max(1, len(scenes))
+    per = total / n
+    anims = []
+    for i, sc in enumerate(scenes):
+        a = sc.get("anim")
+        if isinstance(a, dict) and a.get("t") in anim.TYPES and anim.available():
+            d = dict(a.get("d") or {})
+            d.setdefault("comma", lang not in ("en", "ga", "mt", "cy"))
+            try:
+                mov = anim.render(a["t"], d, accent, min(per, 4.0))
+                if mov:
+                    anims.append((i * per, min(per, 4.0), mov, i))
+            except Exception as e:
+                print("animácia:", e)
+    return _broll(scenes, shots, voice, out, accent, lang, text, music, anims)
+
+
+def _broll(scenes, shots, voice, out, accent, lang, text, music, anims):
     """Strih zo záberov: každé 2-3 s nový záber, fotky v pohybe (Ken Burns), titulky slovo po slove, hudba potichu."""
     import random
     import tempfile
@@ -337,7 +358,8 @@ def broll_video(scenes, shots, voice, out, accent="#FF6B00", lang="", text="", m
         words = word_times(voice, text)
         frames, cur = [], 0.0
         blank = tmp / "blank.png"
-        banner_at = lambda tt: (scenes[min(n - 1, int(tt / per))].get("onscreen") or "").strip() if scenes else ""
+        anim_scenes = {a[3] for a in anims}
+        banner_at = lambda tt: "" if not scenes or min(n - 1, int(tt / per)) in anim_scenes else (scenes[min(n - 1, int(tt / per))].get("onscreen") or "").strip()
         idx = 0
         for ch in _chunks(words, lang):
             for j, w in enumerate(ch):
@@ -365,7 +387,13 @@ def broll_video(scenes, shots, voice, out, accent="#FF6B00", lang="", text="", m
             afil = "[3:a]volume=0.12[m];[2:a][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]"
         else:
             afil = "[2:a]anull[a]"
-        cmd += ["-filter_complex", f"[0:v][1:v]overlay=0:0:format=auto,format=yuv420p[v];{afil}", "-map", "[v]", "-map", "[a]",
+        vchain, last, idx0 = "", "[0:v]", 4 if music else 3
+        for j, (st, du, mov, _) in enumerate(anims):
+            cmd += ["-itsoffset", f"{st:.3f}", "-i", mov]
+            vchain += f"{last}[{idx0 + j}:v]overlay=0:0:format=auto:eof_action=pass:enable='between(t,{st:.2f},{st + du:.2f})'[a{j}];"
+            last = f"[a{j}]"
+        vchain += f"{last}[1:v]overlay=0:0:format=auto,format=yuv420p[v]"
+        cmd += ["-filter_complex", f"{vchain};{afil}", "-map", "[v]", "-map", "[a]",
                 "-t", f"{total + 0.2:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-r", "30",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
         _run_ff(cmd)

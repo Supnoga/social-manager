@@ -213,6 +213,7 @@ def api_meta():
         "google_tts": voices.google_usage(),
         "mt": __import__("app.translate", fromlist=["usage"]).usage(),
         "footage": footage.status(),
+        "anim": __import__("app.anim", fromlist=["status"]).status(),
         "review_count": db.one("SELECT COUNT(*) n FROM posts WHERE status='review'")["n"],
     }
 
@@ -1270,6 +1271,11 @@ def main():
                 sys.exit(3)
         except Exception as e:
             print("Aktualizáciu sa nepodarilo skontrolovať:", e)
+    try:
+        from . import anim
+        anim.ensure_installed()  # animácie: Chromium sa stiahne raz na pozadí
+    except Exception:
+        pass
     updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()))
     if os.environ.get("SM_NO_BROWSER") != "1":
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()

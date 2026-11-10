@@ -116,7 +116,10 @@ use pattern interrupts, end with a natural CTA (follow/save/comment). Spoken tex
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Captions/hashtags optimized for TikTok/Reels/Shorts.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"max 90 chars, curiosity-driven","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short on-screen text","q":"2-5 English words to search stock footage"}}] (4-7 scenes; scene 1 = hook: strongest, moving, concrete shot),
+"scenes":[{{"visual":"what to show","onscreen":"short on-screen text","q":"2-5 English words to search stock footage","anim":null}}] (4-7 scenes; scene 1 = hook: strongest, moving, concrete shot;
+for 1-2 scenes with numbers/lists/comparisons set "anim" to an animated graphic: {{"t":"counter","d":{{"value":2,"prefix":"","suffix":" €","label":""}}}} |
+{{"t":"bars","d":{{"title":"","suffix":"","items":[{{"label":"","value":0}}]}}}} | {{"t":"list","d":{{"title":"","items":[""]}}}} |
+{{"t":"compare","d":{{"left":{{"label":"","value":""}},"right":{{"label":"","value":""}}}}}} | {{"t":"kinetic","d":{{"words":["2-4 punchy words"]}}}}),
 "description":"YouTube description 2-4 sentences + CTA","caption":"social caption max 150 chars","hashtags":"#a #b (5-8)"}}]}}
 Write in {languages.english(p['source_lang'])}."""
 
@@ -145,14 +148,16 @@ def translate_prompt(params):
     src = db.one("SELECT * FROM scripts WHERE id=?", (params["script_id"],))
     langs = params["langs"]
     scenes = [s.get("onscreen", "") for s in json.loads(src["scenes"] or "[]")]
-    payload = {"title": src["title"], "voiceover": src["voiceover"], "onscreen": scenes,
+    from . import anim
+    anims = {str(i): anim.texts(s.get("anim")) for i, s in enumerate(json.loads(src["scenes"] or "[]")) if s.get("anim")}
+    payload = {"title": src["title"], "voiceover": src["voiceover"], "onscreen": scenes, **({"anim_texts": anims} if anims else {}),
                "description": src["description"], "caption": src["caption"], "hashtags": src["hashtags"]}
     names = ", ".join(f"{c}={languages.english(c)}" for c in langs)
     return f"""Localize (not literal translation) this short video script for native speakers. Keep meaning, punch and length
 (voiceover must take about the same time to speak). Use natural idioms, local-relevant hashtags (mix of local + international).
 Languages: {names}
 Source: {json.dumps(payload, ensure_ascii=False)}
-Return JSON: {{"<lang code>":{{"title":"","voiceover":"","onscreen":[""],"description":"","caption":"","hashtags":""}}}}"""
+Return JSON: {{"<lang code>":{{"title":"","voiceover":"","onscreen":[""],"description":"","caption":"","hashtags":""{', "anim_texts":{"<scene>":[""]}' if anims else ''}}}}}"""
 
 
 def translate_apply(params, data):
@@ -166,6 +171,10 @@ def translate_apply(params, data):
         for i, txt in enumerate(t.get("onscreen", []) or []):
             if i < len(sc):
                 sc[i]["onscreen"] = txt
+        from . import anim
+        for k, tr in (t.get("anim_texts") or {}).items():
+            if str(k).isdigit() and int(k) < len(sc) and sc[int(k)].get("anim") and isinstance(tr, list):
+                sc[int(k)]["anim"] = anim.with_texts(sc[int(k)]["anim"], tr)
         db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption)
                   VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
                   voiceover=excluded.voiceover, scenes=excluded.scenes, description=excluded.description,

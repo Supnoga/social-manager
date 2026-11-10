@@ -229,7 +229,10 @@ def machine_translate(script_id, langs):
     tags = (src["hashtags"] or "").split()
     keep_tags = [t for t in tags if t.lstrip("#").lower() in INTL_TAGS]
     tr_tags = [t for t in tags if t not in keep_tags][:6]
-    texts = [src[f] or "" for f in FIELDS] + [s.get("onscreen", "") for s in scenes] + [_tag_words(t) for t in tr_tags]
+    from . import anim
+    anim_txt = [(i, anim.texts(s.get("anim"))) for i, s in enumerate(scenes) if s.get("anim")]
+    anim_flat = [x for _, xs in anim_txt for x in xs]
+    texts = [src[f] or "" for f in FIELDS] + [s.get("onscreen", "") for s in scenes] + [_tag_words(t) for t in tr_tags] + anim_flat
     done, rest, flags, used = [], [], {}, set()
     for lang in langs:
         if lang == src["lang"]:
@@ -245,7 +248,12 @@ def machine_translate(script_id, langs):
         sc = [dict(s) for s in scenes]
         for i, s in enumerate(sc):
             s["onscreen"] = res[len(FIELDS) + i]
-        new_tags = [_to_tag(w) for w in res[len(FIELDS) + len(scenes):]]
+        base = len(FIELDS) + len(scenes)
+        new_tags = [_to_tag(w) for w in res[base:base + len(tr_tags)]]
+        pos = base + len(tr_tags)
+        for i, xs in anim_txt:
+            sc[i]["anim"] = anim.with_texts(scenes[i]["anim"], res[pos:pos + len(xs)])
+            pos += len(xs)
         hashtags = " ".join(dict.fromkeys([x for x in new_tags if x] + keep_tags))
         bad = {f: check(src[f], t[f], glossary) for f in FIELDS}
         bad = {f: why for f, why in bad.items() if why}
