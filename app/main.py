@@ -1024,7 +1024,17 @@ def yt_connect(project_id: int = 0, lang: str = ""):
 
 @app.post("/api/accounts/meta")
 def meta_connect(data: dict = Body(...)):
-    ids = meta.connect(data["token"], data.get("project_id") or None, data.get("lang", ""))
+    tok = (data.get("token") or "").strip()
+    pid = data.get("project_id") or None
+    if not tok:  # bez tokenu: použi uložený token a načítaj nové stránky a Instagramy
+        for a in db.q("SELECT project_id, tokens FROM accounts WHERE platform='facebook' ORDER BY id"):
+            tok = json.loads(a["tokens"] or "{}").get("user_token", "")
+            if tok:
+                pid = pid or a["project_id"]
+                break
+        if not tok:
+            raise HTTPException(400, "Zatiaľ nie je uložený žiadny Meta token. Vlož ho do políčka.")
+    ids = meta.connect(tok, pid, data.get("lang", ""))
     return {"created": len(ids)}
 
 
