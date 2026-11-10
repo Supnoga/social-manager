@@ -7,7 +7,8 @@ import urllib.parse
 from .. import db
 from .common import BASE_URL, PlatformError, check, client, save_tokens, text_for, tokens
 
-SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
+SCOPES = ("https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly "
+          "https://www.googleapis.com/auth/youtube.force-ssl")  # force-ssl = čítanie a odpovedanie na komentáre
 REDIRECT = BASE_URL + "/"
 
 

@@ -1242,6 +1242,11 @@ async def update_zip(file: UploadFile = File(...)):
     return {"updated": ver}
 
 
+# ---------------- Komentáre (samostatný modul) ----------------
+from . import comments  # noqa: E402
+app.include_router(comments.router)
+
+
 def main():
     import sys
     import threading
