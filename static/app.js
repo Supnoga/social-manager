@@ -833,3 +833,5 @@ async function updGh() { const r = await api('/api/update/github', { method: 'PO
 
 render();
 async function saveYtKey() { const key = $('#ytKey').value.trim(); if (!key) return toast('Vlož kľúč', true); await api('/api/radar/yt-key', { method: 'POST', body: { key } }, 'Skúšam kľúč…'); toast('Kľúč funguje a je uložený'); S.meta = await api('/api/meta'); render(); }
+// po samočinnej aktualizácii appky sa stránka obnoví sama (keď práve nič nerobíš)
+(() => { let v = null; setInterval(async () => { try { const j = await (await fetch('/api/ping')).json(); if (v && j.version !== v && $('#modal').classList.contains('hidden') && $('#busy').classList.contains('hidden')) { location.reload(); return; } v = v || j.version; } catch (e) { } }, 30000); })();

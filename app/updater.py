@@ -53,8 +53,11 @@ def apply_zip(data: bytes):
             else:
                 shutil.copy2(item, dest)
     # doinštaluje nové knižnice, ak pribudli
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(BASE / "requirements.txt")],
-                   capture_output=True)
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(BASE / "requirements.txt")],
+                       capture_output=True, timeout=900, stdin=subprocess.DEVNULL)
+    except Exception:
+        pass  # run.sh pri reštarte skúsi knižnice doinštalovať znova
     return new_ver
 
 
@@ -93,24 +96,36 @@ def restart():
     threading.Timer(1.0, lambda: os._exit(3)).start()
 
 
-def background_checker(is_busy, every_hours=4):
-    """Každých pár hodín pozrie, či je nová verzia. Keď appka práve nič nerobí, aktualizuje sa a reštartuje."""
+def background_checker(is_busy, every_minutes=15):
+    """Každých 15 minút (podľa hodín, nie spánku Macu) pozrie, či je nová verzia. Keď appka práve nič nerobí,
+    aktualizuje sa a reštartuje sama. Prehliadač sa potom obnoví sám."""
+    import logging
     import threading
     import time
 
     def loop():
+        time.sleep(90)
+        last = 0
         while True:
-            time.sleep(every_hours * 3600)
             try:
-                if not db.get_setting("auto_update", True):
-                    continue
-                if check_github(apply=False).get("available"):
-                    for _ in range(60):
+                if time.time() - last >= every_minutes * 60 and db.get_setting("auto_update", True):
+                    last = time.time()
+                    r = check_github(apply=False)
+                    db.set_setting("update_last", {"ts": time.strftime("%Y-%m-%d %H:%M"), "result": r.get("error") or
+                                                   (f"nová verzia {r['available']}" if r.get("available") else "aktuálna")})
+                    if r.get("available"):
+                        for _ in range(30):
+                            if not is_busy():
+                                break
+                            time.sleep(60)
                         if not is_busy():
-                            break
-                        time.sleep(60)
-                    if not is_busy() and check_github(apply=True).get("updated"):
-                        restart()
-            except Exception:
-                pass
+                            res = check_github(apply=True)
+                            if res.get("updated"):
+                                logging.getLogger("app").warning("Aktualizované na %s, reštartujem", res["updated"])
+                                restart()
+                                return
+            except Exception as e:
+                logging.getLogger("app").warning("Aktualizácia zlyhala: %r", e)
+                db.set_setting("update_last", {"ts": time.strftime("%Y-%m-%d %H:%M"), "result": f"chyba: {e}"[:200]})
+            time.sleep(60)
     threading.Thread(target=loop, daemon=True).start()

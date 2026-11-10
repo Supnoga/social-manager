@@ -1306,7 +1306,8 @@ def main():
         radar.start()  # trendy, konkurencia, čísla našich videí (na pozadí, bez AI)
     except Exception:
         pass
-    updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()))
+    updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()) or bool(scheduler.state.get("current"))
+                               or AUTO.get("running"))
     if os.environ.get("SM_NO_BROWSER") != "1":
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     try:
