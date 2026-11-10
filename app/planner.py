@@ -34,8 +34,13 @@ def _candidates(acc, platforms_of):
             continue
         if acc["lang"] and v["lang"] and acc["lang"] != v["lang"]:
             continue
-        if v["markets"] and acc["lang"] and acc["lang"] not in v["markets"].split(","):
-            continue
+        if v["markets"]:
+            ms = v["markets"].split(",")
+            if acc.get("country") and any(m.isupper() for m in ms):
+                if acc["country"] not in ms:  # sviatok len v niektorých krajinách
+                    continue
+            elif acc["lang"] and acc["lang"] not in ms:
+                continue
         if v["due"] and v["due"] < dt.date.today().isoformat():
             continue
         if v["idea_id"] and (v["idea_id"] in used_ideas or v["idea_id"] in seen):

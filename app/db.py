@@ -150,6 +150,7 @@ MIGRATIONS = [
     "ALTER TABLE scripts ADD COLUMN voice_engine TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN source TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN due_date TEXT DEFAULT ''",
+    "ALTER TABLE accounts ADD COLUMN country TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN markets TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN source_ref TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN why_now TEXT DEFAULT ''",

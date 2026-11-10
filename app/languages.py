@@ -57,6 +57,21 @@ COUNTRY_NAMES = {
     "BA": "Bosna a Hercegovina", "MK": "Severné Macedónsko", "AL": "Albánsko", "XK": "Kosovo",
 }
 EXTRA = {"en": "medzinárodná verzia"}
+COUNTRY_NAMES["INT"] = "Medzinárodný (angličtina)"
+# účty sú pre krajinu; jazyky krajiny (prvý = predvolený). Viacjazyčné krajiny majú účet pre každý jazyk.
+COUNTRY_LANGS = {
+    "SK": ["sk"], "CZ": ["cs"], "DE": ["de"], "AT": ["de"], "CH": ["de", "fr", "it"], "LU": ["fr", "de"], "PL": ["pl"],
+    "HU": ["hu"], "FR": ["fr"], "BE": ["nl", "fr"], "NL": ["nl"], "IT": ["it"], "ES": ["es"], "PT": ["pt"], "GB": ["en"],
+    "IE": ["en"], "MT": ["en"], "INT": ["en"], "DK": ["da"], "SE": ["sv"], "NO": ["no"], "FI": ["fi"], "IS": ["is"],
+    "EE": ["et"], "LV": ["lv"], "LT": ["lt"], "GR": ["el"], "CY": ["el"], "BG": ["bg"], "RO": ["ro"], "HR": ["hr"],
+    "SI": ["sl"], "RS": ["sr"], "ME": ["sr"], "BA": ["bs"], "MK": ["mk"], "AL": ["sq"], "XK": ["sq"],
+}
+# časový posun voči Slovensku
+COUNTRY_TZ = {"GB": -1, "IE": -1, "PT": -1, "IS": -1, "GR": 1, "CY": 1, "FI": 1, "EE": 1, "LV": 1, "LT": 1, "RO": 1, "BG": 1}
+
+
+def countries_list():
+    return [{"code": c, "name": COUNTRY_NAMES.get(c, c), "langs": l} for c, l in COUNTRY_LANGS.items()]
 
 
 def name(code):

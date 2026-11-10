@@ -289,7 +289,7 @@ Write in {languages.english(p['source_lang'])}.""", purpose, kind)
                       expires_at,due_date,markets) VALUES(?,?,?,?,'','short',?,?,'inbox','event',?,?,?,?,?)""",
                    (p["id"], i["title"][:300], i.get("hook", ""), i.get("angle", ""), i.get("why", ""), int(i.get("score") or 0),
                     ref["event"], i.get("why_now", ""), ref["date"], ref["date"],
-                    "" if set(ref.get("langs") or []) >= set(p["languages"]) else ",".join(ref.get("langs") or [])))
+                    ",".join(ref.get("langs") or [])))
             made += 1
             continue
         db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,why_now,expires_at)

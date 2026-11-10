@@ -218,7 +218,9 @@ def best_hours(account, n=3):
     rows = db.q("""SELECT ps.ratio, p.scheduled_at, p.account_id FROM post_stats ps JOIN posts p ON p.id=ps.post_id
                    JOIN accounts a ON a.id=p.account_id WHERE a.platform=? AND ps.error='' AND ps.ratio>0 AND p.scheduled_at>=?""",
                 (account["platform"], _ago(120)))
-    shift = TZ_SHIFT.get(account.get("lang") or "", 0)
+    from . import languages
+    c = (account.get("country") or "").upper()
+    shift = languages.COUNTRY_TZ.get(c, 0) if c else TZ_SHIFT.get(account.get("lang") or "", 0)
     for scope in ([r for r in rows if r["account_id"] == account["id"]], rows):
         if len(scope) < 12:
             continue
@@ -238,7 +240,7 @@ def overview(pid):
     times = []
     for a in accs[:60]:
         h, how = best_hours(a)
-        times.append({"account": a["name"], "platform": a["platform"], "lang": a["lang"], "hours": sorted(h), "how": how})
+        times.append({"account": a["name"], "platform": a["platform"], "lang": a.get("country") or a["lang"], "hours": sorted(h), "how": how})
     st = db.one("""SELECT COUNT(*) n, MAX(ps.fetched_at) last FROM post_stats ps JOIN posts p ON p.id=ps.post_id
                    JOIN videos v ON v.id=p.video_id WHERE v.project_id=? AND ps.error=''""", (pid,))
     return {"ideas": perf[:30], "winners": [x for x in perf if x["ratio"] >= 1.8][:10], "times": times,

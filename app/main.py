@@ -194,6 +194,7 @@ def job_state(jid: str):
 def api_meta():
     return {
         "languages": languages.as_list(),
+        "countries": languages.countries_list(),
         "ai": ai.status(),
         "models": ai.models(),
         "settings": {k: db.get_setting(k, d) for k, d in [("ai_mode", "auto"), ("paused", False),
@@ -966,7 +967,7 @@ def videos_bulk(data: dict = Body(...)):
 @app.get("/api/accounts")
 def accounts():
     import time as _t
-    rows = db.q("SELECT a.id, a.platform, a.name, a.external_id, a.project_id, a.lang, a.tokens, p.name project_name "
+    rows = db.q("SELECT a.id, a.platform, a.name, a.external_id, a.project_id, a.lang, a.country, a.tokens, p.name project_name "
                 "FROM accounts a LEFT JOIN projects p ON p.id=a.project_id ORDER BY a.platform, a.name")
     for r in rows:
         exp = json.loads(r.pop("tokens") or "{}").get("expires_at", 0) if r["platform"] == "linkedin" else 0
@@ -981,6 +982,13 @@ def account_update(aid: int, data: dict = Body(...)):
         db.run("UPDATE accounts SET name=? WHERE id=?", (data["name"], aid))
     if "project_id" in data:
         db.run("UPDATE accounts SET project_id=? WHERE id=?", (data.get("project_id") or None, aid))
+    if "country" in data:
+        c = (data.get("country") or "").upper()
+        db.run("UPDATE accounts SET country=? WHERE id=?", (c, aid))
+        cl = languages.COUNTRY_LANGS.get(c, [])
+        cur = (db.one("SELECT lang FROM accounts WHERE id=?", (aid,)) or {}).get("lang", "")
+        if cl and "lang" not in data and cur not in cl:  # krajina určí jazyk videí
+            db.run("UPDATE accounts SET lang=? WHERE id=?", (cl[0], aid))
     if "lang" in data:
         db.run("UPDATE accounts SET lang=? WHERE id=?", (data.get("lang") or "", aid))
     return {"ok": True}

@@ -158,15 +158,18 @@ def upcoming(pid, days=60):
         targets = langs if r["langs"] in ("", "all") else [x for x in r["langs"].split(",") if x in langs]
         for l in targets:
             add(next_date(r["rule"], today), r["name"], "téma", l, why=r["why"])
-    for l in langs:
-        for c in languages.COUNTRIES.get(l, []):
-            if c == "XK":
-                continue
-            for y in {today.year, end.year}:
-                for h in holidays(c, y):
-                    d = dt.date.fromisoformat(h["date"])
-                    # rovnaký sviatok vo viacerých krajinách zlúčiť pod anglický názov
-                    add(d, h["en"], "sviatok", l, c, why=h["name"])
+    acc = db.q("SELECT DISTINCT country, lang FROM accounts WHERE project_id=? AND country!=''", (pid,))
+    pairs = [(r["lang"], r["country"]) for r in acc if r["lang"] in langs]
+    covered = {l for l, _ in pairs}  # jazyky bez účtov s krajinou: krajiny podľa jazyka
+    pairs += [(l, c) for l in langs if l not in covered for c in languages.COUNTRIES.get(l, [])]
+    for l, c in pairs:
+        if c in ("XK", "INT"):
+            continue
+        for y in {today.year, end.year}:
+            for h in holidays(c, y):
+                d = dt.date.fromisoformat(h["date"])
+                # rovnaký sviatok vo viacerých krajinách zlúčiť pod anglický názov
+                add(d, h["en"], "sviatok", l, c, why=h["name"])
     st = {r["key"]: r["status"] for r in db.q("SELECT key, status FROM event_status WHERE project_id=?", (pid,))}
     have = {r["source_ref"] for r in db.q("SELECT source_ref FROM ideas WHERE project_id=? AND source='event'", (pid,))}
     out = []
@@ -193,7 +196,8 @@ def signals(pid, n=4):
             continue
         out.append({"id": f"E{len(out) + 1}", "mk": "all" if e["all"] else e["langs"],
                     "txt": f'event "{e["name"]}" on {e["date"]} ({e["kind"]}{", " + e["why"][:60] if e["why"] else ""})',
-                    "ref": {"event": e["key"], "label": e["name"], "date": e["date"], "langs": e["langs"]}})
+                    "ref": {"event": e["key"], "label": e["name"], "date": e["date"],
+                            "langs": [] if e["all"] else (e["countries"] or e["langs"])}})
         if len(out) >= n:
             break
     return out
@@ -246,7 +250,7 @@ Write in {languages.english(p['source_lang'])}.""", "event_idea", "cheap")
                   due_date,markets) VALUES(?,?,?,?,'','short',?,?,'inbox','event',?,?,?,?,?)""",
                (pid, i["title"][:300], i.get("hook", ""), i.get("angle", ""), i.get("why", ""), int(i.get("score") or 7), key,
                 f"{e['name']} – {dt.date.fromisoformat(e['date']).strftime('%d.%m.')}", e["date"], e["date"],
-                "" if e["all"] else ",".join(e["langs"])))
+                "" if e["all"] else ",".join(e["countries"] or e["langs"])))
         made += 1
     return {"created": made}
 

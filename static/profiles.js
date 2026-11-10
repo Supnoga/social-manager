@@ -31,7 +31,7 @@ async function pProfiles(m) {
     <p class="small muted">Samo sa nastaví: <b>YouTube</b> popis a pozadie, <b>Facebook</b> popis, pozadie aj profilovka. <b>Instagram, TikTok a LinkedIn</b> zmenu zvonka nedovolia – pri nich máš pripravený text na skopírovanie, obrázky v priečinku a odkaz priamo na úpravu profilu.</p>
     ${d.accounts.length ? `<table><tr><th><input type="checkbox" checked onchange="$$('.pfS').forEach(c=>c.checked=this.checked)"></th><th>Účet</th><th>Popis</th><th></th></tr>${d.accounts.map(a => `<tr>
       <td style="vertical-align:top"><input type="checkbox" class="pfS" value="${a.id}" checked></td>
-      <td style="vertical-align:top;width:190px">${plat(a.platform)}<div class="small">${esc(a.name)}</div><div class="small dim">${esc(langName(a.lang))}</div>
+      <td style="vertical-align:top;width:190px">${plat(a.platform)}<div class="small">${esc(a.name)}</div><div class="small dim">${esc(a.country ? (S.meta.countries.find(c => c.code === a.country) || {}).name || a.country : '')}${a.country ? ' · ' : ''}${esc(langName(a.lang))}</div>
         ${a.status ? `<span class="chip ${stc[a.status]?.[1] || ''}" style="margin-top:6px">${stc[a.status]?.[0] || a.status}</span>` : ''}</td>
       <td><textarea rows="2" data-pa="${a.id}" maxlength="${a.max}" onchange="api('/api/profiles/account/${a.id}',{method:'PUT',body:{bio:this.value}})" oninput="this.nextElementSibling.textContent=this.value.length+' / ${a.max}'">${esc(a.bio)}</textarea><div class="small dim">${a.bio.length} / ${a.max}</div>
         ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ''}</td>

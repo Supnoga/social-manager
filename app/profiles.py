@@ -199,7 +199,7 @@ def get_profiles(pid: int):
     for a in _accounts(pid):
         ap = db.one("SELECT * FROM account_profiles WHERE account_id=?", (a["id"],)) or {}
         files = _files(a, pid)
-        rows.append({"id": a["id"], "platform": a["platform"], "name": a["name"], "lang": a["lang"], "org": _is_org(a),
+        rows.append({"id": a["id"], "platform": a["platform"], "name": a["name"], "lang": a["lang"], "country": a.get("country") or "", "org": _is_org(a),
                      "bio": ap.get("bio", ""), "max": BIO_MAX.get(a["platform"], 500), "status": ap.get("status", ""),
                      "note": ap.get("note", ""), "applied_at": ap.get("applied_at", ""), "files": files,
                      "link": _edit_link(a), "manual": _manual_parts(a, files, ap.get("bio", ""))})
