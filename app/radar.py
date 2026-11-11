@@ -451,6 +451,7 @@ def _housekeeping():
 # ---------- plánovač Radaru (samostatné vlákno, nezasahuje do publikovania) ----------
 JOBS = {"gtrends": (2, job_gtrends), "news": (3, job_news), "wiki": (24, job_wiki), "yt_popular": (24, job_yt_popular),
         "comp_uploads": (6, job_comp_uploads), "comp_stats": (3, job_comp_stats), "own_stats": (6, _own_stats),
+        "weather": (24, lambda: __import__("app.weather", fromlist=["job"]).job()),
         "questions": (168, lambda: __import__("app.inspire", fromlist=["job_questions"]).job_questions())}
 
 

@@ -286,14 +286,15 @@ def _radar_ideas(p, sig, n, purpose, kind, extra=""):
     data = ai.ask(f"""{_ctx(p)}
 {('Our results: ' + p['learnings']) if p.get('learnings') else ''}
 Signals this week (T = trend, K = competitor video far above its normal views, E = upcoming event/holiday: video must be ready for that date,
-O = real question people ask: answer it, Z = inspiration the owner saved: prefer these):
+O = real question people ask: answer it, Z = inspiration the owner saved: prefer these,
+W = weather forecast for some countries: video must be ready for that date):
 {lines or 'none'}
 {extra}
 {inspire.templates_prompt(p["id"], 5)}
 Already have (don't repeat): {'; '.join(r['title'][:50] for r in prev) or 'none'}
 Propose the {n} best short-video ideas for this project. Use a signal only if it truly fits the project; it's fine to ignore weak ones.
 For K signals copy the format/angle, never the content. Score 1-10 strictly.
-Return JSON: {{"ideas":[{{"title":"","hook":"exact first sentence","angle":"","template":"format key","why":"","why_now":"1 short sentence, which signal and why now","signal":"T1|K2|O1|Z1|none","markets":"all|list of lang codes","score":7}}]}}
+Return JSON: {{"ideas":[{{"title":"","hook":"exact first sentence","angle":"","template":"format key","why":"","why_now":"1 short sentence, which signal and why now","signal":"T1|K2|O1|Z1|W1|none","markets":"all|list of lang codes","score":7}}]}}
 Write in {languages.english(p['source_lang'])}.""", purpose, kind)
     refs = {s["id"]: s["ref"] for s in sig}
     exp = (_dt.datetime.now() + _dt.timedelta(days=14)).strftime("%Y-%m-%d")
@@ -341,6 +342,12 @@ def radar_quick(pid, ref):
             raise ai.AIError("Trend už nie je aktuálny")
         sig = [{"id": "T1", "mk": t["langs"] or "all", "txt": f'"{t["label"]}" {t["stage"]}; ctx: {t["ctx"][:200]}',
                 "ref": {"trend": t["key"], "label": t["label"]}}]
+    elif ref.get("weather"):
+        from . import weather
+        w = weather.signal_for(pid, ref["weather"])
+        if not w:
+            raise ai.AIError("Výstraha už nie je aktuálna")
+        sig = [w]
     elif ref.get("question") or ref.get("swipe"):
         from . import inspire
         if ref.get("question"):
