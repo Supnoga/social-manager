@@ -263,11 +263,14 @@ def sound_get():
         own = footage.status().get("music", 0)
     except Exception:
         own = 0
-    return {**opts(), "moods": MOOD_NAMES, "own": own}
+    from . import verbal
+    return {**opts(), "moods": MOOD_NAMES, "own": own, "numbers": verbal.stats()}
 
 
 @router.post("/api/sound")
 def sound_save(data: dict = Body(...)):
+    if "numbers" in data:
+        db.set_setting("verbal_on", bool(data["numbers"]))
     return save_opts(data)
 
 
