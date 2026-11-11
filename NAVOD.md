@@ -135,6 +135,7 @@ TikTok v Európe správy cez appky nepovoľuje a LinkedIn ich povoľuje len svoj
 - **Microsoft hlasy** – zadarmo bez registrácie, použijú sa, keď Google kľúč nie je alebo je limit minutý. Pre portugalčinu, bosniačtinu, macedónčinu, albánčinu, islandčinu, írčinu, maltčinu, katalánčinu, galícijčinu a waleštinu Google HD hlas nemá, tam ide vždy Microsoft.
 - **Výber hlasu:** v projekte → Popis a dizajn → **Hlasy pre jazyky**: pri každom jazyku vyberieš hlas, tlačidlom ▶ si vypočuješ ukážku, nastavíš rýchlosť reči.
 - Ak vybraný hlas nejde, appka použije náhradný a **povie ti to**.
+- **Výslovnosť:** hlas pred čítaním sám opraví názvy (PROLINE, TOWER, N2N…), skratky (SCOP, R290, A+++), jednotky (kW, dB(A), °C) a slová písané VEĽKÝMI písmenami, vo všetkých jazykoch a bez AI. Titulky ostanú napísané pôvodne. Vlastné slovo pridáš v **Nastavenia → Výslovnosť**: napíšeš slovo a po slovensky to, ako má znieť (napr. *prolajn*), tlačidlom ▶ si ho vypočuješ. Staršie videá majú starý hlas, stačí im hlas vyrobiť znova.
 
 ## 6b. Zdroje projektu
 V projekte → Popis a dizajn → **Zdroje**: vlož odkazy na svoj web, text alebo súbory (PDF, TXT, MD). AI si z nich raz urobí výťah faktov a stratégia, nápady aj scenáre z nich vychádzajú.

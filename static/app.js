@@ -759,6 +759,17 @@ async function pSettings(m) {
     <button class="btn sm" onclick="saveVoiceSet()">${I('check', 's')}Uložiť</button>
     <label class="l" style="margin-top:16px">Vypočuj si hlasy</label><div class="row"><select id="tL" onchange="loadVoiceList()">${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select></div>
     <div id="vList" class="vlist"></div></div>
+  <div class="card"><h2>${I('mic')}Výslovnosť</h2>
+    <p class="small muted">Hlas pred čítaním sám opraví názvy, skratky a jednotky vo všetkých jazykoch (napr. PROLINE, SCOP, R290, A+++, dB(A), kW). Titulky vo videu ostanú napísané pôvodne. Nič to nestojí a nepoužíva AI.</p>
+    <label class="l">Tvoje slová</label>
+    <p class="small dim">Napíš slovo a vedľa po slovensky tak, ako to má znieť (napr. <i>prolajn</i>). Do ostatných jazykov sa to prevedie samo.</p>
+    <div id="prList" class="vlist"><span class="small dim">Načítavam…</span></div>
+    <div class="row" style="margin-top:10px"><button class="btn sec sm" onclick="prAdd()">${I('plus', 's')}Pridať slovo</button><button class="btn sm" onclick="prSave()">${I('check', 's')}Uložiť</button></div>
+    <label class="l" style="margin-top:16px">Vyskúšaj vetu</label>
+    <textarea id="prText" rows="2"></textarea>
+    <div class="row" style="margin-top:8px"><select id="prLang">${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select><button class="btn sec sm" onclick="prTest(this)">${I('play', 's')}Vypočuť</button></div>
+    <p class="small dim" id="prOut"></p>
+    <details><summary class="small">Čo už hlas vie sám</summary><div id="prBuilt" class="small muted" style="margin-top:8px"></div></details></div>
   <div class="card"><h2>${I('film')}Zábery a hudba</h2>
     <p class="small muted">Videá sa skladajú zo záberov: najprv tvoje vlastné (priečinok Moje zábery, názov súboru = o čom je záber, napr. <i>varenie-cestoviny.mp4</i>), potom bezplatné Pexels a Pixabay, a keď nič nenájde, AI obrázok (Cloudflare, zadarmo denne). Stiahnuté zábery si appka pamätá. V knižnici: <b>${S.meta.footage?.library || 0}</b> · tvojich: <b>${S.meta.footage?.own || 0}</b> · hudby: <b>${S.meta.footage?.music || 0}</b></p>
     <p class="small muted">Animácie (počítadlá, grafy, zoznamy, porovnania): ${S.meta.anim?.ready ? '<span class="ok-t">pripravené</span>' : S.meta.anim?.installing ? 'pripravujem na pozadí (stiahne sa raz, pár minút)…' : 'pripravia sa samé po ďalšom zapnutí appky' + (S.meta.anim?.error ? ' <span class="bad-t">(' + esc(S.meta.anim.error.slice(-120)) + ')</span>' : '')}</p>
@@ -818,7 +829,7 @@ async function pSettings(m) {
     <label class="row" style="margin-top:4px"><input type="checkbox" id="reqApp" ${st.require_approval !== false ? 'checked' : ''} onchange="api('/api/settings',{method:'POST',body:{require_approval:this.checked}}).then(()=>toast('Uložené'))"> Pred zverejnením chcem videá schváliť (Kontrola)</label>
     <label class="l">Verzia Meta API</label><input id="metaV" value="${esc(st.meta_api_version)}" style="max-width:160px"></div>
   </div></div>`;
-  loadUpd(); loadVoiceList();
+  loadUpd(); loadVoiceList(); prLoad();
 }
 async function saveSettings() { await api('/api/settings', { method: 'POST', body: { ai_mode: $('#aiMode').value, claude_path: $('#cPath').value, model_creative: $('#mC').value, model_cheap: $('#mCh').value, meta_api_version: $('#metaV').value } }); toast('Uložené'); render(); }
 async function savePub() { await api('/api/settings', { method: 'POST', body: { public_base_url: $('#pubUrl').value.trim(), cf_tunnel_token: $('#cfTok').value.trim(), verify_name: $('#vfName').value, verify_content: $('#vfCont').value, ttb_draft: $('#ttbDraft').checked, ttb_ai_label: $('#ttbAi').checked, jitter_min: +$('#jit').value } }); toast('Uložené'); setTimeout(render, 1500); }
@@ -847,6 +858,33 @@ async function loadVoiceList() {
   const d = await voicesFor(lang);
   box.innerHTML = d.voices.map(v => `<div class="vrow"><button class="btn sec sm ic" onclick="playVoice('${lang}','${v.id}',this)">${I('play', 's')}</button><span style="flex:1">${esc(v.label)}</span><span class="tag ${v.engine === 'google' ? 'acc' : ''}">${v.engine === 'google' ? 'Google HD' : 'Microsoft'}</span><span class="small dim">${v.gender === 'F' ? 'žena' : 'muž'}</span></div>`).join('');
 }
+// ----- výslovnosť (vlastné slová pre hlas) -----
+let PR = [];
+function prRows() {
+  const langs = S.meta.languages;
+  $('#prList').innerHTML = PR.length ? PR.map((x, i) => `<div class="vrow"><input class="prW" placeholder="Slovo (napr. PROLINE)" value="${esc(x.w)}" style="flex:1 1 0;width:0;min-width:0"><input class="prS" placeholder="Ako sa číta (napr. prolajn)" value="${esc(x.say)}" style="flex:1 1 0;width:0;min-width:0"><select class="prL" title="V ktorom jazyku" style="flex:0 0 150px;width:150px"><option value="*">Všetky jazyky</option>${langs.map(l => `<option value="${l.code}" ${l.code === x.lang ? 'selected' : ''}>len ${l.name}</option>`).join('')}</select><button class="btn sec sm ic" title="Vypočuť" onclick="prPlay(${i},this)">${I('play', 's')}</button><button class="btn ghost sm ic" title="Odstrániť" onclick="prRead();PR.splice(${i},1);prRows()">${I('trash', 's')}</button></div>`).join('') : '<span class="small dim">Zatiaľ žiadne vlastné slová.</span>';
+}
+function prRead() { PR = $$('#prList .vrow').map(r => ({ w: $('.prW', r).value.trim(), say: $('.prS', r).value.trim(), lang: $('.prL', r).value })); return PR; }
+function prAdd() { prRead(); PR.push({ w: '', say: '', lang: '*' }); prRows(); const a = $$('#prList .prW'); a[a.length - 1].focus(); }
+async function prLoad() {
+  if (!$('#prList')) return;
+  const d = await api('/api/pronounce'); PR = d.custom; prRows();
+  $('#prText').value = d.demo; $('#prLang').value = 'sk';
+  $('#prBuilt').innerHTML = `<p>Názvy: ${d.builtin.map(b => `<b>${esc(b.w)}</b> (${esc(b.say)})`).join(', ')}. Ak chceš niektorý čítať inak, pridaj ho hore medzi svoje slová.</p><p>Ďalej: chladivá (R290, R32), energetické triedy (A+++), jednotky po čísle (kW, kWh, W, dB, dB(A), °C, m², m³), rozsahy (5–10), tisícky s medzerou (1 200), znak & a slová písané VEĽKÝMI písmenami, ktoré by inak hláskoval. Smajlíky a mriežky nečíta, nový riadok a pomlčka sú krátka pauza.</p>`;
+}
+async function prSave(quiet) { const r = await api('/api/pronounce', { method: 'POST', body: { items: prRead().filter(x => x.w && x.say) } }); if (!quiet) { PR = r.custom; prRows(); toast('Uložené. Platí pre každý nový hlas.'); } }
+async function prSay(text, lang, btn) {
+  if (curAudio) curAudio.pause();
+  if (btn) btn.classList.add('loading');
+  try {
+    await prSave(true);
+    const r = await api('/api/voices/preview', { method: 'POST', body: { lang, text } });
+    if ($('#prOut')) $('#prOut').textContent = r.spoken ? 'Hlas prečíta: ' + r.spoken : '';
+    curAudio = new Audio('/api/file?path=' + encodeURIComponent(r.voice_path)); curAudio.play();
+  } finally { if (btn) btn.classList.remove('loading'); }
+}
+function prPlay(i, btn) { const x = prRead()[i]; if (!x.w || !x.say) return toast('Doplň slovo aj to, ako sa číta', true); prSay(x.w + '.', x.lang === '*' ? $('#prLang').value : x.lang, btn); }
+function prTest(btn) { const t = $('#prText').value.trim(); if (!t) return toast('Napíš vetu', true); prSay(t, $('#prLang').value, btn); }
 function voiceNote(r) { const n = r.note || (r.notes || []).join('; '); if (n) toast('Použitý náhradný hlas: ' + n, true); }
 async function testVoice() { const r = await api('/api/voice/test', { method: 'POST', body: { text: $('#tT').value, lang: $('#tL').value, gender: $('#tG').value } }, 'Vytváram hlas…'); $('#tA').innerHTML = `<audio autoplay controls src="/api/file?path=${encodeURIComponent(r.voice_path)}"></audio>`; }
 async function loadUpd() {
