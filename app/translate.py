@@ -232,7 +232,14 @@ def machine_translate(script_id, langs):
     from . import anim
     anim_txt = [(i, anim.texts(s.get("anim"))) for i, s in enumerate(scenes) if s.get("anim")]
     anim_flat = [x for _, xs in anim_txt for x in xs]
-    texts = [src[f] or "" for f in FIELDS] + [s.get("onscreen", "") for s in scenes] + [_tag_words(t) for t in tr_tags] + anim_flat
+    try:
+        post = json.loads(src.get("post") or "{}") or {}
+    except Exception:
+        post = {}
+    post_keys = [k for k in ("body", "question", "save") if post.get(k)]
+    post_kw = [str(x) for x in (post.get("keywords") or [])][:5]
+    texts = [src[f] or "" for f in FIELDS] + [s.get("onscreen", "") for s in scenes] + [_tag_words(t) for t in tr_tags] + anim_flat \
+        + [post[k] for k in post_keys] + post_kw
     done, rest, flags, used = [], [], {}, set()
     for lang in langs:
         if lang == src["lang"]:
@@ -255,14 +262,20 @@ def machine_translate(script_id, langs):
             sc[i]["anim"] = anim.with_texts(scenes[i]["anim"], res[pos:pos + len(xs)])
             pos += len(xs)
         hashtags = " ".join(dict.fromkeys([x for x in new_tags if x] + keep_tags))
+        tp = {k: v for k, v in zip(post_keys, res[pos:pos + len(post_keys)])}
+        pos += len(post_keys)
+        kws = [x.strip().lower() for x in res[pos:pos + len(post_kw)] if x.strip()]
+        if kws:
+            tp["keywords"] = kws
+        post_json = json.dumps(tp, ensure_ascii=False) if tp else ""
         bad = {f: check(src[f], t[f], glossary) for f in FIELDS}
         bad = {f: why for f, why in bad.items() if why}
-        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption)
-                  VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
+        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption,post)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
                   voiceover=excluded.voiceover, scenes=excluded.scenes, description=excluded.description,
-                  hashtags=excluded.hashtags, caption=excluded.caption, voice_path=''""",
+                  hashtags=excluded.hashtags, caption=excluded.caption, post=excluded.post, voice_path=''""",
                (src["project_id"], src["idea_id"], lang, 0, t["title"], t["voiceover"], json.dumps(sc, ensure_ascii=False),
-                t["description"], hashtags, t["caption"]))
+                t["description"], hashtags, t["caption"], post_json))
         if bad:
             flags[lang] = bad
         done.append(lang)

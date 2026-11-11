@@ -288,7 +288,7 @@ def get_file(path: str):
 
 
 # ---------------- Projekty ----------------
-PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned"]
+PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned", "brand_tags"]
 
 
 @app.get("/api/projects")
@@ -1056,6 +1056,51 @@ def videos(project_id: int = 0, lang: str = "", status: str = ""):
     if status == "unposted":
         rows = [r for r in rows if not r["posts"]]
     return rows
+
+
+# ---------- Popisky a hashtagy pre siete (bez AI) ----------
+def _caption_preview(video):
+    from . import captions
+    out = {}
+    for pl in captions.RULES:
+        acc = db.one("SELECT * FROM accounts WHERE project_id=? AND platform=? AND lang=? AND country!='' ORDER BY id LIMIT 1",
+                     (video.get("project_id"), pl, video.get("lang") or ""))
+        b = captions.build(video, pl, acc)
+        out[pl] = {"title": b["title"], "text": b["text"], "len": len(b["text"]), "visible": captions.RULES[pl]["hook"],
+                   "country": (acc or {}).get("country") or ""}
+    return out
+
+
+@app.get("/api/videos/{vid}/captions")
+def video_captions(vid: int):
+    v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+    if not v:
+        raise HTTPException(404, "Video neexistuje")
+    return _caption_preview(v)
+
+
+@app.get("/api/scripts/{sid}/captions")
+def script_captions(sid: int):
+    s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
+    if not s:
+        raise HTTPException(404, "Scenár neexistuje")
+    v = {k: s[k] for k in ("project_id", "lang", "title", "description", "hashtags", "caption")}
+    v.update({"id": s["idea_id"] or 0, "script_id": sid})
+    return _caption_preview(v)
+
+
+@app.get("/api/projects/{pid}/hashtags")
+def project_hashtags(pid: int):
+    from . import captions
+    p = db.one("SELECT * FROM projects WHERE id=?", (pid,)) or {}
+    return {"bank": captions.bank(pid), "brand": captions.brand_tags(p) if p else []}
+
+
+@app.post("/api/projects/{pid}/hashtags")
+def project_hashtags_build(pid: int):
+    from . import captions
+    r = captions.build_bank(pid, force=True)
+    return {**r, "bank": captions.bank(pid)}
 
 
 @app.put("/api/videos/{vid}")

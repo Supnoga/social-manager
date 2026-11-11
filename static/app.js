@@ -317,6 +317,7 @@ function pProjectForm(m, p) {
     <div><label class="l">Hlas</label><select id="pVoice"><option value="F" ${p.voice_gender === 'F' ? 'selected' : ''}>Ženský</option><option value="M" ${p.voice_gender === 'M' ? 'selected' : ''}>Mužský</option></select></div></div>
     <label class="l">Neprekladať (názvy značky, produktov, mená – oddeľ čiarkou)</label><input id="pGloss" value="${esc(p.glossary || '')}" placeholder="Zdravé recepty, FitBox, Oliver">
     <label class="l">Nikdy netvrdiť (zakázané slová a tvrdenia, oddeľ bodkočiarkou)</label><input id="pBan" value="${esc(p.banned || '')}" placeholder="made in Slovakia; najlacnejší na trhu">
+    <label class="l">Hashtagy značky (pridajú sa ku každému videu)</label><input id="pBrandTags" value="${esc(p.brand_tags || '')}" placeholder="${esc('#' + (p.name || 'Znacka').replace(/\s+/g, ''))}">
     <label class="l">Siete</label><div class="pick">${PLATS.map(x => `<label><input type="checkbox" name="pl" value="${x}" ${p.platforms.includes(x) ? 'checked' : ''}>${I(x, 's')}${PL[x]}</label>`).join('')}</div>
     <label class="l">Jazyky <a class="small" onclick="$$('[name=lang]').forEach(c=>c.checked=true)">vybrať všetky</a> · <a class="small" onclick="$$('[name=lang]').forEach(c=>c.checked=false)">zrušiť</a></label>
     <div class="pick">${S.meta.languages.map(l => `<label title="${esc(l.countries || '')}"><input type="checkbox" name="lang" value="${l.code}" ${p.languages.includes(l.code) ? 'checked' : ''}>${l.name}</label>`).join('')}</div>
@@ -342,6 +343,7 @@ function pProjectForm(m, p) {
     <label class="l">…alebo vlož text</label><textarea id="srcText" style="min-height:70px" placeholder="Popis produktov, cenník, časté otázky zákazníkov…"></textarea>
     <div class="row" style="margin-top:10px"><button class="btn sm" onclick="srcAdd(${p.id})">${I('plus', 's')}Pridať</button><label class="btn sec sm">${I('upload', 's')}Pridať súbory<input type="file" multiple accept=".pdf,.txt,.md,.csv" class="hidden" onchange="srcFiles(${p.id},this.files)"></label></div>
   </div>
+  <div class="card" id="tagCard"></div>
   <div class="card"><h2>${I('mic')}Hlasy pre jazyky</h2>
     <p class="muted small">Pri každom jazyku si vyber hlas a vypočuj ukážku. „Automaticky“ = najlepší dostupný hlas. Potom klikni Uložiť.</p>
     <label class="l">Rýchlosť reči <span class="dim" id="rateV">${(+p.voice_rate || 1).toFixed(2)}×</span></label><input type="range" id="pRate" min="0.8" max="1.3" step="0.05" value="${p.voice_rate || 1}" oninput="$('#rateV').textContent=(+this.value).toFixed(2)+'×'">
@@ -355,6 +357,7 @@ function pProjectForm(m, p) {
     sel.innerHTML = `<option value="auto">Automaticky (najlepší dostupný)</option>` + grp('Google HD – najprirodzenejšie', d.voices.filter(v => v.engine === 'google')) + grp('Microsoft – zadarmo bez kľúča', d.voices.filter(v => v.engine === 'edge'));
   });
   if (p.id && typeof brandCard === 'function') brandCard(p.id);
+  if (p.id) tagCard(p.id).catch(() => { });
   const drop = $('#mdDrop');
   if (drop) {
     const fin = $('#mdIn');
@@ -370,7 +373,7 @@ async function srcAdd(pid) { const urls = $('#srcUrls').value, text = $('#srcTex
 async function srcFiles(pid, files) { const fd = new FormData(); [...files].forEach(f => fd.append('files', f)); srcDone(await api(`/api/projects/${pid}/sources`, { method: 'POST', body: fd }, 'Čítam súbory…')); }
 async function srcRemove(pid, i) { if (!confirm('Odstrániť tento zdroj?')) return; srcDone(await api(`/api/projects/${pid}/sources`, { method: 'POST', body: { remove: i } }, 'Aktualizujem…')); }
 async function saveProject(id) {
-  const body = { name: $('#pName').value, color: $('#pColor').value, description: $('#pDesc').value, audience: $('#pAud').value, tone: $('#pTone').value, goals: $('#pGoals').value, source_lang: $('#pSrc').value, voice_gender: $('#pVoice').value, glossary: $('#pGloss').value, banned: $('#pBan') ? $('#pBan').value : '', ...($('#pRate') ? { voice_rate: +$('#pRate').value, voices: Object.fromEntries($$('[data-vl]').map(x => [x.dataset.vl, x.value])) } : {}), languages: $$('[name=lang]:checked').map(c => c.value), platforms: $$('[name=pl]:checked').map(c => c.value) };
+  const body = { name: $('#pName').value, color: $('#pColor').value, description: $('#pDesc').value, audience: $('#pAud').value, tone: $('#pTone').value, goals: $('#pGoals').value, source_lang: $('#pSrc').value, voice_gender: $('#pVoice').value, glossary: $('#pGloss').value, banned: $('#pBan') ? $('#pBan').value : '', brand_tags: $('#pBrandTags') ? $('#pBrandTags').value : '', ...($('#pRate') ? { voice_rate: +$('#pRate').value, voices: Object.fromEntries($$('[data-vl]').map(x => [x.dataset.vl, x.value])) } : {}), languages: $$('[name=lang]:checked').map(c => c.value), platforms: $$('[name=pl]:checked').map(c => c.value) };
   if (!body.name) return toast('Zadaj názov projektu', true);
   if (!body.languages.includes(body.source_lang)) body.languages.unshift(body.source_lang);
   const r = await api(id ? '/api/projects/' + id : '/api/projects', { method: id ? 'PUT' : 'POST', body });
@@ -422,12 +425,45 @@ function sProto(b, { p, src, iid }) {
       <label class="l">Názov videa</label><input id="sTitle" value="${esc(src.title)}">
       <label class="l">Text pre hlas</label><textarea id="sVo" style="min-height:150px">${esc(src.voiceover)}</textarea>
       <label class="l">Scény</label><div id="scenes">${src.scenes.map((c, i) => `<div class="scene"><span class="n">${i + 1}</span><textarea class="scV" style="min-height:56px" placeholder="Čo je v zábere">${esc(c.visual)}</textarea><textarea class="scO" style="min-height:56px;font-weight:600" placeholder="Text na obrazovke">${esc(c.onscreen)}</textarea></div>`).join('')}</div>
-      <div class="g2"><div><label class="l">Text príspevku</label><input id="sCap" value="${esc(src.caption)}"></div><div><label class="l">Hashtagy</label><input id="sTags" value="${esc(src.hashtags)}"></div></div>
+      <div class="g2"><div><label class="l">Prvý riadok popisku (háčik)</label><input id="sCap" value="${esc(src.caption)}"></div><div><label class="l">Hashtagy videa</label><input id="sTags" value="${esc(src.hashtags)}"></div></div>
       <label class="l">Popis (YouTube)</label><textarea id="sDesc">${esc(src.description)}</textarea>
       <div class="row" style="margin-top:14px"><button class="btn sec" onclick="saveScript(${src.id})">${I('check')}Uložiť</button><span class="sp"></span>
-      <button class="btn" onclick="saveScript(${src.id}).then(()=>go('p/${p.id}/v/${iid}/jazyky'))">Schváliť a ďalej: hlas${I('right')}</button></div></div><div id="qual"></div></div></div>`;
+      <button class="btn" onclick="saveScript(${src.id}).then(()=>go('p/${p.id}/v/${iid}/jazyky'))">Schváliť a ďalej: hlas${I('right')}</button></div></div><div id="qual"></div><div id="caps"></div></div></div>`;
   setupPhone(src, p);
   if (typeof qualityCard === 'function') qualityCard(src.id, iid).catch(() => { });
+  capsCard(src.id).catch(() => { });
+}
+// ---------- popisky pre siete (skladajú sa bez AI) ----------
+async function tagCard(pid, data) {
+  const box = $('#tagCard'); if (!box) return;
+  const d = data || await api(`/api/projects/${pid}/hashtags`); const keys = Object.keys(d.bank || {}).sort();
+  box.innerHTML = `<h2>${I('globe')}Hashtagy krajín</h2>
+    <p class="muted small">Hashtagy, ktoré ľudia v každej krajine naozaj používajú pre tvoju tému (napr. v Španielsku „aerotermia“, nie doslovný preklad). Robí sa raz za projekt jedným lacným AI volaním, potom ich appka striedavo dáva do popiskov spolu so značkou ${esc((d.brand || []).join(' '))} a témami videa.</p>
+    ${keys.length ? `<details style="margin:8px 0"><summary class="small">${keys.length} krajín pripravených</summary><div class="small" style="margin-top:6px">${keys.map(k => `<div><b>${esc(k)}</b> <span class="muted">${esc(d.bank[k].join(' '))}</span></div>`).join('')}</div></details>` : '<p class="small dim">Zatiaľ nepripravené. Pripravia sa samé pri prvom rozšírení videa do jazykov, alebo hneď tlačidlom.</p>'}
+    <button class="btn sec sm" onclick="tagBuild(${pid})">${I('refresh', 's')}${keys.length ? 'Pripraviť znova' : 'Pripraviť teraz'}</button>`;
+}
+async function tagBuild(pid) { const r = await api(`/api/projects/${pid}/hashtags`, { method: 'POST' }, 'Pripravujem hashtagy pre krajiny…'); if (r) { toast(`Hashtagy pripravené pre ${r.countries} krajín`); tagCard(pid); } }
+const CAP_PL = ['tiktok', 'instagram', 'youtube', 'facebook', 'linkedin'];
+function capsHTML(d, key) {
+  return `<div class="pick" style="margin:8px 0">${CAP_PL.map((x, i) => `<label class="${i ? '' : 'on'}" style="cursor:pointer" onclick="capTab('${key}','${x}',this)">${I(x, 's')}${PL[x] || x}</label>`).join('')}</div><div id="capb-${key}"></div>`;
+}
+function capTab(key, pl, el) {
+  const d = (window._caps || {})[key]; if (!d || !d[pl]) return; const c = d[pl];
+  const vis = c.text.slice(0, c.visible), rest = c.text.slice(c.visible);
+  $('#capb-' + key).innerHTML = `${c.title ? `<div class="small dim">Názov</div><div style="font-weight:600;margin-bottom:8px">${esc(c.title)}</div>` : ''}
+    <div class="small" style="white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:260px;overflow:auto"><b>${esc(vis)}</b><span class="dim">${esc(rest)}</span></div>
+    <div class="small dim" style="margin-top:6px">${c.len} znakov · tučné = čo ľudia vidia bez kliknutia na „viac“${c.country ? ' · hashtagy pre ' + esc(c.country) : ''}</div>`;
+  if (el) el.parentNode.querySelectorAll('label').forEach(x => x.classList.toggle('on', x === el));
+}
+async function capsCard(sid) {
+  const box = $('#caps'); if (!box) return;
+  const d = await api(`/api/scripts/${sid}/captions`); (window._caps = window._caps || {})['s' + sid] = d;
+  box.innerHTML = `<div class="card" style="margin-top:14px"><h2>${I('type')}Popisky pre siete</h2><p class="muted small">Appka ich skladá sama pre každú sieť, krajinu a jazyk podľa toho, čo dnes funguje. Mení sa to podľa polí vyššie.</p>${capsHTML(d, 's' + sid)}</div>`;
+  capTab('s' + sid, 'tiktok');
+}
+async function capsModal(vid) {
+  const d = await api(`/api/videos/${vid}/captions`); (window._caps = window._caps || {})['v' + vid] = d;
+  modal(`<h2>${I('type')}Popisky pre siete</h2>${capsHTML(d, 'v' + vid)}`); capTab('v' + vid, 'tiktok');
 }
 function phoneHTML() { return `<div class="phone" id="phone"><div class="bg"></div><div class="bars"></div><div class="txt"></div><div class="vis"></div><div class="cap"></div><div class="play" id="pplay"><span>${I('play')}</span></div></div>`; }
 function setupPhone(s, p) {
@@ -466,6 +502,7 @@ async function saveScript(id) {
   const body = { title: $('#sTitle').value, voiceover: $('#sVo').value, description: $('#sDesc').value, caption: $('#sCap').value, hashtags: $('#sTags').value };
   await api('/api/scripts/' + id, { method: 'PUT', body }); toast('Uložené');
   if ($('#qual') && typeof qualityCard === 'function') qualityCard(id, R()[3] ? +R()[3] : 0).catch(() => { });
+  capsCard(id).catch(() => { });
 }
 async function voiceOne(id, rerender) { const r = await api(`/api/scripts/${id}/voice`, { method: 'POST', body: { fresh: true } }, 'Vytváram hlas…'); toast('Hlas hotový'); voiceNote(r); if (rerender) render(); }
 
@@ -676,11 +713,11 @@ async function pReview(m) {
       <div class="small muted">${g.langs.length} ${g.langs.length === 1 ? 'jazyk' : g.langs.length < 5 ? 'jazyky' : 'jazykov'} · ${g.accounts} ${g.accounts === 1 ? 'účet' : g.accounts < 5 ? 'účty' : 'účtov'} · ${g.platforms.map(x => I(x, 's')).join(' ')} · spolu ${g.posts} zverejnení</div>
       <div class="pick" style="margin:12px 0">${g.langs.map((l, li) => `<label class="${li ? '' : 'on'}" onclick="revLang(${gi},${li},this)" style="cursor:pointer">${esc(langName(l.lang))}${l.source ? ' ★' : ''}</label>`).join('')}</div>
       <div id="rc${gi}" class="small" style="${L.caption || L.hashtags ? "" : "display:none;"}white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:140px;overflow:auto">${esc((L.caption || '') + (L.hashtags ? '\n' + L.hashtags : ''))}</div>
-      <div class="row" style="margin-top:14px"><button class="btn" onclick="revApprove(['${g.key}'])">${I('check')}Schváliť a pustiť</button><button class="btn sec" onclick="revReject('${g.key}')">${I('x')}Vrátiť na úpravu</button></div>
+      <div class="row" style="margin-top:14px"><button class="btn" onclick="revApprove(['${g.key}'])">${I('check')}Schváliť a pustiť</button><button class="btn sec" onclick="revReject('${g.key}')">${I('x')}Vrátiť na úpravu</button><button class="btn sec" onclick="capsModal(window._rev[${gi}].langs[window._rev[${gi}].cur||0].video_id)">${I('type')}Popisky pre siete</button></div>
     </div></div>`; }).join('') : `<div class="card empty">${I('check', 'l')}<p>Nič nečaká na schválenie.</p><p class="small dim">Keď naplánuješ videá, objavia sa tu. Kým ich neschváliš, nikam sa neodošlú.</p></div>`}`;
   window._rev = groups;
 }
-function revLang(gi, li, el) { const l = window._rev[gi].langs[li]; $('#rv' + gi).src = '/api/file?path=' + encodeURIComponent(l.file); $('#rc' + gi).style.display = (l.caption || l.hashtags) ? '' : 'none'; $('#rc' + gi).textContent = (l.caption || '') + (l.hashtags ? '\n' + l.hashtags : ''); el.parentNode.querySelectorAll('label').forEach(x => x.classList.remove('on')); el.classList.add('on'); }
+function revLang(gi, li, el) { window._rev[gi].cur = li; const l = window._rev[gi].langs[li]; $('#rv' + gi).src = '/api/file?path=' + encodeURIComponent(l.file); $('#rc' + gi).style.display = (l.caption || l.hashtags) ? '' : 'none'; $('#rc' + gi).textContent = (l.caption || '') + (l.hashtags ? '\n' + l.hashtags : ''); el.parentNode.querySelectorAll('label').forEach(x => x.classList.remove('on')); el.classList.add('on'); }
 async function revApprove(keys) { const r = await api('/api/review/approve', { method: 'POST', body: { keys } }); toast(`Schválené: ${r.approved} zverejnení ide von`); S.meta = await api('/api/meta'); render(); }
 async function revReject(key) { if (!confirm('Zrušiť naplánovanie tohto videa vo všetkých jazykoch? Videá ostanú, po oprave ich naplánuješ znova.')) return; const r = await api('/api/review/reject', { method: 'POST', body: { keys: [key] } }); toast(`Vrátené (${r.rejected})`); S.meta = await api('/api/meta'); render(); }
 

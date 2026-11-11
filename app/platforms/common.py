@@ -36,18 +36,11 @@ def check(r, what):
     return r
 
 
-def text_for(video, platform):
-    """Text príspevku podľa platformy."""
-    tags = (video.get("hashtags") or "").strip()
-    cap = (video.get("caption") or video.get("title") or "").strip()
-    if platform == "youtube":
-        title = (video.get("title") or "Video").replace("<", "").replace(">", "")
-        if video.get("duration") and video["duration"] <= 180 and "#shorts" not in title.lower():
-            if len(title) <= 90:
-                title += " #Shorts"
-        desc = ((video.get("description") or "") + "\n\n" + tags).strip()
-        return title[:100], desc[:4900]
-    return None, (cap + ("\n\n" + tags if tags else "")).strip()[:2200]
+def text_for(video, platform, account=None):
+    """Text príspevku podľa siete, krajiny a jazyka (pravidlá v captions.py, bez AI)."""
+    from .. import captions
+    b = captions.build(video, platform, account)
+    return b["title"], b["text"]
 
 
 def file_chunks(path, start=0, end=None, size=1024 * 1024 * 4):
