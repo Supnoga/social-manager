@@ -73,3 +73,22 @@ async function brandUpload(pid, files) {
 async function brandEdit(pid, aid, body, quiet) { await api('/api/brand/asset/' + aid, { method: 'PUT', body }); if (quiet) toast('Uložené'); else brandCard(pid); }
 async function brandDel(pid, aid) { if (!confirm('Odstrániť tento súbor?')) return; await api('/api/brand/asset/' + aid, { method: 'DELETE' }); render(); }
 async function brandOpt(pid, k, v) { await api(`/api/brand/${pid}/opts`, { method: 'PUT', body: { [k]: v } }); toast('Uložené'); }
+
+// Pustenie súborov kdekoľvek na stránke „Popis a dizajn“ (nielen do rámčeka). Inde prehliadač súbor neotvorí.
+(() => {
+  const pidHere = () => { const r = R(); return r[0] === 'p' && r[2] === 'brief' && $('#brandCard') ? +r[1] : 0; };
+  let depth = 0;
+  const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  document.addEventListener('dragenter', e => { if (!hasFiles(e) || !pidHere()) return; depth++; document.body.classList.add('dropping'); });
+  document.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--depth <= 0) { depth = 0; document.body.classList.remove('dropping'); } });
+  document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  document.addEventListener('drop', e => {
+    depth = 0; document.body.classList.remove('dropping');
+    if (!hasFiles(e)) return;
+    const done = e.defaultPrevented; e.preventDefault();
+    const pid = pidHere();
+    if (done || !pid || !e.dataTransfer.files.length) return;
+    const files = [...e.dataTransfer.files];
+    files.every(f => /\.(md|markdown|txt)$/i.test(f.name)) ? uploadMd(pid, files) : brandUpload(pid, files);
+  });
+})();
