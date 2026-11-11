@@ -26,7 +26,7 @@ Odvtedy stačí **dvojklik na ikonku**. Appka beží na pozadí bez čierneho ok
    4. **Video** – najprv sa urobí video len v tomto jednom jazyku. Pozrieš si ho, a keď je dobré, tlačidlo **Rozšíriť do všetkých jazykov** ho preloží do ostatných jazykov s tým istým obrazom (mení sa len text, titulky a hlas). Môžeš aj nahrať vlastné video.
    5. **Siete** – tabuľka jazyky × siete, naplánuješ alebo zverejníš hneď.
 3. **Knižnica** – hromadné videá: pretiahni ich alebo pridaj celý priečinok (jazyk sa spozná z názvu `recept_de.mp4` alebo z priečinka `/de/`).
-4. **Účty a siete** – pripoj kanály a pri každom nastav **projekt a jazyk**.
+4. **Účty a siete** (v menu pod projektom) – pripoj kanály, pridajú sa do tohto projektu; pri každom nastav **krajinu**.
 5. **Kontrola** – všetko naplánované najprv čaká tu. Pozrieš video (prepínaš jazyky), a **Schváliť a pustiť** ho pošle vo všetkých jazykoch na všetky účty naraz. **Vrátiť na úpravu** zruší naplánovanie. Vypnúť sa dá v Nastaveniach → Ostatné.
 6. **Publikovanie** – kalendár po dňoch, chyby sa dajú zopakovať jedným klikom.
 
@@ -104,7 +104,7 @@ V projekte → Popis a dizajn → **Obrázky, logá a súbory značky**: pretiah
 
 ## 3d2. Dashboard (výsledky v grafoch)
 
-- **Dashboard** (v menu pod každým projektom aj vo „Všetky projekty naraz“): zobrazenia, reakcie a zapojenie zo všetkých sietí. Filtre: obdobie, projekt, sieť, krajina, jazyk. Klik na riadok v grafe (napr. krajinu) ju vyfiltruje, druhý klik filter zruší.
+- **Dashboard** (v menu pod projektom): iba skutočné zobrazenia, reakcie a zapojenie zo sietí, kým nie sú, ukáže „Zatiaľ žiadne dáta“. Filtre: obdobie, sieť, krajina, jazyk. Klik na riadok v grafe (napr. krajinu) ju vyfiltruje, druhý klik filter zruší.
 - Grafy: vývoj v čase (oproti predchádzajúcemu obdobiu), podľa siete, krajiny, jazyka a projektu, kedy to funguje najlepšie (deň a hodina), z čoho sú reakcie, najlepšie príspevky a účty.
 - Nemíňa žiadne AI. Kým nie sú skutočné čísla, ukazuje ukážkové (je to pri nich napísané).
 

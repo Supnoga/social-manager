@@ -134,15 +134,8 @@ function sidebar() {
     ${nav('', 'home', 'Prehľad', !cur)}
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
-      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
-    <div class="sec-t">Všetky projekty naraz</div>
-    ${nav('dashboard', 'chart', 'Dashboard', cur === 'dashboard')}
-    ${nav('kontrola', 'eye', 'Kontrola', cur === 'kontrola', S.meta.review_count)}
-    ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
-    ${nav('komentare', 'message', 'Komentáre', cur === 'komentare', S.cmCount)}
-    ${nav('spravy', 'inbox', 'Správy', cur === 'spravy', S.dmCount)}
+      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'ucty', 'link', 'Účty a siete')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Nastavenie</div>
-    ${nav('ucty', 'link', 'Účty a siete', cur === 'ucty')}
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
     <div class="side-foot">
       <div class="status"><i class="${ai.cli_found ? '' : 'w'}"></i>Claude ${ai.cli_found ? 'pripojený' : 'v ručnom režime'}</div>
@@ -155,22 +148,23 @@ const PF = () => S.pf ? S.projects.find(x => x.id === S.pf) : null;
 const here = () => location.hash.split('?')[0];
 const pTitle = t => { const p = PF(); return p ? `<div class="crumb"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color};margin-right:6px"></span>${esc(p.name)}</div><h1>${t}</h1>` : `<h1>${t}</h1>`; };
 
+const PROJ_SECS = ['kalendar', 'kontrola', 'komentare', 'spravy', 'radar', 'dashboard', 'profily', 'ucty'];
 async function render() {
   await loadBase();
   sidebar();
   const r = R(), m = $('#main');
   window.scrollTo(0, 0);
   S.pf = r[0] === 'p' ? +r[1] : 0;
+  if (S.pf) try { localStorage.setItem('lastP', S.pf); } catch (e) { }
+  // všetko patrí pod projekt: staré spoločné adresy (aj návrat z pripájania účtu) otvoria posledný projekt
+  if (PROJ_SECS.includes(r[0])) {
+    let lp = 0; try { lp = +localStorage.getItem('lastP'); } catch (e) { }
+    const p = S.projects.find(x => x.id === lp) || S.projects[0];
+    const qs = location.hash.includes('?') ? '?' + location.hash.split('?')[1] : '';
+    return location.replace(p ? `#/p/${p.id}/${r.join('/')}${qs}` : '#/novy');
+  }
   try {
     if (!r[0]) await pHome(m);
-    else if (r[0] === 'kalendar') await pCalendar(m);
-    else if (r[0] === 'kontrola') await pReview(m);
-    else if (r[0] === 'komentare') await pComments(m);
-    else if (r[0] === 'spravy') await pMessages(m);
-    else if (r[0] === 'radar') await pRadar(m);
-    else if (r[0] === 'dashboard') await pDash(m);
-    else if (r[0] === 'profily') await pProfiles(m);
-    else if (r[0] === 'ucty') await pAccounts(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
     else if (r[0] === 'novy') pProjectForm(m, null);
     else if (r[0] === 'p') {
@@ -185,6 +179,7 @@ async function render() {
       else if (sec === 'komentare') await pComments(m);
       else if (sec === 'spravy') await pMessages(m);
       else if (sec === 'profily') await pProfiles(m);
+      else if (sec === 'ucty') await pAccounts(m);
       else await pProject(m, p, sec);
     }
   } catch (e) { console.error(e); }
@@ -595,7 +590,7 @@ async function sSocial(b, { p, scripts, src, iid }) {
     <table class="mx"><tr><th>Jazyk</th><th>Video</th>${plats.map(x => `<th>${plat(x, false)}</th>`).join('')}</tr>
     ${scripts.map(s => `<tr><td><label class="row"><input type="checkbox" class="pubL" value="${s.lang}" ${s.videos.length ? 'checked' : 'disabled'}><b>${langName(s.lang)}</b></label></td>
       <td>${s.videos.length ? `<span class="cell ok">${I('film', 's')}</span>` : `<span class="cell" style="opacity:.35">${I('x', 's')}</span>`}</td>${plats.map(x => `<td>${cell(s, x)}</td>`).join('')}</tr>`).join('')}</table>
-    <p class="small dim" style="margin-top:10px">${I('x', 's')} = pre daný jazyk nie je pripojený účet. Účty a ich jazyky nastavíš v <a href="#/ucty">Účty a siete</a>.</p></div>
+    <p class="small dim" style="margin-top:10px">${I('x', 's')} = pre daný jazyk nie je pripojený účet. Účty a ich krajiny nastavíš v <a href="#/p/${p.id}/ucty">Účty a siete</a>.</p></div>
   <div class="card"><h2>${I('calendar')}Naplánovať</h2>
     <label class="l">Kam</label><div class="pick">${plats.map(x => `<label><input type="checkbox" name="pp" value="${x}" checked>${I(x, 's')}${PL[x]}</label>`).join('')}</div>
     <div class="g3"><div><label class="l">Kedy začať</label><input type="datetime-local" id="sStart" value="${local}"></div>
@@ -708,21 +703,22 @@ async function pCalendar(m) {
 
 // ================= ÚČTY =================
 async function pAccounts(m) {
-  const accs = await api('/api/accounts');
+  const all = await api('/api/accounts'), pid = S.pf, accs = all.filter(a => a.project_id === pid);
+  api('/api/connect-project', { method: 'POST', body: { project_id: pid } }); // nové účty pôjdu do tohto projektu
   const h = S.meta.has, st = S.meta.settings;
   const c = (icon, title, body) => `<div class="card"><h2>${I(icon)}${title}</h2>${body}</div>`;
   const ok = '<span class="chip ok">' + I('check', 's') + 'uložené</span>';
-  m.innerHTML = `<div class="top"><div><h1>Účty a siete</h1><p class="sub">Pripoj kanály a pri každom nastav projekt a krajinu. Jazyk videí sa doplní sám podľa krajiny (pri Švajčiarsku, Belgicku a Luxembursku si ho vyber). Jedno video v jazyku pôjde na účty všetkých krajín s týmto jazykom.</p></div></div>
+  m.innerHTML = `<div class="top"><div>${pTitle('Účty a siete')}<p class="sub">Účty tohto projektu. Novo pripojené účty sa pridajú sem. Pri každom nastav krajinu. Jazyk videí sa doplní sám podľa krajiny (pri Švajčiarsku, Belgicku a Luxembursku si ho vyber). Jedno video v jazyku pôjde na účty všetkých krajín s týmto jazykom.</p></div></div>
   <div class="card" style="margin-bottom:14px"><div class="row"><h2 style="margin:0">${I('link')}Pripojené účty <span class="chip">${accs.length}</span></h2><span class="sp"></span>
     ${PLATS.filter(x => accs.some(a => a.platform === x)).map(x => `<span class="chip">${I(x, 's')}${accs.filter(a => a.platform === x).length}</span>`).join('')}</div>
     ${accs.length ? `<div class="row" style="margin:12px 0"><input id="accQ" placeholder="Hľadať účet…" style="flex:1;min-width:160px" oninput="accFilter()">
       <select id="accPf" onchange="accFilter()" style="max-width:170px"><option value="">Všetky siete</option>${PLATS.map(x => `<option value="${x}">${PL[x]}</option>`).join('')}</select>
-      <select id="accPr" onchange="accFilter()" style="max-width:200px"><option value="">Všetky projekty</option><option value="0">Bez projektu</option>${S.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
-    <div class="row small" style="margin-bottom:8px;gap:8px"><span class="dim">Označeným:</span><select id="bkP" style="max-width:200px"><option value="">projekt…</option><option value="0">Všetky projekty</option>${S.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+</div>
+    <div class="row small" style="margin-bottom:8px;gap:8px"><span class="dim">Označeným:</span><select id="bkP" style="max-width:200px"><option value="">presunúť do projektu…</option>${S.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
       <select id="bkC" style="max-width:190px"><option value="">krajina…</option>${S.meta.countries.map(c => `<option value="${c.code}">${c.name}</option>`).join('')}</select><select id="bkL" style="max-width:180px"><option value="">jazyk…</option><option value="-">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select><button class="btn sec sm" onclick="accBulk()">${I('check', 's')}Nastaviť</button></div>
     <table id="accT"><tr><th><input type="checkbox" onchange="$$('#accT tr:not([hidden]) .aS').forEach(c=>c.checked=this.checked)"></th><th>Sieť</th><th>Účet</th><th>Projekt</th><th>Krajina</th><th>Jazyk videí</th><th></th></tr>${accs.map(a => `<tr data-pf="${a.platform}" data-pr="${a.project_id || 0}" data-n="${esc((a.name || '').toLowerCase())}">
     <td><input type="checkbox" class="aS" value="${a.id}"></td><td>${plat(a.platform)}</td><td><input value="${esc(a.name)}" onchange="api('/api/accounts/${a.id}',{method:'PUT',body:{name:this.value}}).then(()=>toast('Uložené'))">${a.days_left !== null && a.days_left !== undefined && a.days_left <= 10 ? `<div class="small" style="margin-top:4px"><span class="${a.days_left <= 3 ? 'bad-t' : ''}" style="color:${a.days_left <= 3 ? '' : 'var(--acc)'}">${a.days_left ? `Prihlásenie vyprší o ${a.days_left} ${a.days_left === 1 ? 'deň' : a.days_left < 5 ? 'dni' : 'dní'}` : 'Prihlásenie vypršalo'}</span> <a class="btn sm" href="/api/accounts/linkedin/connect${a.org ? '?org=1' : ''}">${I('refresh', 's')}Prihlásiť znova</a></div>` : ''}</td>
-    <td><select class="aP" onchange="accSet(${a.id},this.closest('tr'))"><option value="">Všetky projekty</option>${S.projects.map(p => `<option value="${p.id}" ${p.id === a.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td>
+    <td><select class="aP" onchange="accSet(${a.id},this.closest('tr'))">${S.projects.map(p => `<option value="${p.id}" ${p.id === a.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td>
     <td><select class="aC" onchange="accCountry(${a.id},this.value)"><option value="">krajina…</option>${S.meta.countries.map(c => `<option value="${c.code}" ${c.code === a.country ? 'selected' : ''}>${c.name}</option>`).join('')}</select></td>
     <td><select class="aL" onchange="accSet(${a.id},this.closest('tr'))"><option value="">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}" ${l.code === a.lang ? 'selected' : ''}>${l.name}</option>`).join('')}</select></td>
     <td><button class="btn ghost sm" onclick="if(confirm('Odpojiť účet?'))api('/api/accounts/${a.id}',{method:'DELETE'}).then(render)">${I('trash', 's')}</button></td></tr>`).join('')}</table>` : empty('link', 'Zatiaľ žiadne. Pripoj ich nižšie.')}</div>
@@ -749,15 +745,15 @@ async function pAccounts(m) {
     <div class="row" style="margin:8px 0 14px"><button class="btn sec sm" onclick="saveLi(false)">Uložiť</button><a class="btn sm" href="/api/accounts/linkedin/connect">${I('link', 's')}Pripojiť profil</a></div>
     <b class="small">Firemné stránky</b> ${h.li_org ? ok : ''}<input id="liOId" placeholder="Client ID" style="margin:6px 0"><input id="liOSec" placeholder="Client Secret" type="password">
     <div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="saveLi(true)">Uložiť</button><a class="btn sm" href="/api/accounts/linkedin/connect?org=1">${I('link', 's')}Pripojiť stránky</a></div>
-    ${accs.some(a => a.org) ? `<div style="margin-top:14px"><b class="small">Jazyky na firemnej stránke</b>
+    ${all.some(a => a.org) ? `<div style="margin-top:14px"><b class="small">Jazyky na firemnej stránke</b>
       <p class="small dim">Jedna stránka pre všetky krajiny. Vyber, v ktorých jazykoch tam majú ísť videá (každý jazyk = samostatný príspevok). ${S.meta.li.followers ? `Sledovateľov: <b>${S.meta.li.followers}</b>. ` : ''}${S.meta.li.followers >= 300 ? 'Príspevky sa ukážu hlavne ľuďom v danom jazyku.' : 'Od 300 sledovateľov appka začne každý príspevok ukazovať hlavne ľuďom v jeho jazyku.'}</p>
       <div class="row small" style="gap:6px;flex-wrap:wrap">${S.meta.languages.map(l => `<label class="chip" style="cursor:pointer"><input type="checkbox" class="liL" value="${l.code}" ${S.meta.li.page_langs.includes(l.code) ? 'checked' : ''} onchange="saveLiLangs()"> ${l.name}</label>`).join('')}</div></div>` : ''}
     <p class="small dim">Osobný profil treba prihlásiť znova po 60 dňoch, appka ťa upozorní. Firemná stránka sa obnovuje sama.</p>`)}
   </div>`;
 }
 async function uploadYt() { const f = $('#ytJson').files[0]; if (!f) return toast('Vyber JSON súbor', true); const fd = new FormData(); fd.append('file', f); const r = await api('/api/accounts/youtube/client', { method: 'POST', body: fd }); toast(`Uložené (Google projektov: ${r.projects}), teraz klikni Pripojiť kanál`); S.meta = await api('/api/meta'); render(); }
-function accFilter() { const q = $('#accQ').value.toLowerCase(), pf = $('#accPf').value, pr = $('#accPr').value; $$('#accT tr[data-pf]').forEach(tr => { tr.hidden = (q && !tr.dataset.n.includes(q)) || (pf && tr.dataset.pf !== pf) || (pr !== '' && tr.dataset.pr !== pr); }); }
-async function accBulk() { const ids = $$('.aS:checked').map(c => +c.value), pv = $('#bkP').value, lv = $('#bkL').value, cv = $('#bkC').value; if (!ids.length) return toast('Označ účty', true); if (!pv && !lv && !cv) return toast('Vyber projekt, krajinu alebo jazyk', true); const body = {}; if (pv !== '') body.project_id = +pv || null; if (cv) body.country = cv; if (lv) body.lang = lv === '-' ? '' : lv; for (const id of ids) await api('/api/accounts/' + id, { method: 'PUT', body }); toast(`Nastavené pre ${ids.length} účtov`); render(); }
+function accFilter() { const q = $('#accQ').value.toLowerCase(), pf = $('#accPf').value; $$('#accT tr[data-pf]').forEach(tr => { tr.hidden = (q && !tr.dataset.n.includes(q)) || (pf && tr.dataset.pf !== pf); }); }
+async function accBulk() { const ids = $$('.aS:checked').map(c => +c.value), pv = $('#bkP').value, lv = $('#bkL').value, cv = $('#bkC').value; if (!ids.length) return toast('Označ účty', true); if (!pv && !lv && !cv) return toast('Vyber projekt, krajinu alebo jazyk', true); const body = {}; if (pv) body.project_id = +pv; if (cv) body.country = cv; if (lv) body.lang = lv === '-' ? '' : lv; for (const id of ids) await api('/api/accounts/' + id, { method: 'PUT', body }); toast(`Nastavené pre ${ids.length} účtov`); render(); }
 async function refreshMeta() { const r = await api('/api/accounts/meta', { method: 'POST', body: { token: '' } }, 'Hľadám nové stránky a Instagramy…'); toast(`Pripojených ${r.created} účtov`); render(); }
 async function connectMeta() { const r = await api('/api/accounts/meta', { method: 'POST', body: { token: $('#metaTok').value } }, 'Načítavam stránky a Instagram…'); toast(`Pripojených ${r.created} účtov`); render(); }
 async function saveTt() { await api('/api/accounts/tiktok/creds', { method: 'POST', body: { client_key: $('#ttKey').value, client_secret: $('#ttSec').value, mode: $('#ttMode').value } }); toast('Uložené'); render(); }
@@ -766,7 +762,7 @@ async function pasteTtb() { const r = await api('/api/accounts/ttb/paste', { met
 async function saveLiLangs() { const v = $$('.liL:checked').map(c => c.value); await api('/api/settings', { method: 'POST', body: { li_page_langs: v } }); S.meta.li.page_langs = v; toast('Uložené'); }
 async function saveLi(org) { await api('/api/accounts/linkedin/creds', { method: 'POST', body: { client_id: $(org ? '#liOId' : '#liId').value, client_secret: $(org ? '#liOSec' : '#liSec').value, org } }); toast('Uložené'); render(); }
 async function accCountry(id, c) { await api('/api/accounts/' + id, { method: 'PUT', body: { country: c } }); toast('Uložené'); render(); }
-async function accSet(id, tr) { await api('/api/accounts/' + id, { method: 'PUT', body: { project_id: +$('.aP', tr).value || null, lang: $('.aL', tr).value } }); toast('Uložené'); }
+async function accSet(id, tr) { const np = +$('.aP', tr).value; await api('/api/accounts/' + id, { method: 'PUT', body: { project_id: np, lang: $('.aL', tr).value } }); if (np !== S.pf) { toast('Účet presunutý do projektu ' + (S.projects.find(x => x.id === np)?.name || '')); render(); } else toast('Uložené'); }
 
 // ================= NASTAVENIA =================
 async function pSettings(m) {

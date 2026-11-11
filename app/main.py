@@ -1054,12 +1054,22 @@ def accounts():
     return rows
 
 
+@app.post("/api/connect-project")
+def connect_project(data: dict = Body(...)):
+    """Projekt, do ktorého pôjdu novo pripojené účty (stránka Účty a siete v projekte)."""
+    pid = int(data.get("project_id") or 0)
+    if pid and db.one("SELECT id FROM projects WHERE id=?", (pid,)):
+        db.set_setting("connect_project", pid)
+    return {"ok": True}
+
+
 @app.put("/api/accounts/{aid}")
 def account_update(aid: int, data: dict = Body(...)):
     if data.get("name"):
         db.run("UPDATE accounts SET name=? WHERE id=?", (data["name"], aid))
     if "project_id" in data:
-        db.run("UPDATE accounts SET project_id=? WHERE id=?", (data.get("project_id") or None, aid))
+        if data.get("project_id"):  # účet vždy patrí pod konkrétny projekt
+            db.run("UPDATE accounts SET project_id=? WHERE id=?", (data["project_id"], aid))
     if "country" in data:
         c = (data.get("country") or "").upper()
         db.run("UPDATE accounts SET country=? WHERE id=?", (c, aid))
