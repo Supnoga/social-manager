@@ -235,6 +235,13 @@ def localized_scenes(s):
 
 # ---------- časovanie scén podľa viet ----------
 def timeline(scenes, words, total):
+    try:  # scény podľa toho, o čom hlas práve hovorí (audio.scene_times); inak rovnomerne po vetách
+        from . import audio
+        t = audio.scene_times(scenes, words, total)
+        if t:
+            return t
+    except Exception as e:
+        print("časovanie scén:", e)
     n = max(1, len(scenes))
     ends = [w["e"] for w in words if w["w"][-1:] in ".!?…"] if words else []
     bounds, last = [], 0.0

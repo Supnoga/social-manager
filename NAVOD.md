@@ -144,6 +144,8 @@ TikTok v Európe správy cez appky nepovoľuje a LinkedIn ich povoľuje len svoj
 - Ak vybraný hlas nejde, appka použije náhradný a **povie ti to**.
 - **Výslovnosť:** hlas pred čítaním sám opraví názvy (PROLINE, TOWER, N2N…), skratky (SCOP, R290, A+++), jednotky (kW, dB(A), °C) a slová písané VEĽKÝMI písmenami, vo všetkých jazykoch a bez AI. Titulky ostanú napísané pôvodne. Vlastné slovo pridáš v **Nastavenia → Výslovnosť**: napíšeš slovo a po slovensky to, ako má znieť (napr. *prolajn*), tlačidlom ▶ si ho vypočuješ. Staršie videá majú starý hlas, stačí im hlas vyrobiť znova.
 
+- **Zvuk videí (od 1.24):** Google hlas sa vyrába po vetách v plnej kvalite (čistejší, nie „telefónny“), pauzy medzi vetami sú krátke a titulky aj striedanie scén idú presne podľa hlasu. Každé video dostane tichú **hudbu pod hlas** (pri reči sa sama stíši), jemný zvuk pri zmene scény a hlasitosť ako ostatné videá na sieťach. Hudba je zabudovaná a zadarmo (3 nálady); vlastná v priečinku Hudba má prednosť. Nastavíš v **Nastavenia → Zvuk videí** (nálada, hlasitosť hudby, efekty, alebo bez hudby). Staršie videá stačí vyrobiť znova, hlas sa urobí nanovo sám.
+
 ## 6b. Zdroje projektu
 V projekte → Popis a dizajn → **Zdroje**: vlož odkazy na svoj web, text alebo súbory (PDF, TXT, MD). AI si z nich raz urobí výťah faktov a stratégia, nápady aj scenáre z nich vychádzajú.
 
