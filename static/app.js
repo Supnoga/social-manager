@@ -467,7 +467,7 @@ async function saveScript(id) {
   await api('/api/scripts/' + id, { method: 'PUT', body }); toast('Uložené');
   if ($('#qual') && typeof qualityCard === 'function') qualityCard(id, R()[3] ? +R()[3] : 0).catch(() => { });
 }
-async function voiceOne(id, rerender) { const r = await api(`/api/scripts/${id}/voice`, { method: 'POST', body: {} }, 'Vytváram hlas…'); toast('Hlas hotový'); voiceNote(r); if (rerender) render(); }
+async function voiceOne(id, rerender) { const r = await api(`/api/scripts/${id}/voice`, { method: 'POST', body: { fresh: true } }, 'Vytváram hlas…'); toast('Hlas hotový'); voiceNote(r); if (rerender) render(); }
 
 function firstLangOf(p, idea, src) { return idea.first_lang || p.source_lang || src.lang; }
 function firstLangSelect(p, idea, src, iid) {
@@ -532,6 +532,7 @@ async function sVideo(b, { p, scripts, src, iid, idea }) {
   const rowsHTML = scripts.map(s => { const v = s.videos[0]; return `<div class="lang-row" style="grid-template-columns:150px 1fr auto"><div><b>${langName(s.lang)}</b>${s.lang === first ? ' <span class="chip acc">prvá verzia</span>' : ''}</div>
       <div class="row">${v ? `<video src="/api/file?path=${encodeURIComponent(v.file_path)}" preload="metadata" style="height:90px;aspect-ratio:9/16;object-fit:cover" controls></video><span class="small muted">${v.duration ? Math.round(v.duration) + ' s' : ''}${s.videos.length > 1 ? ` · ${s.videos.length} verzie` : ''}</span>` : '<span class="small dim">bez videa</span>'}</div>
       <div class="row"><label class="btn sec sm" style="cursor:pointer">${I('upload', 's')}Vlastné<input type="file" accept="video/*" class="hidden" onchange="attachVid(${s.id},this.files[0])"></label>
+      <button class="btn ghost sm" onclick="newSound(${s.id})" title="Nový zvuk: hlas sa nahrá nanovo a video sa zloží znova">${I('mic', 's')}</button>
       <button class="btn ghost sm" onclick="oneVideo(${s.id})" title="Vytvoriť znova">${I('refresh', 's')}</button></div></div>`; }).join('');
   b.innerHTML = `<div class="card"><div class="row"><h2 style="margin:0">${I('film')}1. Prvá verzia</h2><span class="sp"></span>${expanded ? `<span class="chip">${langName(first)}</span>` : firstLangSelect(p, idea, src, iid)}</div>
     <div class="g2" style="align-items:end;margin-top:10px"><div><label class="l">Štýl videa</label><select id="vStyle" onchange="$('#baseWrap').style.display=this.value==='base'?'':'none';$('#shotsWrap').style.display=this.value==='broll'?'':'none'">
@@ -543,6 +544,7 @@ async function sVideo(b, { p, scripts, src, iid, idea }) {
     ${fv ? `<div class="row" style="margin-top:14px;align-items:flex-start"><video src="/api/file?path=${encodeURIComponent(fv.file_path)}" preload="metadata" controls style="height:420px;max-height:70vh;aspect-ratio:9/16;object-fit:cover;border-radius:12px;background:#000"></video>
       <div class="col" style="gap:8px"><span class="small muted">${langName(first)}${fv.duration ? ' · ' + Math.round(fv.duration) + ' s' : ''}</span>
       <button class="btn sec sm" onclick="produceFirst(${iid})">${I('refresh', 's')}Vytvoriť znova</button>
+      ${fsc ? `<button class="btn sec sm" onclick="newSound(${fsc.id})" title="Hlas sa nahrá nanovo (povie to trochu inak) a video sa zloží znova. Obraz ostáva rovnaký.">${I('mic', 's')}Nový zvuk</button>` : ''}
       <button class="btn ghost sm" onclick="go('p/${p.id}/v/${iid}/prototyp')">${I('pencil', 's')}Upraviť scenár</button>
       ${fsc ? `<label class="btn ghost sm" style="cursor:pointer">${I('upload', 's')}Nahrať vlastné<input type="file" accept="video/*" class="hidden" onchange="attachVid(${fsc.id},this.files[0])"></label>` : ''}</div></div>`
       : `<div class="row" style="margin-top:14px"><button class="btn" onclick="produceFirst(${iid})">${I('film')}Vytvoriť video (${langName(first)})</button><span class="small dim">Urobí hlas a video len v tomto jazyku, aby si si ho mohol pozrieť.</span></div>`}</div>
@@ -568,6 +570,7 @@ async function loadShots(iid) {
 async function shotsPick(iid) { await api(`/api/ideas/${iid}/shots`, { method: 'POST', body: {} }, 'Hľadám zábery…'); loadShots(iid); }
 async function shotSwap(iid, i) { await api(`/api/ideas/${iid}/shots`, { method: 'POST', body: { scene: i, q: $('#sq' + i).value } }, 'Hľadám iný záber…'); loadShots(iid); }
 async function videosAll(iid) { const r = await api(`/api/ideas/${iid}/videos-all`, { method: 'POST', body: vOpts() }, 'Vytváram hlasy a videá… (pár minút)'); toast(`Hotových ${r.created} videí` + (r.errors.length ? ' · chyby: ' + r.errors.join('; ') : ''), !!r.errors.length); render(); }
+async function newSound(sid) { await api(`/api/scripts/${sid}/to-video`, { method: 'POST', body: { ...vOpts(), new_voice: true } }, 'Nahrávam hlas nanovo a skladám video…'); toast('Nový zvuk je hotový'); render(); }
 async function oneVideo(sid) { await api(`/api/scripts/${sid}/to-video`, { method: 'POST', body: vOpts() }, 'Vytváram video…'); render(); }
 async function attachVid(sid, f) { if (!f) return; const fd = new FormData(); fd.append('file', f); await api(`/api/scripts/${sid}/attach-video`, { method: 'POST', body: fd }, 'Nahrávam video…'); toast('Video pridané'); render(); }
 
