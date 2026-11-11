@@ -78,6 +78,13 @@ V menu *Vzhľad účtov*: nahraj raz profilovú fotku, pozadie a napíš popis. 
 - **Naplánovať týždeň** (Publikovanie): jedným klikom rozdelí hotové videá na všetky účty na 7 dní, v najlepšie časy pre každý účet. Kým nie sú vlastné čísla, používa štandardné časy podľa siete a krajiny. Dá sa zapnúť, aby to robila sama každú nedeľu večer.
 - **Zopakovať úspešné** (Radar → Výsledky): úspešné videá idú pri plánovaní prvé na účty, kde ešte neboli, a Claude k nim navrhne nové variácie. Rovnaké video na ten istý účet znova nedávame, siete to trestajú.
 
+## 3d1. Inšpirácia a kvalita obsahu
+- **Radar → Inšpirácia → Čo ľudia hľadajú a pýtajú sa:** čo ľudia píšu do Googlu v každej krajine (napr. „koľko stojí tepelné čerpadlo“) a otázky z komentárov pod tvojimi videami. Zbiera sa samé raz týždenne, zadarmo, bez AI. Tlačidlo „Nápad“ z otázky urobí video.
+- **Zásobník inšpirácie:** vlož odkaz na video, ktoré sa ti páči (TikTok, Reels, YouTube…), prípadne poznámku. Claude z neho vezme formát (nie obsah) a v pondelok ho použije prednostne.
+- **Overené formáty:** 18 osvedčených typov videí (3 chyby, Mýtus vs. fakt, Koľko to stojí…). Claude ku každému nápadu jeden vyberie, appka si pamätá, ktoré ti fungujú, a tie ponúka častejšie.
+- **Kvalita scenára:** pri prototype vidíš skóre 0–100 a konkrétne rady (krátky začiatok, číslo, výzva na konci, text na obrazovke…). Bez AI. „Silnejší začiatok“ navrhne 5 lepších prvých viet (1 malé lacné volanie).
+- **Nikdy netvrdiť:** v nastavení projektu zapíš zakázané tvrdenia (pri N2N je prednastavené „made in Slovakia“ a podobné). Claude ich nepoužije a kontrola kvality ich odhalí.
+
 ## 3d2. Dashboard (výsledky v grafoch)
 
 - **Dashboard** (v menu pod každým projektom aj vo „Všetky projekty naraz“): zobrazenia, reakcie a zapojenie zo všetkých sietí. Filtre: obdobie, projekt, sieť, krajina, jazyk. Klik na riadok v grafe (napr. krajinu) ju vyfiltruje, druhý klik filter zruší.

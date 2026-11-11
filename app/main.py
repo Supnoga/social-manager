@@ -288,7 +288,7 @@ def get_file(path: str):
 
 
 # ---------------- Projekty ----------------
-PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary"]
+PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned"]
 
 
 @app.get("/api/projects")
@@ -1300,6 +1300,8 @@ from . import events  # noqa: E402
 app.include_router(events.router)
 from . import dashboard as dash_page  # noqa: E402
 app.include_router(dash_page.router)
+from . import inspire  # noqa: E402
+app.include_router(inspire.router)
 
 
 def main():
@@ -1334,6 +1336,10 @@ def main():
     try:
         from . import anim
         anim.ensure_installed()  # animácie: Chromium sa stiahne raz na pozadí
+    except Exception:
+        pass
+    try:
+        inspire._db()
     except Exception:
         pass
     try:
