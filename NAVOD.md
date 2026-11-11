@@ -85,10 +85,12 @@ V menu *Vzhľad účtov*: nahraj raz profilovú fotku, pozadie a napíš popis. 
 
 ## 3c1. Logo, fotky a súbory značky
 V projekte → Popis a dizajn → **Obrázky, logá a súbory značky**: pretiahni sem logo, fotky produktov, videá, fonty alebo PDF brand manuál (PNG, JPG, SVG, WebP, HEIC z iPhonu, GIF, MP4, MOV, TTF, OTF, WOFF, PDF, MD). Bez AI, zadarmo.
-- **Logo** sa samo dá do rohu každého nového videa a na krátku záverečnú kartu. Tmavé logo dostane bielu podložku. Z loga sa urobí aj profilovka účtov (ak nenahráš inú) a jeho farby sa použijú vo videách.
+- **Logo** sa samo dá do rohu každého nového videa a na záverečnú kartu po dohovorení hlasu. Keď nahráš viac súborov, appka sama spozná skutočné logo (podľa názvu, napr. `logo-...`), nie ikonu, a na čierne video vyberie svetlý variant. Tmavé logo dostane bielu podložku. Z loga sa urobí aj profilovka účtov (ak nenahráš inú).
 - **Fotky a videá** sa použijú ako zábery vo videách tohto projektu (pred zábermi z internetu). Ku každej napíš, čo je na nej, appka ju dá k scéne, ktorá o tom hovorí. Navyše sa jedna dostane do každého videa.
-- **Font** sa použije na titulky a texty vo videách (pri jazykoch, pre ktoré nemá písmená, napr. azbuka, ostane bežný font).
+- **Fonty**: nadpisový font (napr. Display, Bold) ide na nadpisy a čísla, textový (Text, Light) na titulky. Font bez diakritiky sa vynechá. Pri jazykoch, pre ktoré font nemá písmená (napr. azbuka), ostane bežný font.
 - **PDF / MD** sa pridá k dizajnu značky.
+- **Farby z manuálu**: zvýrazňovacia farba videí je prvá sýta farba z dizajnu (pri N2N červená). Čierna, biela a sivé sa za ňu nikdy neberú. Iné farby sa vo videách nepoužívajú.
+- **Produkty**: obrázok produktu s priehľadným pozadím pomenovaný podľa produktu (napr. `hydrobox.png`) sa ukáže v scéne, ktorá produkt spomína, so svetlom vo farbe značky.
 - Všetko sa dá vypnúť zaškrtávačmi nad súbormi. Hviezdička = hlavné logo alebo font.
 
 ## 3d1. Inšpirácia a kvalita obsahu

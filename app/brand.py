@@ -50,6 +50,15 @@ def _db():
             db.con().executescript(SCHEMA)
             db.con().commit()
         _ready = True
+        if not db.get_setting("brand_main_v2", 0):
+            db.set_setting("brand_main_v2", 1)
+            try:
+                for r in db.q("SELECT DISTINCT project_id FROM brand_assets"):
+                    _ensure_main(r["project_id"], "logo")
+                    _ensure_main(r["project_id"], "font")
+                    _after_logo_change(r["project_id"])
+            except Exception as e:
+                print("oprava hlavného loga:", e)
 
 
 def _now():
@@ -221,12 +230,13 @@ def _missing_glyph_mask(font):
     return m.size, bytes(m)
 
 
-def font_covers(path, text):
+def font_covers(path, text, letters_only=False):
+    """Má font všetky znaky textu? letters_only: stačia písmená (symboly ako ², × či € si prehliadač doplní z bežného fontu)."""
     try:
         from PIL import ImageFont
         f = ImageFont.truetype(str(path), 48)
         miss = _missing_glyph_mask(f)
-        for ch in {c for c in (text or "") + (text or "").upper() if not c.isspace()}:
+        for ch in {c for c in (text or "") + (text or "").upper() if not c.isspace() and (c.isalpha() or not letters_only)}:
             m = f.getmask(ch)
             if (m.size, bytes(m)) == miss:
                 return False
@@ -235,20 +245,28 @@ def font_covers(path, text):
         return False
 
 
-def use_font(pid, text):
-    """Nastaví font značky pre práve vytvárané video (ak má všetky písmená textu). Vráti cestu alebo None."""
-    f = main_asset(pid, "font")
-    path = f["path"] if f and font_covers(f["path"], text) else None
-    _local.font = path
-    return path
+def use_font(pid, text, letters_only=False):
+    """Nastaví fonty značky pre práve vytvárané video: nadpisový a textový (len také, čo majú všetky písmená textu)."""
+    ok = [a for a in assets(pid, "font") if font_covers(a["path"], text, letters_only)]
+    disp = max(ok, key=lambda a: (_font_score(a, "display"), a["main"], -a["id"]))["path"] if ok else None
+    rest = [a for a in ok if a["path"] != disp and Path(a["path"]).stem != Path(disp).stem]
+    txt = max(rest, key=lambda a: (_font_score(a, "text"), -a["id"])) if rest else None
+    _local.font = disp
+    _local.font_text = txt["path"] if txt and _font_score(txt, "text") > _font_score(txt, "display") else None
+    return disp
 
 
 def current_font():
     return getattr(_local, "font", None)
 
 
+def current_text_font():
+    return getattr(_local, "font_text", None)
+
+
 def clear_font():
     _local.font = None
+    _local.font_text = None
 
 
 def _font_preview(path, out):
@@ -325,7 +343,7 @@ def decorate(pid, video):
     from PIL import Image
     from . import media
     o = opts(pid)
-    logo = main_asset(pid, "logo")
+    logo = video_logo(pid, dark_bg=True)
     if not logo or not (o["logo_corner"] or o["logo_end"]):
         return False
     total = media.duration(video) or 0
@@ -350,7 +368,7 @@ def decorate(pid, video):
             chain += f"{last}[{n}:v]overlay=0:0{en}[c];"
             last = "[c]"
         if end_len:
-            fr = Image.new("RGBA", (W, H), (0, 0, 0, 200))
+            fr = Image.new("RGBA", (W, H), (0, 0, 0, 255))
             lay = _logo_layer(logo["path"], int(620 * k), int(340 * k))
             fr.alpha_composite(lay, ((W - lay.size[0]) // 2, (H - lay.size[1]) // 2))
             fr.save(tmp / "end.png")
@@ -404,11 +422,128 @@ def _after_logo_change(pid):
         print("profilovka z loga:", e)
 
 
+LOGO_RX = r"logo|znak|znack|brand|wordmark|\bmark\b"
+
+
+def _is_logo_name(name):
+    return bool(re.search(LOGO_RX, re.sub(r"[_\-.]+", " ", (name or "").lower())))
+
+
+def _dark_cached(a):
+    try:
+        from PIL import Image
+        return _logo_dark(Image.open(a["path"]))
+    except Exception:
+        return False
+
+
+def _logo_score(a, dark_bg=None):
+    """Čím viac, tým skôr je to skutočné logo značky (nie ikona ani výrez produktu)."""
+    n = re.sub(r"[_\-.]+", " ", (a.get("name") or "").lower())
+    sc = 0
+    if _is_logo_name(n):
+        sc += 10
+    if re.search(r"icon|ikon|favicon|app\b", n):
+        sc -= 3
+    if re.search(r"basic|main|primary|hlavn|zaklad", n):
+        sc += 1
+    w, h = a.get("w") or 0, a.get("h") or 0
+    if h and w / h >= 1.8:
+        sc += 3  # nápis (wordmark) má prednosť pred samotným znakom
+    if dark_bg is not None:
+        dark = _dark_cached(a)
+        sc += 4 if dark != dark_bg else -6
+        if re.search(r"white|biel|light|negat|invert" if dark_bg else r"black|ciern|dark", n):
+            sc += 2
+    return sc
+
+
+def _font_score(a, role="display"):
+    n = (a.get("name") or "").lower()
+    sc = 0
+    if Path(a["path"]).suffix.lower() in (".otf", ".ttf"):
+        sc += 4  # s týmito vie pracovať aj kreslenie titulkov mimo prehliadača
+    heavy = bool(re.search(r"display|bold|black|heavy|headline|title|nadpis", n))
+    light = bool(re.search(r"text|light|thin|regular|book|body", n))
+    if role == "display":
+        sc += 3 * heavy - 2 * (light and not heavy)
+    else:
+        sc += 3 * (light and not re.search(r"display|black|heavy", n)) - 2 * heavy
+    if font_covers(a["path"], "Čučoriedka ľúbi žaby, ÁÉÍÓÚ ßäöü"):
+        sc += 5  # font bez diakritiky sa hodí len na názvy produktov
+    return sc
+
+
+def _manual_main(pid, kind):
+    return db.get_setting(f"brand_main_manual_{pid}_{kind}", 0)
+
+
 def _ensure_main(pid, kind):
-    if kind in ("logo", "font") and not db.one("SELECT id FROM brand_assets WHERE project_id=? AND kind=? AND main=1", (pid, kind)):
-        a = db.one("SELECT id FROM brand_assets WHERE project_id=? AND kind=? ORDER BY id", (pid, kind))
-        if a:
-            db.run("UPDATE brand_assets SET main=1 WHERE id=?", (a["id"],))
+    """Hlavné logo/font: to, čo vybral používateľ; inak to, čo najviac vyzerá ako logo (font: nadpisový s diakritikou)."""
+    if kind not in ("logo", "font"):
+        return
+    items = [a for a in db.q("SELECT * FROM brand_assets WHERE project_id=? AND kind=? ORDER BY id", (pid, kind)) if Path(a["path"]).exists()]
+    if not items:
+        return
+    man = _manual_main(pid, kind)
+    if man and any(a["id"] == man for a in items):
+        best = man
+    else:
+        best = max(items, key=lambda a: (_logo_score(a) if kind == "logo" else _font_score(a), -a["id"]))["id"]
+    db.run("UPDATE brand_assets SET main=0 WHERE project_id=? AND kind=? AND id<>?", (pid, kind, best))
+    db.run("UPDATE brand_assets SET main=1 WHERE id=?", (best,))
+
+
+def video_logo(pid, dark_bg=True):
+    """Logo do videa: ručne zvolené hlavné logo, inak variant, ktorý je na danom pozadí najlepšie vidieť (na čiernej biely)."""
+    logos = assets(pid, "logo")
+    if not logos:
+        return None
+    man = _manual_main(pid, "logo")
+    for a in logos:
+        if man and a["id"] == man:
+            return a
+    named = [a for a in logos if _is_logo_name(a["name"])] or logos
+    return max(named, key=lambda a: (_logo_score(a, dark_bg), -a["id"]))
+
+
+def logo_data_uri(a, max_w, max_h, dark_bg=True):
+    """Logo ako obrázok do animácie. Tmavé logo na tmavom pozadí dostane svetlú podložku."""
+    import base64
+    import io
+    lay = _logo_layer(a["path"], max_w, max_h, plate=None if dark_bg else False)
+    buf = io.BytesIO()
+    lay.save(buf, "PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def product_images(pid):
+    """Výrezy produktov s priehľadným pozadím (nie logá): {slovo v názve: cesta}. Použijú sa v scéne, ktorá produkt spomína."""
+    out = {}
+    for a in assets(pid, "logo"):
+        if _is_logo_name(a["name"]) or max(a.get("w") or 0, a.get("h") or 0) < 400:
+            continue
+        key = re.sub(r"[^a-z0-9]+", " ", Path(a["name"]).stem.lower()).strip()
+        if len(key) >= 4:
+            out[key] = a["path"]
+    return out
+
+
+def _vivid(hx):
+    try:
+        r, g, b = (int(hx[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    except Exception:
+        return False
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    return s >= 0.35 and 0.18 <= l <= 0.85
+
+
+def accent(colors, project_color=None, fallback="#FF6B00"):
+    """Hlavná (zvýrazňovacia) farba značky: prvá sýta farba z dizajnu. Čierna, biela a sivé ňou nikdy nie sú."""
+    for c in list(colors or []) + [project_color]:
+        if c and re.fullmatch(r"#[0-9a-fA-F]{6}", c) and _vivid(c):
+            return c
+    return fallback
 
 
 # ---------- API ----------
@@ -548,6 +683,7 @@ def edit_asset(aid: int, data: dict = Body(...)):
         _ensure_main(pid, "logo")
     if data.get("main"):
         b = db.one("SELECT kind FROM brand_assets WHERE id=?", (aid,))
+        db.set_setting(f"brand_main_manual_{pid}_{b['kind']}", aid)
         db.run("UPDATE brand_assets SET main=0 WHERE project_id=? AND kind=?", (pid, b["kind"]))
         db.run("UPDATE brand_assets SET main=1 WHERE id=?", (aid,))
     _sync_footage(db.one("SELECT * FROM brand_assets WHERE id=?", (aid,)))
