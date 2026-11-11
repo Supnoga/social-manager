@@ -60,8 +60,8 @@ const langName = c => (S.meta?.languages.find(l => l.code === c) || {}).name || 
 const STAGES = [
   ['napad', 'Nápad', 'bulb', 'Čo natočiť'],
   ['prototyp', 'Prototyp', 'phone', 'Scenár a náhľad'],
-  ['jazyky', 'Text a hlas', 'mic', 'Preklady + hlasy'],
-  ['video', 'Video', 'film', 'Hotové videá'],
+  ['jazyky', 'Text a hlas', 'mic', 'Hlas prvej verzie'],
+  ['video', 'Video', 'film', 'Prvá verzia + jazyky'],
   ['siete', 'Siete', 'send', 'Publikovanie'],
 ];
 
@@ -282,14 +282,14 @@ async function saveOwnIdea(pid) { const r = await api('/api/ideas', { method: 'P
 async function makeStrategy(id) { await api('/api/ai/strategy', { method: 'POST', body: { project_id: id } }, 'Claude premýšľa nad stratégiou… (cca 1 min)'); toast('Stratégia hotová'); go(`p/${id}/strategia`); }
 
 function autoDialog(pid) {
-  modal(`<h2>${I('rocket')}Autopilot</h2><p class="muted small">Claude vymyslí nápady, vyberie najlepšie, napíše scenáre, preloží ich do všetkých jazykov projektu a urobí hlasy aj jednoduché videá. Ty len skontroluješ a naplánuješ.</p>
+  modal(`<h2>${I('rocket')}Autopilot</h2><p class="muted small">Claude vymyslí nápady, vyberie najlepšie, napíše scenáre a urobí prvú verziu videa v jednom jazyku. Keď sa ti video páči, jedným tlačidlom ho rozšíriš do ostatných jazykov.</p>
   <div class="g2"><div><label class="l">Koľko nápadov vymyslieť</label><input id="aC" type="number" value="10"></div><div><label class="l">Koľko najlepších spracovať</label><input id="aT" type="number" value="3"></div></div>
   <label class="l">Na čo sa zamerať (nepovinné)</label><input id="aF">
-  <label class="row" style="margin-top:12px"><input type="checkbox" id="aV" checked> Urobiť aj hlasy a videá</label>
-  <p class="small dim">Spotreba: cca 40–50 tisíc tokenov na 1 nápad v 9 jazykoch.</p>
+  <label class="row" style="margin-top:12px"><input type="checkbox" id="aV" checked> Urobiť aj prvú verziu videa (hlas + video v jednom jazyku)</label>
+  <label class="row" style="margin-top:6px"><input type="checkbox" id="aA"> Rovno aj všetky ostatné jazyky (bez kontroly)</label>
   <button class="btn" onclick="runAuto(${pid})">${I('rocket')}Spustiť</button>`);
 }
-async function runAuto(pid) { await api('/api/autopilot', { method: 'POST', body: { project_id: pid, count: +$('#aC').value, take: +$('#aT').value, videos: $('#aV').checked, focus: $('#aF').value } }); closeModal(); pollAuto(); }
+async function runAuto(pid) { await api('/api/autopilot', { method: 'POST', body: { project_id: pid, count: +$('#aC').value, take: +$('#aT').value, videos: $('#aV').checked || $('#aA').checked, all_langs: $('#aA').checked, focus: $('#aF').value } }); closeModal(); pollAuto(); }
 async function pollAuto() {
   const a = await api('/api/autopilot'); const box = $('#autoBox'); if (!box || (!a.running && !a.step)) return;
   box.innerHTML = `<div class="hint" style="margin-bottom:14px">${a.running ? '<span class="spinner spin-s"></span>' : I('check')}<div><b>Autopilot:</b> ${esc(a.step)}<div class="small">${a.log.map(esc).join('<br>')}</div></div></div>`;
@@ -430,7 +430,7 @@ function sProto(b, { p, src, iid }) {
       <div class="g2"><div><label class="l">Text príspevku</label><input id="sCap" value="${esc(src.caption)}"></div><div><label class="l">Hashtagy</label><input id="sTags" value="${esc(src.hashtags)}"></div></div>
       <label class="l">Popis (YouTube)</label><textarea id="sDesc">${esc(src.description)}</textarea>
       <div class="row" style="margin-top:14px"><button class="btn sec" onclick="saveScript(${src.id})">${I('check')}Uložiť</button><span class="sp"></span>
-      <button class="btn" onclick="saveScript(${src.id}).then(()=>go('p/${p.id}/v/${iid}/jazyky'))">Schváliť a ďalej: jazyky${I('right')}</button></div></div><div id="qual"></div></div></div>`;
+      <button class="btn" onclick="saveScript(${src.id}).then(()=>go('p/${p.id}/v/${iid}/jazyky'))">Schváliť a ďalej: hlas${I('right')}</button></div></div><div id="qual"></div></div></div>`;
   setupPhone(src, p);
   if (typeof qualityCard === 'function') qualityCard(src.id, iid).catch(() => { });
 }
@@ -474,16 +474,37 @@ async function saveScript(id) {
 }
 async function voiceOne(id, rerender) { const r = await api(`/api/scripts/${id}/voice`, { method: 'POST', body: {} }, 'Vytváram hlas…'); toast('Hlas hotový'); voiceNote(r); if (rerender) render(); }
 
-function sLangs(b, { p, scripts, src, iid }) {
+function firstLangOf(p, idea, src) { return idea.first_lang || p.source_lang || src.lang; }
+function firstLangSelect(p, idea, src, iid) {
+  const cur = firstLangOf(p, idea, src), opts = [...new Set([src.lang, cur, ...p.languages])];
+  return `<select style="width:auto" onchange="setFirstLang(${iid},this.value)" title="V akom jazyku urobiť prvú verziu na kontrolu">${opts.map(l => `<option value="${l}" ${l === cur ? 'selected' : ''}>${langName(l)}</option>`).join('')}</select>`;
+}
+async function setFirstLang(iid, lang) { await api('/api/ideas/' + iid, { method: 'PATCH', body: { first_lang: lang } }); render(); }
+function isExpanded(scripts, first) { return scripts.some(s => !s.is_source && s.lang !== first); }
+function sLangs(b, { p, scripts, src, iid, idea }) {
   if (!src) return sProto(b, { p, src, iid });
+  const first = firstLangOf(p, idea, src);
+  if (!isExpanded(scripts, first)) {
+    const s = scripts.find(x => x.lang === first), rest = p.languages.filter(l => l !== first).length;
+    b.innerHTML = `<div class="card"><div class="row"><h2 style="margin:0">${I('mic')}Prvá verzia</h2><span class="sp"></span>${firstLangSelect(p, idea, src, iid)}</div>
+      <p class="small dim" style="margin:6px 0 12px">Najprv dokončíš video v jednom jazyku. Ostatné jazyky${rest ? ` (${rest})` : ''} sa vyrobia až keď budeš spokojný, jedným tlačidlom v kroku Video. Šetrí to čas, preklady aj hlas.</p>
+      ${s ? `<div class="lang-row"><div><b>${langName(s.lang)}</b>${s.is_source ? ' <span class="chip acc">originál</span>' : ''}</div>
+        <div class="small" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
+        <div class="row">${s.voice_path ? `<audio controls preload="none" src="/api/file?path=${encodeURIComponent(s.voice_path)}"></audio><button class="btn sec sm" onclick="voiceOne(${s.id},true)">${I('refresh', 's')}Nový hlas</button>` : `<button class="btn sm" onclick="voiceOne(${s.id},true)">${I('mic', 's')}Vytvoriť hlas</button>`}
+        <button class="btn ghost sm" onclick="editLang(${s.id})" title="Upraviť text">${I('pencil', 's')}</button></div></div>`
+      : `<div class="row"><span class="small muted">Scenár je v jazyku ${langName(src.lang)}. Pre ${langName(first)} ho najprv preložím (zadarmo).</span><span class="sp"></span><button class="btn sm" onclick="translateMissing(${src.id},'${first}')">${I('globe', 's')}Preložiť</button></div>`}</div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="go('p/${p.id}/v/${iid}/video')">Ďalej: video${I('right')}</button></div>`;
+    window._scripts = scripts;
+    return;
+  }
   const have = Object.fromEntries(scripts.map(s => [s.lang, s]));
   const missing = p.languages.filter(l => !have[l]);
   const noVoice = scripts.filter(s => !s.voice_path).length;
   b.innerHTML = `<div class="card"><div class="row"><h2 style="margin:0">${I('globe')}Jazyky <span class="chip">${p.languages.filter(l => have[l]).length}/${p.languages.length}</span></h2><span class="sp"></span>
-    <button class="btn" onclick="produceAll(${iid})">${I('zap')}Vyrobiť všetky jazyky</button>
+    ${missing.length ? `<button class="btn" onclick="produceAll(${iid})">${I('zap')}Dorobiť chýbajúce jazyky (${missing.length})</button>` : ''}
     ${missing.length ? `<button class="btn sec" onclick="translateMissing(${src.id},'${missing.join(',')}')">${I('globe')}Len preložiť (${missing.length})</button>` : ''}
     <button class="btn sec" onclick="voiceAll(${iid})" ${noVoice ? '' : 'disabled'}>${I('mic')}Hlasy pre všetky (${noVoice})</button></div>
-    <p class="small dim" style="margin:6px 0 10px">${Object.values(S.meta.mt || {}).some(x => x.enabled) ? 'Preklad robí bezplatný prekladač (0 tokenov), Claude len opraví sporné kúsky.' : 'Preklad robí Claude (lacnejší model). Bezplatný prekladač bez tokenov zapneš v Nastaveniach → Preklady zadarmo.'} „Vyrobiť všetky jazyky“ spraví preklad, hlasy aj videá naraz.</p>
+    <p class="small dim" style="margin:6px 0 10px">${Object.values(S.meta.mt || {}).some(x => x.enabled) ? 'Preklad robí bezplatný prekladač (0 tokenov), Claude len opraví sporné kúsky.' : 'Preklad robí Claude (lacnejší model). Bezplatný prekladač bez tokenov zapneš v Nastaveniach → Preklady zadarmo.'}</p>
     ${p.languages.map(l => { const s = have[l]; return `<div class="lang-row"><div><b>${langName(l)}</b>${s && s.is_source ? ' <span class="chip acc">originál</span>' : ''}${s && s.qa ? ` <span class="chip" style="color:var(--warn,#f5b000)" title="${esc(Object.entries(JSON.parse(s.qa)).map(([k, v]) => k + ': ' + v).join(', '))}">skontroluj</span>` : ''}</div>
       <div class="small ${s ? '' : 'dim'}" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s ? esc(s.title) : 'chýba preklad'}</div>
       <div class="row">${s ? `${s.voice_path ? `<audio controls preload="none" src="/api/file?path=${encodeURIComponent(s.voice_path)}"></audio>` : `<button class="btn sec sm" onclick="voiceOne(${s.id},true)">${I('mic', 's')}Hlas</button>`}
@@ -493,7 +514,8 @@ function sLangs(b, { p, scripts, src, iid }) {
 }
 function trMsg(r) { if (!r) return ''; let m = `Preložené: ${r.created}`; if (r.machine) m += ` (zadarmo prekladačom: ${r.machine}${r.ai ? `, cez Claude: ${r.ai}` : ''})`; const c = Object.keys(r.check || {}); if (c.length) m += ` · skontroluj: ${c.map(langName).join(', ')}`; return m; }
 async function translateMissing(sid, langs) { const r = await api(`/api/scripts/${sid}/translate`, { method: 'POST', body: { script_id: sid, langs: langs.split(',') } }, `Prekladám do ${langs.split(',').length} jazykov…`); toast(trMsg(r)); render(); }
-async function produceAll(iid) { const r = await api(`/api/ideas/${iid}/produce-all`, { method: 'POST', body: {} }, 'Vyrábam všetky jazyky: preklad → hlas → video… (môže to trvať pár minút)'); const e = [...(r.voices?.errors || []), ...(r.videos?.errors || [])]; toast(`${r.translate ? trMsg(r.translate) + ' · ' : ''}Videí: ${r.videos?.created || 0}` + (e.length ? ' · chyby: ' + e.join('; ') : ''), !!e.length); go(location.hash.slice(2).replace(/\/[^/]+$/, '/video')); }
+async function produceAll(iid) { const r = await api(`/api/ideas/${iid}/produce-all`, { method: 'POST', body: vOpts() }, 'Rozširujem do ostatných jazykov: preklad → hlas → video… Obraz ostáva rovnaký. (môže to trvať pár minút)'); const e = [...(r.voices?.errors || []), ...(r.videos?.errors || [])]; toast(`${r.translate ? trMsg(r.translate) + ' · ' : ''}Videí: ${r.videos?.created || 0}` + (e.length ? ' · chyby: ' + e.join('; ') : ''), !!e.length); const h = location.hash.slice(2); if (/\/video$/.test(h)) render(); else go(h.replace(/\/(napad|prototyp|jazyky|siete)$/, '') + '/video'); }
+async function produceFirst(iid) { const r = await api(`/api/ideas/${iid}/produce-first`, { method: 'POST', body: vOpts() }, 'Robím prvú verziu: hlas → video…'); toast(`Prvá verzia (${langName(r.lang)}) je hotová – pozri si ju`); render(); }
 async function voiceAll(iid) { const r = await api(`/api/ideas/${iid}/voice-all?only_missing=1`, { method: 'POST' }, 'Vytváram hlasy…'); toast(`Hlasov: ${r.done}` + (r.errors.length ? ' · chyby: ' + r.errors.join('; ') : ''), !!r.errors.length); voiceNote(r); render(); }
 function editLang(sid) {
   const s = window._scripts.find(x => x.id === sid);
@@ -505,27 +527,39 @@ function editLang(sid) {
   <div class="row" style="margin-top:14px"><button class="btn" onclick="saveScript(${sid}).then(()=>{closeModal();render()})">${I('check')}Uložiť</button><button class="btn sec" onclick="saveScript(${sid}).then(()=>voiceOne(${sid})).then(()=>{closeModal();render()})">${I('mic')}Uložiť a urobiť nový hlas</button></div>`);
 }
 
-async function sVideo(b, { p, scripts, src, iid }) {
+async function sVideo(b, { p, scripts, src, iid, idea }) {
   if (!src) return sProto(b, { p, src, iid });
   const lib = (await api(`/api/videos?project_id=${p.id}`)).filter(v => !v.script_id);
   const fs = S.meta.footage || {}, ready = fs.pexels || fs.pixabay || fs.own || fs.ai;
-  b.innerHTML = `<div class="card"><h2>${I('zap')}Vytvoriť videá pre všetky jazyky</h2>
-    <div class="g2" style="align-items:end"><div><label class="l">Štýl videa</label><select id="vStyle" onchange="$('#baseWrap').style.display=this.value==='base'?'':'none';$('#shotsWrap').style.display=this.value==='broll'?'':'none'">
+  const first = firstLangOf(p, idea, src), fsc = scripts.find(s => s.lang === first), fv = fsc && fsc.videos[0];
+  const expanded = isExpanded(scripts, first);
+  const toDo = p.languages.filter(l => l !== first && !scripts.some(s => s.lang === l && s.videos.length)).length;
+  const rowsHTML = scripts.map(s => { const v = s.videos[0]; return `<div class="lang-row" style="grid-template-columns:150px 1fr auto"><div><b>${langName(s.lang)}</b>${s.lang === first ? ' <span class="chip acc">prvá verzia</span>' : ''}</div>
+      <div class="row">${v ? `<video src="/api/file?path=${encodeURIComponent(v.file_path)}" preload="metadata" style="height:90px;aspect-ratio:9/16;object-fit:cover" controls></video><span class="small muted">${v.duration ? Math.round(v.duration) + ' s' : ''}${s.videos.length > 1 ? ` · ${s.videos.length} verzie` : ''}</span>` : '<span class="small dim">bez videa</span>'}</div>
+      <div class="row"><label class="btn sec sm" style="cursor:pointer">${I('upload', 's')}Vlastné<input type="file" accept="video/*" class="hidden" onchange="attachVid(${s.id},this.files[0])"></label>
+      <button class="btn ghost sm" onclick="oneVideo(${s.id})" title="Vytvoriť znova">${I('refresh', 's')}</button></div></div>`; }).join('');
+  b.innerHTML = `<div class="card"><div class="row"><h2 style="margin:0">${I('film')}1. Prvá verzia</h2><span class="sp"></span>${expanded ? `<span class="chip">${langName(first)}</span>` : firstLangSelect(p, idea, src, iid)}</div>
+    <div class="g2" style="align-items:end;margin-top:10px"><div><label class="l">Štýl videa</label><select id="vStyle" onchange="$('#baseWrap').style.display=this.value==='base'?'':'none';$('#shotsWrap').style.display=this.value==='broll'?'':'none'">
       <option value="broll" ${ready ? 'selected' : ''}>Zábery + titulky slovo po slove (odporúčam)</option><option value="color" ${ready ? '' : 'selected'}>Farby dizajnu + texty</option><option value="base">Moje podkladové video + hlas</option></select></div>
     <div id="baseWrap" style="display:none"><label class="l">Podkladové video</label><select id="baseVid"><option value="">—</option>${lib.map(v => `<option value="${v.id}">${esc(v.title || v.original_name)}</option>`).join('')}</select></div></div>
     ${ready ? '' : `<div class="hint" style="margin-top:12px">${I('alert')}<div>Na zábery zadaj bezplatný kľúč Pexels v <a href="#/nastavenia">Nastaveniach → Zábery a hudba</a>, alebo daj svoje zábery do priečinka Moje zábery.</div></div>`}
-    <div class="row" style="margin-top:14px"><button class="btn" onclick="videosAll(${iid})">${I('film')}Vytvoriť videá vo všetkých jazykoch</button><span class="small dim">alebo nahraj vlastné video ku každému jazyku nižšie</span></div></div>
+    ${fv ? `<div class="row" style="margin-top:14px;align-items:flex-start"><video src="/api/file?path=${encodeURIComponent(fv.file_path)}" preload="metadata" controls style="height:420px;max-height:70vh;aspect-ratio:9/16;object-fit:cover;border-radius:12px;background:#000"></video>
+      <div class="col" style="gap:8px"><span class="small muted">${langName(first)}${fv.duration ? ' · ' + Math.round(fv.duration) + ' s' : ''}</span>
+      <button class="btn sec sm" onclick="produceFirst(${iid})">${I('refresh', 's')}Vytvoriť znova</button>
+      <button class="btn ghost sm" onclick="go('p/${p.id}/v/${iid}/prototyp')">${I('pencil', 's')}Upraviť scenár</button>
+      ${fsc ? `<label class="btn ghost sm" style="cursor:pointer">${I('upload', 's')}Nahrať vlastné<input type="file" accept="video/*" class="hidden" onchange="attachVid(${fsc.id},this.files[0])"></label>` : ''}</div></div>`
+      : `<div class="row" style="margin-top:14px"><button class="btn" onclick="produceFirst(${iid})">${I('film')}Vytvoriť video (${langName(first)})</button><span class="small dim">Urobí hlas a video len v tomto jazyku, aby si si ho mohol pozrieť.</span></div>`}</div>
   <div class="card" id="shotsWrap" style="${ready ? '' : 'display:none'}"><div class="row"><h2 style="margin:0">${I('film')}Zábery po scénach</h2><span class="sp"></span><button class="btn sec sm" onclick="shotsPick(${iid})">${I('refresh', 's')}Vybrať zábery</button></div>
-    <p class="small dim">Rovnaké zábery sa použijú vo všetkých jazykoch. Nepáči sa ti záber? Zmeň slová a daj „Vymeniť“.</p><div id="shotsBox" class="small dim">Načítavam…</div></div>
-  <div class="card"><h2>${I('film')}Videá podľa jazyka</h2>
-    ${scripts.map(s => { const v = s.videos[0]; return `<div class="lang-row" style="grid-template-columns:150px 1fr auto"><div><b>${langName(s.lang)}</b></div>
-      <div class="row">${v ? `<video src="/api/file?path=${encodeURIComponent(v.file_path)}" preload="metadata" style="height:90px;aspect-ratio:9/16;object-fit:cover" controls></video><span class="small muted">${v.duration ? Math.round(v.duration) + ' s' : ''}${s.videos.length > 1 ? ` · ${s.videos.length} verzie` : ''}</span>` : '<span class="small dim">bez videa</span>'}</div>
-      <div class="row"><label class="btn sec sm" style="cursor:pointer">${I('upload', 's')}Vlastné<input type="file" accept="video/*" class="hidden" onchange="attachVid(${s.id},this.files[0])"></label>
-      <button class="btn ghost sm" onclick="oneVideo(${s.id})" title="Vytvoriť znova">${I('refresh', 's')}</button></div></div>`; }).join('')}</div>
+    <p class="small dim">Rovnaké zábery sa použijú vo všetkých jazykoch. Nepáči sa ti záber? Zmeň slová, daj „Vymeniť“ a potom „Vytvoriť znova“.</p><div id="shotsBox" class="small dim">Načítavam…</div></div>
+  <div class="card"><h2>${I('globe')}2. Rozšíriť do ostatných jazykov</h2>
+    ${toDo ? `<p class="muted">${fv ? 'Páči sa ti video? Appka ho preloží' : 'Najprv si pozri prvú verziu. Potom ju appka preloží'} do ďalších ${toDo} jazykov a použije ten istý obraz. Mení sa len text, titulky a hlas.</p>
+      <button class="btn" onclick="produceAll(${iid})" ${fv ? '' : 'disabled'}>${I('zap')}Rozšíriť do všetkých jazykov (${toDo})</button>`
+      : `<p class="muted">${p.languages.length > 1 || expanded ? 'Všetky jazyky projektu majú video.' : 'Projekt nemá ďalšie jazyky.'}</p>`}
+    ${expanded ? `<div style="margin-top:14px">${rowsHTML}</div><div class="row" style="margin-top:10px"><button class="btn ghost sm" onclick="if(confirm('Vytvoriť znova videá vo všetkých jazykoch?'))videosAll(${iid})">${I('refresh', 's')}Vytvoriť znova všetky</button></div>` : ''}</div>
   <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="go('p/${p.id}/v/${iid}/siete')">Ďalej: siete${I('right')}</button></div>`;
   loadShots(iid);
 }
-function vOpts() { const st = $('#vStyle')?.value || 'color', base = $('#baseVid')?.value; return st === 'base' && base ? { style: 'base', base_video_id: +base } : { style: st === 'base' ? 'color' : st }; }
+function vOpts() { if (!$('#vStyle')) return {}; const st = $('#vStyle').value, base = $('#baseVid')?.value; return st === 'base' && base ? { style: 'base', base_video_id: +base } : { style: st === 'base' ? 'color' : st }; }
 async function loadShots(iid) {
   const box = $('#shotsBox'); if (!box) return;
   const d = await api(`/api/ideas/${iid}/shots`);

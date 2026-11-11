@@ -558,7 +558,7 @@ def ideas(project_id: int, status: str = ""):
 
 @app.patch("/api/ideas/{iid}")
 def idea_update(iid: int, data: dict = Body(...)):
-    for f in ("status", "title", "hook", "angle"):
+    for f in ("status", "title", "hook", "angle", "first_lang"):
         if f in data:
             db.run(f"UPDATE ideas SET {f}=? WHERE id=?", (data[f], iid))
     return {"ok": True}
@@ -591,6 +591,9 @@ def scripts(idea_id: int):
 
 @app.put("/api/scripts/{sid}")
 def script_update(sid: int, data: dict = Body(...)):
+    old = db.one("SELECT voiceover FROM scripts WHERE id=?", (sid,)) or {}
+    if "voiceover" in data and (data["voiceover"] or "").strip() != (old.get("voiceover") or "").strip():
+        db.run("UPDATE scripts SET voice_path='' WHERE id=?", (sid,))  # zmenený text -> hlas sa urobí znova
     for f in ("title", "voiceover", "description", "hashtags", "caption"):
         if f in data:
             db.run(f"UPDATE scripts SET {f}=? WHERE id=?", (data[f], sid))
@@ -801,9 +804,41 @@ async def script_attach(sid: int, file: UploadFile = File(...)):
     return {"video_id": _add_video(s["project_id"], str(dest), file.filename, s["lang"], s)}
 
 
+def _first_lang(iid):
+    idea = db.one("SELECT first_lang, project_id FROM ideas WHERE id=?", (iid,)) or {}
+    p = db.one("SELECT source_lang FROM projects WHERE id=?", (idea.get("project_id"),)) or {}
+    return idea.get("first_lang") or p.get("source_lang") or "sk"
+
+
+def _vopts(data):
+    return {k: data[k] for k in ("style", "base_video_id", "music") if k in data}
+
+
+@app.post("/api/ideas/{iid}/produce-first")
+def idea_produce_first(iid: int, data: dict = Body(default={})):
+    """Prvá verzia: hlas + video len v jednom jazyku (predvolene jazyk scenára). Ostatné jazyky až po schválení."""
+    src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    if not src:
+        raise HTTPException(400, "Najprv schváľ prototyp (scenár)")
+    lang = data.get("lang") or _first_lang(iid)
+    if lang not in languages.LANGUAGES:
+        lang = src["lang"]
+    db.run("UPDATE ideas SET first_lang=? WHERE id=?", (lang, iid))
+    s = db.one("SELECT id FROM scripts WHERE idea_id=? AND lang=?", (iid, lang))
+    out = {"lang": lang}
+    if not s:
+        out["translate"] = content.translate_all(src["id"], [lang])
+        s = db.one("SELECT id FROM scripts WHERE idea_id=? AND lang=?", (iid, lang))
+        if not s:
+            raise HTTPException(400, "Preklad do tohto jazyka sa nepodaril")
+    out.update(script_to_video(s["id"], _vopts(data)))
+    return out
+
+
 @app.post("/api/ideas/{iid}/produce-all")
 def idea_produce_all(iid: int, data: dict = Body(default={})):
-    """Jedno tlačidlo: preklad do všetkých jazykov projektu -> hlasy -> videá."""
+    """Rozšírenie schválenej prvej verzie: preklad do ostatných jazykov -> hlasy -> videá.
+    Zábery sú tie isté (vybrané raz), mení sa len text, titulky a hlas. Hotové videá sa nerobia znova."""
     src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
     if not src:
         raise HTTPException(400, "Najprv schváľ prototyp (scenár)")
@@ -814,7 +849,7 @@ def idea_produce_all(iid: int, data: dict = Body(default={})):
     if missing:
         out["translate"] = content.translate_all(src["id"], missing)
     out["voices"] = idea_voice_all(iid, only_missing=1)
-    out["videos"] = idea_videos_all(iid, data)
+    out["videos"] = idea_videos_all(iid, {**_vopts(data), "only_missing": 1})
     return out
 
 
@@ -823,8 +858,10 @@ def idea_videos_all(iid: int, data: dict = Body(default={})):
     """Jedným klikom: pre všetky jazyky nápadu urobí hlas + video (s tvojím podkladovým videom, ak ho zvolíš)."""
     made, errors = [], []
     for s in db.q("SELECT id, lang FROM scripts WHERE idea_id=?", (iid,)):
+        if data.get("only_missing") and db.one("SELECT id FROM videos WHERE script_id=?", (s["id"],)):
+            continue
         try:
-            made.append(script_to_video(s["id"], data)["video_id"])
+            made.append(script_to_video(s["id"], _vopts(data))["video_id"])
         except Exception as e:
             errors.append(f"{s['lang']}: {e}")
     return {"created": len(made), "errors": errors}
@@ -855,16 +892,23 @@ def _autopilot(params):
         AUTO["log"].append(f"{len(new)} nápadov, vybral som {len(best)} najlepších")
         AUTO["step"] = "Píšem scenáre"
         make_scripts({"idea_ids": best})
-        langs = [l for l in json.loads(p["languages"] or "[]") if l != p["source_lang"]]
+        opts = {"base_video_id": params["base_video_id"], "style": "base"} if params.get("base_video_id") else {}
         for n, i in enumerate(best, 1):
-            src = db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (i,))
-            if src and langs:
-                AUTO["step"] = f"Prekladám scenár {n}/{len(best)} do {len(langs)} jazykov"
-                content.translate_all(src["id"], langs)
-            if params.get("videos"):
-                AUTO["step"] = f"Robím hlasy a videá {n}/{len(best)}"
-                r = idea_videos_all(i, {"base_video_id": params.get("base_video_id")} if params.get("base_video_id") else {})
+            if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (i,)):
+                continue
+            if params.get("all_langs"):
+                AUTO["step"] = f"Robím všetky jazyky {n}/{len(best)}"
+                r = idea_produce_all(i, opts)["videos"]
                 AUTO["log"].append(f"Nápad {n}: {r['created']} videí" + (f", chyby: {'; '.join(r['errors'])}" if r["errors"] else ""))
+            elif params.get("videos"):
+                AUTO["step"] = f"Robím prvú verziu videa {n}/{len(best)}"
+                try:
+                    idea_produce_first(i, opts)
+                    AUTO["log"].append(f"Nápad {n}: prvá verzia ({languages.name(_first_lang(i))}) hotová")
+                except Exception as e:
+                    AUTO["log"].append(f"Nápad {n}: chyba {e}")
+        if params.get("videos") and not params.get("all_langs"):
+            AUTO["log"].append("Pozri si videá a keď sú dobré, daj pri každom „Rozšíriť do všetkých jazykov“.")
         AUTO["step"] = "Hotovo ✅"
     except ai.NeedManual:
         AUTO["step"] = "Autopilot potrebuje Claude Code (v ručnom režime nefunguje)."
