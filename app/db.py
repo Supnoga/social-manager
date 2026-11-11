@@ -160,6 +160,7 @@ MIGRATIONS = [
     "ALTER TABLE projects ADD COLUMN platforms TEXT DEFAULT '[\"youtube\",\"tiktok\",\"instagram\",\"facebook\"]'",
     "ALTER TABLE ideas ADD COLUMN template TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN banned TEXT DEFAULT ''",
+    "ALTER TABLE ideas ADD COLUMN first_lang TEXT DEFAULT ''",
 ]
 
 
