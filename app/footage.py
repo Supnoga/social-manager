@@ -56,16 +56,18 @@ def _index_own():
                (f.name, str(f), tags, "video" if ext in VIDEO_EXT else "photo"))
 
 
-def _local(q, exclude):
+def _local(q, exclude, pid=None):
     want = _words(q)
     best, score = None, 0
     for r in db.q("SELECT * FROM footage"):
         if r["id"] in exclude or not Path(r["path"]).exists():
             continue
+        if r["source"] == "brand" and not (pid and r["source_id"].startswith(f"{pid}-")):
+            continue  # fotky značky len do videí svojho projektu
         hit = len(want & set(r["tags"].split()))
         if not hit:
             continue
-        s = hit * 3 + (4 if r["source"] == "own" else 0) + (1 if r["kind"] == "video" else 0) + (1 if r["h"] >= r["w"] else 0) - r["used"] * 0.5
+        s = hit * 3 + (4 if r["source"] == "own" else 6 if r["source"] == "brand" else 0) + (1 if r["kind"] == "video" else 0) + (1 if r["h"] >= r["w"] else 0) - r["used"] * 0.5
         if s > score and hit >= max(1, len(want) // 2):
             best, score = r, s
     return best
@@ -187,7 +189,7 @@ def _ai_image(q, style=""):
                   (sid, str(path), " ".join(_words(q)), "photo", 768, 1344))
 
 
-def find(q, alt="", exclude=(), online=True):
+def find(q, alt="", exclude=(), online=True, pid=None):
     """Nájde jeden záber pre hľadaný výraz. Vráti riadok z tabuľky footage alebo None."""
     _index_own()
     exclude = set(exclude)
@@ -195,8 +197,8 @@ def find(q, alt="", exclude=(), online=True):
     for query in [q, alt]:
         if not query:
             continue
-        r = _local(query, exclude)
-        if r and (r["source"] == "own" or random.random() < 0.6):
+        r = _local(query, exclude, pid)
+        if r and (r["source"] in ("own", "brand") or random.random() < 0.6):
             return r
         if not online:
             continue
@@ -226,7 +228,7 @@ def find(q, alt="", exclude=(), online=True):
     return None
 
 
-def pick_for_scenes(scenes, shots_per_scene=None, seed=None):
+def pick_for_scenes(scenes, shots_per_scene=None, seed=None, pid=None):
     """Pre každú scénu vyberie zábery (2-3 na scénu). Výsledok sa uloží k scenáru a použije pre všetky jazyky."""
     rnd = random.Random(seed)
     used, out = set(), []
@@ -237,7 +239,7 @@ def pick_for_scenes(scenes, shots_per_scene=None, seed=None):
         n = shots_per_scene or 2
         ids = []
         for _ in range(n):
-            r = find(q, sc.get("alt", ""), used)
+            r = find(q, sc.get("alt", ""), used, pid=pid)
             if not r:
                 break
             used.add(r["id"])
@@ -245,7 +247,28 @@ def pick_for_scenes(scenes, shots_per_scene=None, seed=None):
             db.run("UPDATE footage SET used=used+1 WHERE id=?", (r["id"],))
         rnd.shuffle(ids)
         out.append(ids)
+    if pid:
+        _mix_brand(out, pid, used)
     return out
+
+
+def _mix_brand(out, pid, used):
+    """Fotky a videá značky sa dostanú do každého videa (2. scéna a záver), aj keď ich tagy nesedia."""
+    from . import brand
+    if not brand.opts(pid).get("photos_often") or len(out) < 2:
+        return
+    pool = sorted(brand.brand_footage(pid), key=lambda r: (r["used"], random.random()))
+    have = {r["id"] for r in pool}
+    for i in sorted({1, len(out) - 1}):
+        if any(f in have for f in out[i]):
+            continue
+        cand = [r for r in pool if r["id"] not in used]
+        if not cand:
+            return
+        r = cand[0]
+        used.add(r["id"])
+        out[i].insert(0, r["id"])
+        db.run("UPDATE footage SET used=used+1 WHERE id=?", (r["id"],))
 
 
 def music_track(seed=None):

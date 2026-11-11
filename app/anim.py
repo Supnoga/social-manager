@@ -63,9 +63,15 @@ function renderAt(t){W.forEach((w,i)=>{const p=cl((t-i*0.28)/0.3);const e=1+Math
 HELPERS = "function cl(x){return Math.max(0,Math.min(1,x))}function E(x){return 1-Math.pow(1-x,3)}"
 
 
-def html(kind, data, accent="#FF6B00"):
+def html(kind, data, accent="#FF6B00", font=None):
     body, js = TEMPLATES[kind]
-    return (f"<!doctype html><html><head><meta charset='utf-8'><style>:root{{--acc:{accent}}}{BASE_CSS}</style></head>"
+    fcss = ""
+    if font and Path(font).exists():
+        import base64
+        b64 = base64.b64encode(Path(font).read_bytes()).decode()
+        fcss = (f"@font-face{{font-family:BrandF;src:url(data:font/{Path(font).suffix.lstrip('.').lower()};base64,{b64})}}"
+                "html,body{font-family:BrandF,-apple-system,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif}")
+    return (f"<!doctype html><html><head><meta charset='utf-8'><style>:root{{--acc:{accent}}}{BASE_CSS}{fcss}</style></head>"
             f"<body>{body}<script>const DATA={json.dumps(data, ensure_ascii=False)};{HELPERS}{js}</script></body></html>")
 
 
@@ -111,12 +117,12 @@ def status():
 _render_lock = threading.Lock()
 
 
-def render(kind, data, accent="#FF6B00", dur=3.0, fps=30):
+def render(kind, data, accent="#FF6B00", dur=3.0, fps=30, font=None):
     """Vyrenderuje animáciu ako priehľadné video (.mov). Vráti cestu alebo None."""
     if kind not in TEMPLATES or not available():
         return None
     from . import media
-    h = hashlib.sha1(json.dumps([kind, data, accent, round(dur, 2), fps], sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+    h = hashlib.sha1(json.dumps([kind, data, accent, round(dur, 2), fps] + ([font] if font else []), sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     out = CACHE / f"{kind}_{h}.mov"
     if out.exists():
         return str(out)
@@ -127,7 +133,7 @@ def render(kind, data, accent="#FF6B00", dur=3.0, fps=30):
         b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
         try:
             pg = b.new_page(viewport={"width": 1080, "height": 1920}, device_scale_factor=1)
-            pg.set_content(html(kind, data, accent))
+            pg.set_content(html(kind, data, accent, font))
             n = max(1, int(dur * fps))
             for i in range(n):
                 pg.evaluate(f"renderAt({i / fps})")

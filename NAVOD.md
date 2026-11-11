@@ -78,6 +78,14 @@ V menu *Vzhľad účtov*: nahraj raz profilovú fotku, pozadie a napíš popis. 
 - **Naplánovať týždeň** (Publikovanie): jedným klikom rozdelí hotové videá na všetky účty na 7 dní, v najlepšie časy pre každý účet. Kým nie sú vlastné čísla, používa štandardné časy podľa siete a krajiny. Dá sa zapnúť, aby to robila sama každú nedeľu večer.
 - **Zopakovať úspešné** (Radar → Výsledky): úspešné videá idú pri plánovaní prvé na účty, kde ešte neboli, a Claude k nim navrhne nové variácie. Rovnaké video na ten istý účet znova nedávame, siete to trestajú.
 
+## 3c1. Logo, fotky a súbory značky
+V projekte → Popis a dizajn → **Obrázky, logá a súbory značky**: pretiahni sem logo, fotky produktov, videá, fonty alebo PDF brand manuál (PNG, JPG, SVG, WebP, HEIC z iPhonu, GIF, MP4, MOV, TTF, OTF, WOFF, PDF, MD). Bez AI, zadarmo.
+- **Logo** sa samo dá do rohu každého nového videa a na krátku záverečnú kartu. Tmavé logo dostane bielu podložku. Z loga sa urobí aj profilovka účtov (ak nenahráš inú) a jeho farby sa použijú vo videách.
+- **Fotky a videá** sa použijú ako zábery vo videách tohto projektu (pred zábermi z internetu). Ku každej napíš, čo je na nej, appka ju dá k scéne, ktorá o tom hovorí. Navyše sa jedna dostane do každého videa.
+- **Font** sa použije na titulky a texty vo videách (pri jazykoch, pre ktoré nemá písmená, napr. azbuka, ostane bežný font).
+- **PDF / MD** sa pridá k dizajnu značky.
+- Všetko sa dá vypnúť zaškrtávačmi nad súbormi. Hviezdička = hlavné logo alebo font.
+
 ## 3d1. Inšpirácia a kvalita obsahu
 - **Radar → Inšpirácia → Čo ľudia hľadajú a pýtajú sa:** čo ľudia píšu do Googlu v každej krajine (napr. „koľko stojí tepelné čerpadlo“) a otázky z komentárov pod tvojimi videami. Zbiera sa samé raz týždenne, zadarmo, bez AI. Tlačidlo „Nápad“ z otázky urobí video.
 - **Zásobník inšpirácie:** vlož odkaz na video, ktoré sa ti páči (TikTok, Reels, YouTube…), prípadne poznámku. Claude z neho vezme formát (nie obsah) a v pondelok ho použije prednostne.

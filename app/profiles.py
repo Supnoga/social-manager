@@ -79,6 +79,10 @@ def kit(pid):
     if not k:
         p = db.one("SELECT source_lang FROM projects WHERE id=?", (pid,)) or {}
         k = {"project_id": pid, "avatar": "", "banner": "", "bio": "", "lang": p.get("source_lang") or "sk"}
+    if not k.get("avatar") or not os.path.exists(k["avatar"]):
+        logo = DIR.parent / "brand" / str(pid) / "profilovka-z-loga.jpg"  # z loga v dizajne projektu
+        if logo.exists():
+            k = {**k, "avatar": str(logo)}
     return k
 
 

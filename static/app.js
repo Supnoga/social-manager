@@ -328,16 +328,17 @@ function pProjectForm(m, p) {
     <p class="small dim">Podrž myš na jazyku a uvidíš krajiny, pre ktoré je.</p>
     <div class="row" style="margin-top:18px"><button class="btn" onclick="saveProject(${p.id || 0})">${I('check')}${isNew ? 'Vytvoriť projekt' : 'Uložiť'}</button>
     ${isNew ? '' : `<span class="sp"></span><button class="btn bad sm" onclick="delProject(${p.id})">${I('trash', 's')}Zmazať projekt</button>`}</div></div>
-  ${isNew ? `<div class="card"><h2>${I('palette')}Dizajn</h2><p class="muted">Po vytvorení projektu sem môžeš vložiť MD dizajn (napr. z Claude Design) – farby, štýl a tón značky. AI ho potom použije pri všetkých videách.</p></div>` : `
+  ${isNew ? `<div class="card"><h2>${I('palette')}Dizajn</h2><p class="muted">Po vytvorení projektu sem môžeš vložiť MD dizajn (napr. z Claude Design), logo, fotky, fonty a PDF brand manuál. Appka ich potom použije vo všetkých videách.</p></div>` : `
   <div class="card"><h2>${I('palette')}Dizajn značky (MD)</h2>
     <p class="muted small">Vlož .md súbory s dizajnom (napr. export z Claude Design, brand manuál). Appka si z nich raz urobí krátke zhrnutie, takže to nemíňa veľa tokenov.</p>
     ${p.design_colors.length ? `<div class="row" style="margin:10px 0">${p.design_colors.map(c => `<div class="col" style="align-items:center;gap:4px"><div class="swatch" style="background:${c}"></div><span class="small dim">${c}</span></div>`).join('')}</div>` : ''}
     ${p.design_summary ? `<div class="hint" style="margin:10px 0">${I('sparkles')}<div>${esc(p.design_summary)}</div></div>` : ''}
-    <div class="drop" id="mdDrop">${I('upload', 'l')}<div style="margin-top:6px">Pretiahni sem .md súbory alebo klikni</div><input type="file" id="mdIn" multiple accept=".md,.markdown,.txt" class="hidden"></div>
+    <div class="drop" id="mdDrop">${I('upload', 'l')}<div style="margin-top:6px">Pretiahni sem .md súbory alebo klikni</div><input type="file" id="mdIn" multiple accept=".md,.markdown,.txt,.pdf" class="hidden"></div>
     <label class="l">…alebo vlož text</label><textarea id="mdText" placeholder="# Brand&#10;Farby: #FF6B00 …"></textarea>
     <div class="row" style="margin-top:10px"><button class="btn sm" onclick="saveDesign(${p.id},'append')">${I('plus', 's')}Pridať</button><button class="btn sec sm" onclick="saveDesign(${p.id},'replace')">${I('refresh', 's')}Nahradiť všetko</button></div>
     ${p.design_md ? `<details style="margin-top:14px"><summary>Zobraziť vložený dizajn (${p.design_md.length.toLocaleString('sk')} znakov)</summary><pre>${esc(p.design_md.slice(0, 20000))}</pre></details>` : ''}
   </div>
+  <div class="card" id="brandCard"></div>
   <div class="card"><h2>${I('library')}Zdroje (odkiaľ má AI čerpať)</h2>
     <p class="muted small">Pridaj odkazy na tvoj web, produkty, články, alebo vlož text či súbory (PDF, TXT, MD). Appka ich prečíta a AI si z nich raz urobí výťah faktov – stratégia, nápady aj scenáre z nich potom vychádzajú. Šetrí to tokeny.</p>
     ${p.sources.length ? `<div class="vlist">${p.sources.map((x, i) => `<div class="vrow">${I(x.kind === 'url' ? 'globe' : 'file', 's')}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.url || x.name)}">${esc(x.name)}</span><span class="small dim">${x.chars < 1000 ? x.chars + " znakov" : Math.round(x.chars / 1000) + "k znakov"}</span><button class="btn ghost sm ic" title="Odstrániť" onclick="srcRemove(${p.id},${i})">${I('trash', 's')}</button></div>`).join('')}</div>` : ''}
@@ -358,6 +359,7 @@ function pProjectForm(m, p) {
     const grp = (t, list) => list.length ? `<optgroup label="${t}">${list.map(v => `<option value="${v.id}" ${v.id === cur ? 'selected' : ''}>${esc(v.label)} (${v.gender === 'F' ? 'žena' : 'muž'})</option>`).join('')}</optgroup>` : '';
     sel.innerHTML = `<option value="auto">Automaticky (najlepší dostupný)</option>` + grp('Google HD – najprirodzenejšie', d.voices.filter(v => v.engine === 'google')) + grp('Microsoft – zadarmo bez kľúča', d.voices.filter(v => v.engine === 'edge'));
   });
+  if (p.id && typeof brandCard === 'function') brandCard(p.id);
   const drop = $('#mdDrop');
   if (drop) {
     const fin = $('#mdIn');
@@ -380,7 +382,7 @@ async function saveProject(id) {
   toast('Uložené'); if (!id) go(`p/${r.id}/brief`); else render();
 }
 async function delProject(id) { if (!confirm('Naozaj zmazať projekt aj s jeho nápadmi a videami?')) return; await api('/api/projects/' + id, { method: 'DELETE' }); go(''); }
-async function uploadMd(pid, files) { const fd = new FormData(); [...files].forEach(f => fd.append('files', f)); fd.append('mode', 'append'); await api(`/api/projects/${pid}/design`, { method: 'POST', body: fd }, 'Čítam dizajn…'); toast('Dizajn uložený'); render(); }
+async function uploadMd(pid, files) { if ([...files].some(f => !/\.(md|markdown|txt)$/i.test(f.name)) && typeof brandUpload === 'function') return brandUpload(pid, files); const fd = new FormData(); [...files].forEach(f => fd.append('files', f)); fd.append('mode', 'append'); await api(`/api/projects/${pid}/design`, { method: 'POST', body: fd }, 'Čítam dizajn…'); toast('Dizajn uložený'); render(); }
 async function saveDesign(pid, mode) { const text = $('#mdText').value; if (!text && mode === 'append') return toast('Vlož text alebo súbor', true); if (mode === 'replace' && !confirm('Nahradiť celý doterajší dizajn?')) return; await api(`/api/projects/${pid}/design`, { method: 'POST', body: { text, mode } }, 'Čítam dizajn…'); toast('Dizajn uložený'); render(); }
 
 // ================= DETAIL VIDEA (5 krokov) =================
