@@ -124,7 +124,7 @@ def _li(acc, posts):
     owner = acc["external_id"]
     if not owner.startswith("urn:li:organization"):
         return []  # osobný profil: LinkedIn čítanie komentárov nedovolí
-    tok = tokens(acc).get("access_token", "")
+    tok = linkedin.access_token(acc)
     out = []
     with client() as c:
         for p in posts:
@@ -173,7 +173,7 @@ def reply(acc, com, text):
         elif p == "linkedin":
             post = com["post_ext"]
             check(c.post(f"{linkedin.REST}/socialActions/{urllib.parse.quote(post, safe='')}/comments",
-                         headers=linkedin.headers(tokens(acc).get("access_token", "")),
+                         headers=linkedin.headers(linkedin.access_token(acc)),
                          json={"actor": acc["external_id"], "object": post, "parentComment": com["external_id"],
                                "message": {"text": text}}), "LinkedIn odpoveď")
         else:
