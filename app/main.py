@@ -12,7 +12,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import ai, content, db, footage, languages, media, scheduler, tunnel, updater, voices
+from . import ai, brand, content, db, footage, languages, media, scheduler, tunnel, updater, voices
 from .platforms import linkedin, meta, tiktok, tiktok_business, youtube
 from .platforms.common import PORT, PlatformError
 
@@ -367,6 +367,9 @@ async def project_design(pid: int, request: Request):
     if mode == "append" and p and p["design_md"]:
         md = p["design_md"] + "\n\n" + md
     colors = list(dict.fromkeys(c.upper() for c in re.findall(r"#[0-9a-fA-F]{6}\b", md)))[:5]
+    if not colors:  # dizajn bez farieb: nechať farby z loga
+        logo = brand.main_asset(pid, "logo")
+        colors = brand.logo_colors(logo["path"]) if logo else []
     db.run("UPDATE projects SET design_md=?, design_colors=?, design_summary='' WHERE id=?",
            (md, json.dumps(colors), pid))
     if not md.strip():
@@ -662,7 +665,7 @@ def _shots_for(s):
         except Exception:
             for sc in scenes:
                 sc.setdefault("q", src["title"])
-    shots = footage.pick_for_scenes(scenes)
+    shots = footage.pick_for_scenes(scenes, pid=src["project_id"])
     db.run("UPDATE scripts SET shots=? WHERE id=?", (json.dumps(shots), src["id"]))
     return shots
 
@@ -685,8 +688,10 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     colors = json.loads(proj.get("design_colors") or "[]") or [proj.get("color") or "#FF6B00"]
     scenes = json.loads(s["scenes"] or "[]")
     base = db.one("SELECT * FROM videos WHERE id=?", (base_id,)) if base_id else None
-    style = data.get("style") or ("base" if base else "broll" if _broll_ready() else "color")
+    style = data.get("style") or ("base" if base else "broll" if _broll_ready() or brand.brand_footage(s["project_id"]) else "color")
     done = False
+    # font značky (ak má všetky písmená tohto jazyka)
+    brand.use_font(s["project_id"], (s["voiceover"] or "") + " " + " ".join(sc.get("onscreen", "") for sc in scenes))
     if style == "broll":
         try:
             media.broll_video(scenes, _shots_for(s), s["voice_path"], out, colors[0], s["lang"], s["voiceover"],
@@ -703,6 +708,11 @@ def script_to_video(sid: int, data: dict = Body(default={})):
                 media.merge_voice(base["file_path"], s["voice_path"], out)
             else:
                 media.image_video(s["voice_path"], out)
+    brand.clear_font()
+    try:
+        brand.decorate(s["project_id"], out)  # logo v rohu + záverečná karta s logom
+    except Exception as e:
+        print("logo vo videu:", e)
     vid = _add_video(s["project_id"], str(out), out.name, s["lang"], s)
     return {"video_id": vid, "style": style if done or style != "broll" else "color"}
 
@@ -740,7 +750,7 @@ def idea_shots_change(iid: int, data: dict = Body(default={})):
     used = {f for sh in shots for f in sh}
     new = []
     for _ in range(2):
-        r = footage.find(scenes[i].get("q", ""), scenes[i].get("alt", ""), used | set(new))
+        r = footage.find(scenes[i].get("q", ""), scenes[i].get("alt", ""), used | set(new), pid=src["project_id"])
         if r:
             new.append(r["id"])
     if not new:
@@ -1302,6 +1312,7 @@ from . import dashboard as dash_page  # noqa: E402
 app.include_router(dash_page.router)
 from . import inspire  # noqa: E402
 app.include_router(inspire.router)
+app.include_router(brand.router)
 
 
 def main():

@@ -103,7 +103,8 @@ FONT_CANDIDATES = [
 
 def _font(size):
     from PIL import ImageFont
-    for f in FONT_CANDIDATES:
+    from . import brand
+    for f in ([brand.current_font()] if brand.current_font() else []) + FONT_CANDIDATES:
         if Path(f).exists():
             try:
                 return ImageFont.truetype(f, size)
@@ -288,7 +289,7 @@ def _caption_frame(path, chunk, active, accent, banner=""):
 
 def broll_video(scenes, shots, voice, out, accent="#FF6B00", lang="", text="", music=None):
     """Obal: pridá animácie (ak sú v scenári a Chromium je pripravené)."""
-    from . import anim
+    from . import anim, brand
     total = duration(voice) or 10
     n = max(1, len(scenes))
     per = total / n
@@ -299,7 +300,7 @@ def broll_video(scenes, shots, voice, out, accent="#FF6B00", lang="", text="", m
             d = dict(a.get("d") or {})
             d.setdefault("comma", lang not in ("en", "ga", "mt", "cy"))
             try:
-                mov = anim.render(a["t"], d, accent, min(per, 4.0))
+                mov = anim.render(a["t"], d, accent, min(per, 4.0), font=brand.current_font())
                 if mov:
                     anims.append((i * per, min(per, 4.0), mov, i))
             except Exception as e:
