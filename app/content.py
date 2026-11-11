@@ -122,7 +122,7 @@ def scripts_prompt(params):
     ideas = [db.one("SELECT * FROM ideas WHERE id=?", (i,)) for i in params["idea_ids"]]
     ideas = [i for i in ideas if i]
     p = _project(ideas[0]["project_id"])
-    from . import inspire
+    from . import explainer, inspire
     items = "\n".join(f'- id {i["id"]} [{i["format"]}]: {i["title"]} | hook: {i["hook"]} | angle: {i["angle"]}'
                       + (f' | format: {inspire.FMT[i["template"]][2]}' if i.get("template") in inspire.FMT else "") for i in ideas)
     return f"""{_ctx(p)}
@@ -134,10 +134,8 @@ at least one concrete number, short sentences, a new visual every 2-4 s, pattern
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Captions/hashtags optimized for TikTok/Reels/Shorts.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"max 90 chars, curiosity-driven","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short on-screen text","q":"2-5 English words to search stock footage","anim":null}}] (4-7 scenes; scene 1 = hook: strongest, moving, concrete shot;
-for 1-2 scenes with numbers/lists/comparisons set "anim" to an animated graphic: {{"t":"counter","d":{{"value":2,"prefix":"","suffix":" €","label":""}}}} |
-{{"t":"bars","d":{{"title":"","suffix":"","items":[{{"label":"","value":0}}]}}}} | {{"t":"list","d":{{"title":"","items":[""]}}}} |
-{{"t":"compare","d":{{"left":{{"label":"","value":""}},"right":{{"label":"","value":""}}}}}} | {{"t":"kinetic","d":{{"words":["2-4 punchy words"]}}}}),
+"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (4-7 scenes; scene 1 = hook;
+scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.SPEC}),
 "description":"YouTube description 2-4 sentences + CTA","caption":"social caption max 150 chars","hashtags":"#a #b (5-8)"}}]}}
 Write in {languages.english(p['source_lang'])}."""
 
@@ -400,7 +398,11 @@ def apply_manual(name, params, text):
 
 def translate_all(script_id, langs, chunk=6):
     """Preklad: najprv bezplatné strojové prekladače (0 tokenov), Claude len pre zvyšok a na opravu označených kúskov."""
-    from . import translate
+    from . import explainer, translate
+    try:
+        explainer.ensure_boards(script_id)  # animované schémy raz v origináli, preklad ich prenesie do všetkých jazykov
+    except Exception as e:
+        print("schémy:", e)
     done, rest, flags, used = ([], list(langs), {}, [])
     if translate.any_enabled():
         done, rest, flags, used = translate.machine_translate(script_id, langs)
