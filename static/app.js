@@ -410,7 +410,8 @@ function sIdea(b, { p, idea, src, iid }) {
     <label class="l">Háčik (prvá veta)</label><input id="eH" value="${esc(idea.hook)}">
     <label class="l">Uhol / čím je to iné</label><textarea id="eA">${esc(idea.angle)}</textarea>
     ${idea.why ? `<p class="small muted">${I('chart', 's')} ${esc(idea.why)}</p>` : ''}
-    <div class="row" style="margin-top:14px"><button class="btn sec" onclick="saveIdea(${iid})">${I('check')}Uložiť</button></div></div>
+    <div class="row" style="margin-top:14px"><button class="btn sec" onclick="saveIdea(${iid})">${I('check')}Uložiť</button><span class="sp"></span>
+      <button class="btn sec" title="Claude napíše 4 pokračovania (časť 2 až 5). Série najlepšie naberajú sledovateľov." onclick="mkSeries(${p.id},${iid})">${I('layers')}Urobiť z toho sériu</button></div></div>
   <div class="card"><h2>${I('phone')}Ďalší krok: prototyp</h2>
     <p class="muted">Claude napíše scenár: text pre hlas, scény, texty na obrazovku, popis a hashtagy. Potom si to pozrieš ako náhľad videa.</p>
     ${src ? `<div class="hint">${I('check')}<div>Prototyp už existuje.</div></div><div class="row" style="margin-top:12px"><button class="btn" onclick="go('p/${p.id}/v/${iid}/prototyp')">Otvoriť prototyp${I('right')}</button><button class="btn sec" onclick="mkProto(${p.id},${iid})">${I('refresh')}Napísať znova</button></div>`

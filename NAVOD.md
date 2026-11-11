@@ -91,6 +91,10 @@ V projekte → Popis a dizajn → **Obrázky, logá a súbory značky**: pretiah
 - **Zásobník inšpirácie:** vlož odkaz na video, ktoré sa ti páči (TikTok, Reels, YouTube…), prípadne poznámku. Claude z neho vezme formát (nie obsah) a v pondelok ho použije prednostne.
 - **Overené formáty:** 18 osvedčených typov videí (3 chyby, Mýtus vs. fakt, Koľko to stojí…). Claude ku každému nápadu jeden vyberie, appka si pamätá, ktoré ti fungujú, a tie ponúka častejšie.
 - **Kvalita scenára:** pri prototype vidíš skóre 0–100 a konkrétne rady (krátky začiatok, číslo, výzva na konci, text na obrazovke…). Bez AI. „Silnejší začiatok“ navrhne 5 lepších prvých viet (1 malé lacné volanie).
+- **Opraviť jedným klikom:** pri kvalite scenára; Claude opraví presne to, čo kontrola našla (1 volanie). Dá sa vrátiť späť.
+- **Séria:** pri nápade tlačidlo „Urobiť z toho sériu“ pridá 4 pokračovania (časť 2 až 5) do schránky nápadov.
+- **Počasie ako spúšťač:** appka denne sleduje predpoveď v krajinách projektu. Keď ide mráz, prudké ochladenie alebo horúčava, navrhne video pre tie krajiny na správny deň. Zadarmo, bez AI.
+- **Vyvážený obsah:** appka stráži pomer rád, dôkazov a aktuálnych tém (cieľ 50/30/20) a chýbajúci typ ponúka prednostne.
 - **Nikdy netvrdiť:** v nastavení projektu zapíš zakázané tvrdenia (pri N2N je prednastavené „made in Slovakia“ a podobné). Claude ich nepoužije a kontrola kvality ich odhalí.
 
 ## 3d2. Dashboard (výsledky v grafoch)

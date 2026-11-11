@@ -1312,6 +1312,8 @@ from . import dashboard as dash_page  # noqa: E402
 app.include_router(dash_page.router)
 from . import inspire  # noqa: E402
 app.include_router(inspire.router)
+from . import weather  # noqa: E402
+app.include_router(weather.router)
 app.include_router(brand.router)
 
 

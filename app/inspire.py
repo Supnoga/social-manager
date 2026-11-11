@@ -101,9 +101,49 @@ def template_stats(pid):
     return out
 
 
+GROUPS = {"rady": ["chyby", "mytus", "navod", "vysvetli", "odpoved", "prestan", "tajomstvo", "zledobre"],
+          "dokazy": ["pribeh", "test", "predpo", "zakulisie", "cena", "ab"],
+          "zabava": ["novinka", "pov", "kviz", "top"]}
+GROUP_NAMES = {"rady": "Rady a vysvetlenia", "dokazy": "Dôkazy a čísla", "zabava": "Aktuálne a zábavné"}
+TARGET = {"rady": 50, "dokazy": 30, "zabava": 20}
+GROUP_OF = {k: g for g, ks in GROUPS.items() for k in ks}
+
+
+def content_mix(pid, last=20):
+    """Pomer typov obsahu v posledných nápadoch (bez AI). Stráži, aby sa obsah striedal."""
+    rows = db.q("""SELECT template FROM ideas WHERE project_id=? AND COALESCE(template,'')!='' AND status NOT IN ('rejected','inbox','snoozed')
+                   ORDER BY id DESC LIMIT ?""", (pid, last))
+    n = len(rows)
+    cnt = {g: 0 for g in GROUPS}
+    for r in rows:
+        g = GROUP_OF.get(r["template"])
+        if g:
+            cnt[g] += 1
+    mix = [{"key": g, "name": GROUP_NAMES[g], "pct": round(100 * cnt[g] / n) if n else 0, "target": TARGET[g]} for g in GROUPS]
+    lack = None
+    if n >= 6:
+        worst = min(mix, key=lambda m: m["pct"] - m["target"])
+        if worst["pct"] - worst["target"] <= -12:
+            lack = worst["key"]
+    return {"n": n, "mix": mix, "lack": lack}
+
+
 def pick_templates(pid, n=5):
-    """70 % najlepšie fungujúce, zvyšok málo vyskúšané / náhodné (učiaci sa výber, bez AI)."""
+    """70 % najlepšie fungujúce, zvyšok málo vyskúšané / náhodné (učiaci sa výber, bez AI).
+    Ak niektorý typ obsahu chýba (content_mix), dostane aspoň 2 miesta."""
     st = template_stats(pid)
+    lack = content_mix(pid)["lack"]
+    if lack:
+        first = [s for s in st if s["key"] in GROUPS[lack] and not (s["ratio"] is not None and s["ratio"] < 0.7 and s["measured"] >= 3)]
+        first.sort(key=lambda s: (-(s["ratio"] or 1.0), s["used"], random.random()))
+        forced = first[:2]
+        rest_pick = _pick(st, n - len(forced), exclude=forced)
+        return forced + rest_pick
+    return _pick(st, n)
+
+
+def _pick(st, n, exclude=()):
+    st = [s for s in st if s not in exclude]
     good = sorted([s for s in st if s["ratio"] is not None and s["measured"] >= 2], key=lambda s: -s["ratio"])
     good = [s for s in good if s["ratio"] >= 1.0]
     k_best = min(len(good), round(n * 0.7))
@@ -235,6 +275,11 @@ def signals(pid, n_q=4, n_s=4):
                     "txt": f'owner saved this as inspiration ({s["platform"] or "web"}): "{(s["title"] or s["url"])[:100]}"'
                            + (f'; note: {s["note"][:120]}' if s["note"] else ""),
                     "ref": {"swipe": s["id"], "label": (s["title"] or s["note"] or s["url"])[:80]}})
+    try:
+        from . import weather
+        out += weather.signals(pid)
+    except Exception:
+        pass
     return out
 
 
@@ -275,7 +320,7 @@ def api_overview(pid: int, lang: str = ""):
         raise HTTPException(404)
     lang = lang or p["source_lang"]
     last = db.get_setting("questions_last", "")
-    return {"questions": questions(pid, lang), "lang": lang, "last": last,
+    return {"questions": questions(pid, lang), "lang": lang, "last": last, "mix": content_mix(pid),
             "langs": json.loads(p["languages"] or "[]"),
             "swipes": db.q("SELECT * FROM swipes WHERE project_id=? AND status!='hidden' ORDER BY status='used', id DESC LIMIT 60", (pid,)),
             "templates": template_stats(pid)}
@@ -434,3 +479,89 @@ def api_use_hook(iid: int, data: dict = Body(...)):
         vo = " ".join([hook] + sents[1:]) if sents else hook
         db.run("UPDATE scripts SET voiceover=? WHERE id=?", (vo, s["id"]))
     return {"ok": True}
+
+
+# ---------- opraviť scenár jedným klikom (1 volanie) ----------
+@router.post("/api/scripts/{sid}/improve")
+def api_improve(sid: int):
+    """Claude opraví presne to, čo našla kontrola kvality. Pôvodná verzia sa odloží, dá sa vrátiť."""
+    _db()
+    s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
+    if not s:
+        raise HTTPException(404)
+    p = db.one("SELECT * FROM projects WHERE id=?", (s["project_id"],))
+    idea = db.one("SELECT format FROM ideas WHERE id=?", (s["idea_id"],)) or {}
+    fmt = idea.get("format") or "short"
+    before = check_script(s, p, fmt)
+    tips = [i["text"] for i in before["items"] if not i["ok"]]
+    if not tips:
+        return {"before": before["score"], "after": before["score"], "changed": False}
+    scenes = json.loads(s["scenes"] or "[]")
+    payload = {"voiceover": s["voiceover"], "onscreen": [c.get("onscreen", "") for c in scenes], "caption": s["caption"], "hashtags": s["hashtags"]}
+    from . import content
+    try:
+        data = ai.ask(f"""{content._ctx(content._project(p["id"]))}
+Improve this {"short (110-150 spoken words)" if fmt == "short" else "long"} video script. Fix exactly these problems found by our checker (in Slovak):
+{chr(10).join("- " + t for t in tips)}
+Keep the topic, meaning, facts and numbers (never invent facts), the language ({languages.english(s["lang"])}) and exactly {len(scenes)} on-screen texts
+(one per scene, same order, max 7 words each). Voiceover: no greeting, first sentence max 14 words, short sentences, natural for text-to-speech.
+Script: {json.dumps(payload, ensure_ascii=False)}
+Return JSON with the same shape: {{"voiceover":"","onscreen":[""],"caption":"","hashtags":""}}""", "improve", "creative", use_cache=False)
+    except ai.NeedManual:
+        raise HTTPException(400, "Na opravu scenára treba Claude Code (v ručnom režime nefunguje).")
+    if not isinstance(data, dict) or not (data.get("voiceover") or "").strip():
+        raise HTTPException(400, "Claude nevrátil opravený text, skús znova.")
+    db.set_setting(f"script_backup_{sid}", {"voiceover": s["voiceover"], "scenes": s["scenes"], "caption": s["caption"], "hashtags": s["hashtags"]})
+    for i, t in enumerate(data.get("onscreen") or []):
+        if i < len(scenes) and isinstance(t, str) and t.strip():
+            scenes[i]["onscreen"] = t
+    db.run("UPDATE scripts SET voiceover=?, scenes=?, caption=?, hashtags=? WHERE id=?",
+           (data["voiceover"].strip(), json.dumps(scenes, ensure_ascii=False), data.get("caption") or s["caption"],
+            data.get("hashtags") or s["hashtags"], sid))
+    after = check_script(db.one("SELECT * FROM scripts WHERE id=?", (sid,)), p, fmt)
+    others = db.one("SELECT COUNT(*) n FROM scripts WHERE idea_id=? AND id!=?", (s["idea_id"], sid))["n"]
+    return {"before": before["score"], "after": after["score"], "changed": True, "translations": others}
+
+
+@router.post("/api/scripts/{sid}/improve-undo")
+def api_improve_undo(sid: int):
+    b = db.get_setting(f"script_backup_{sid}")
+    if not b:
+        raise HTTPException(400, "Pôvodná verzia už nie je uložená.")
+    db.run("UPDATE scripts SET voiceover=?, scenes=?, caption=?, hashtags=? WHERE id=?", (b["voiceover"], b["scenes"], b["caption"], b["hashtags"], sid))
+    db.set_setting(f"script_backup_{sid}", None)
+    return {"ok": True}
+
+
+# ---------- séria z jedného videa (1 volanie) ----------
+@router.post("/api/ideas/{iid}/series")
+def api_series(iid: int):
+    """Z nápadu spraví 5-dielnu sériu: 4 pokračovania pribudnú do schránky nápadov."""
+    _db()
+    idea = db.one("SELECT * FROM ideas WHERE id=?", (iid,))
+    if not idea:
+        raise HTTPException(404)
+    if db.one("SELECT id FROM ideas WHERE source='series' AND source_ref=?", (str(iid),)):
+        raise HTTPException(400, "Séria k tomuto videu už existuje (pozri Radar → Nápady).")
+    from . import content
+    p = content._project(idea["project_id"])
+    try:
+        data = ai.ask(f"""{content._ctx(p)}
+Turn this video into a 5-part series; it is part 1: "{idea['title']}" | hook: {idea['hook']} | angle: {idea['angle'][:300]}
+Write parts 2-5. Each must work alone for a new viewer, but together they form a clear journey that makes people follow for the next part.
+Each hook: exact first spoken sentence, max 14 words, no greeting. Don't repeat part 1.
+Return JSON: {{"series":"series name, max 5 words","ideas":[{{"title":"","hook":"","angle":"","why":"what this part adds"}}]}}
+Write in {languages.english(p['source_lang'])}.""", "series", "creative", use_cache=False)
+    except ai.NeedManual:
+        raise HTTPException(400, "Na sériu treba Claude Code (v ručnom režime nefunguje).")
+    name = str((data or {}).get("series") or idea["title"])[:60]
+    made = 0
+    for k, it in enumerate((data or {}).get("ideas", [])[:4]):
+        if not isinstance(it, dict) or not it.get("title"):
+            continue
+        db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,template)
+                  VALUES(?,?,?,?,?,?,?,?,'inbox','series',?,?)""",
+               (idea["project_id"], str(it["title"])[:300], it.get("hook", ""), it.get("angle", ""), idea["pillar"], idea["format"],
+                f"Séria „{name}“, časť {k + 2}/5. {it.get('why', '')}", max(7, int(idea["score"] or 0)), str(iid), idea.get("template") or ""))
+        made += 1
+    return {"created": made, "series": name}
