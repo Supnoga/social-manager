@@ -700,26 +700,34 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     base_id = data.get("base_video_id")
     proj = db.one("SELECT color, design_colors FROM projects WHERE id=?", (s["project_id"],)) or {}
     colors = json.loads(proj.get("design_colors") or "[]") or [proj.get("color") or "#FF6B00"]
+    acc = brand.accent(colors, proj.get("color"))  # zvýrazňovacia farba značky (nikdy čierna/biela z manuálu)
     scenes = json.loads(s["scenes"] or "[]")
     base = db.one("SELECT * FROM videos WHERE id=?", (base_id,)) if base_id else None
     style = data.get("style") or ("base" if base else "explainer" if anim.available() else
                                   "broll" if _broll_ready() or brand.brand_footage(s["project_id"]) else "color")
-    done = False
+    done = logo_in = False
     # font značky (ak má všetky písmená tohto jazyka)
-    brand.use_font(s["project_id"], (s["voiceover"] or "") + " " + " ".join(sc.get("onscreen", "") for sc in scenes))
+    font_txt = (s["voiceover"] or "") + " " + " ".join(sc.get("onscreen", "") for sc in scenes)
+    brand.use_font(s["project_id"], font_txt, letters_only=style == "explainer")
     if style == "explainer":
         try:
             pr = db.one("SELECT name FROM projects WHERE id=?", (s["project_id"],)) or {}
             sc2 = explainer.localized_scenes(s)
-            explainer.make(sc2, s["voice_path"], out, colors[0], s["lang"], s["voiceover"], pr.get("name") or "",
-                           footage.music_track(sid) if data.get("music", True) else None, brand.current_font())
-            done = True
+            bo, lg = brand.opts(s["project_id"]), brand.video_logo(s["project_id"], dark_bg=True)
+            explainer.make(sc2, s["voice_path"], out, acc, s["lang"], s["voiceover"], pr.get("name") or "",
+                           footage.music_track(sid) if data.get("music", True) else None, brand.current_font(),
+                           font_text=brand.current_text_font(),
+                           logo=brand.logo_data_uri(lg, 680, 176) if lg and bo["logo_corner"] else None,
+                           logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
+                           products=brand.product_images(s["project_id"]))
+            done = logo_in = True
         except Exception as e:
             print("animované video:", e)
+            brand.use_font(s["project_id"], font_txt)
             style = "broll" if _broll_ready() or brand.brand_footage(s["project_id"]) else "color"
     if style == "broll" and not done:
         try:
-            media.broll_video(scenes, _shots_for(s), s["voice_path"], out, colors[0], s["lang"], s["voiceover"],
+            media.broll_video(scenes, _shots_for(s), s["voice_path"], out, acc, s["lang"], s["voiceover"],
                               footage.music_track(sid) if data.get("music", True) else None)
             done = True
         except Exception as e:
@@ -735,7 +743,8 @@ def script_to_video(sid: int, data: dict = Body(default={})):
                 media.image_video(s["voice_path"], out)
     brand.clear_font()
     try:
-        brand.decorate(s["project_id"], out)  # logo v rohu + záverečná karta s logom
+        if not logo_in:  # animované video má logo priamo v obraze
+            brand.decorate(s["project_id"], out)  # logo v rohu + záverečná karta s logom
     except Exception as e:
         print("logo vo videu:", e)
     vid = _add_video(s["project_id"], str(out), out.name, s["lang"], s)
