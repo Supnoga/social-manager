@@ -65,7 +65,7 @@ Videá sa robia ako vysvetľujúce animácie v štýle videí N2N Akadémie: či
 Claude navrhne schému ku každej scéne rovno pri písaní scenára (staršie scenáre dostanú schémy samé pri ďalšom „Vytvoriť znova“, jedno malé lacné volanie). Pri rozšírení do ďalších jazykov sa obraz nemení, preložia sa len texty v schémach. Všetko zadarmo, renderuje sa u teba na Macu.
 Ak chceš radšej zábery z internetu, v kroku **Video** vyber štýl *Zábery z internetu + titulky*.
 
-## 3d. Zábery z internetu (voliteľné)
+### Zábery z internetu (voliteľné)
 V **Nastavenia → Zábery a hudba** vlož bezplatný kľúč **Pexels** (a voliteľne Pixabay). Svoje vlastné zábery daj do priečinka **Moje zábery** (tlačidlo ho otvorí) a pomenuj ich podľa obsahu, napr. `varenie-cestoviny.mp4` – appka ich uprednostní. Hudbu (mp3) daj do priečinka **Hudba**.
 Video potom vyzerá takto: nový záber každé 2–3 s, fotky sa pohybujú, titulky slovo po slove (aktuálne slovo vo farbe projektu), text scény hore. Zábery sa vyberú raz a platia pre všetky jazyky; v kroku **Video** ich vidíš po scénach a môžeš ich vymeniť.
 
