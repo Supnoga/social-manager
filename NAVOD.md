@@ -146,6 +146,7 @@ TikTok v Európe správy cez appky nepovoľuje a LinkedIn ich povoľuje len svoj
 
 - **Zvuk videí (od 1.24):** Google hlas sa vyrába po vetách v plnej kvalite (čistejší, nie „telefónny“), pauzy medzi vetami sú krátke a titulky aj striedanie scén idú presne podľa hlasu. Každé video dostane tichú **hudbu pod hlas** (pri reči sa sama stíši), jemný zvuk pri zmene scény a hlasitosť ako ostatné videá na sieťach. Hudba je zabudovaná a zadarmo (3 nálady); vlastná v priečinku Hudba má prednosť. Nastavíš v **Nastavenia → Zvuk videí** (nálada, hlasitosť hudby, efekty, alebo bez hudby). Staršie videá stačí vyrobiť znova, hlas sa urobí nanovo sám.
 - **Čísla podľa gramatiky (od 1.25):** hlas číta čísla, desatinné čísla, percentá a jednotky v správnom rode a páde každého jazyka (2 percentá → „dve percentá“, 2 kW → „dva kilowatty“, SCOP 5,14 → „päť celých štrnásť“). Robí to Claude z tvojho plánu: posiela len vety s číslom, všetky jazyky naraz, a každú vetu si zapamätá, takže spotreba je malá. Titulky ostávajú číslicami. Vypneš v **Nastavenia → Zvuk videí**.
+- **Nový zvuk (od 1.25.1):** v kroku Video je pri videu tlačidlo „Nový zvuk“ (pri ostatných jazykoch ikonka mikrofónu). Hlas sa nahrá úplne nanovo, povie to trochu inak, a video sa podľa neho zloží znova; obraz ostáva rovnaký. Tlačidlo „Nový hlas“ v kroku Text a hlas tiež nahrá hlas naozaj nanovo. Keď sa zmení spôsob čítania (čísla, výslovnosť), stačí „Vytvoriť znova“ a appka hlas vymení sama.
 - **R290 je chladivo, nie názov:** appka už nepíše „PROLINE R290“, ale PROLINE (s chladivom R290).
 
 ## 6b. Zdroje projektu

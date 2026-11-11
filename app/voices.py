@@ -496,10 +496,11 @@ def _said(path, text):
         pass
 
 
-def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
+def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None, fresh=False):
     """Vytvorí hlas. Vráti (cesta, engine, poznámka). Keď vybraný hlas nejde, skúsi ďalší a povie to.
     Text sa pred hlasom upraví podľa výslovnosti (pronounce); titulky ostanú v pôvodnom zápise.
-    Vedľa hlasu uloží časy slov (.words.json), podľa ktorých idú titulky a striedanie scén."""
+    Vedľa hlasu uloží časy slov (.words.json), podľa ktorých idú titulky a striedanie scén.
+    fresh=True: hotový hlas z pamäte sa nepoužije, nahrá sa nanovo (Google hlas ho zakaždým povie trochu inak)."""
     orig = re.sub(r"\s+", " ", text or "").strip()
     if not orig:
         raise RuntimeError("Prázdny text pre hlas")
@@ -515,7 +516,7 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
     errors = []
     for vid in chain:
         path = Path(out_path or VOICE_DIR / f"{lang}_{hashlib.md5((VOICE_VER + vid + str(rate) + text).encode()).hexdigest()[:12]}.mp3")
-        if path.exists() and path.stat().st_size > 1000 and not out_path:
+        if path.exists() and path.stat().st_size > 1000 and not out_path and not fresh:
             _said(path, text)
             return str(path), vid.split(":")[0], "; ".join(errors)
         try:

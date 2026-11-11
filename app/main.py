@@ -617,7 +617,7 @@ def script_voice(sid: int, data: dict = Body(default={})):
     p = db.one("SELECT * FROM projects WHERE id=?", (s["project_id"],)) or {}
     path, engine, note = voices.synth(s["voiceover"], s["lang"], data.get("voice") or voices.project_voice(p, s["lang"]),
                                       data.get("gender") or p.get("voice_gender", "F"),
-                                      float(data.get("rate") or voices.project_rate(p)))
+                                      float(data.get("rate") or voices.project_rate(p)), fresh=bool(data.get("fresh")))
     db.run("UPDATE scripts SET voice_path=?, voice_engine=? WHERE id=?", (path, engine, sid))
     return {"voice_path": path, "engine": engine, "note": note}
 
@@ -720,7 +720,10 @@ def _broll_ready():
 def script_to_video(sid: int, data: dict = Body(default={})):
     """Vytvorí video: zábery z internetu/tvoje + titulky slovo po slove (predvolené), tvoje podkladové video, alebo farby dizajnu."""
     s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
-    if not s["voice_path"] or not Path(s["voice_path"]).exists() or voices.stale(s["voice_path"], s.get("voice_engine") or "", s["voiceover"], s["lang"]):
+    if data.get("new_voice"):   # tlačidlo „Nový zvuk“: hlas sa nahrá nanovo a video sa zloží podľa neho
+        script_voice(sid, {"fresh": True})
+        s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
+    elif not s["voice_path"] or not Path(s["voice_path"]).exists() or voices.stale(s["voice_path"], s.get("voice_engine") or "", s["voiceover"], s["lang"]):
         script_voice(sid, {})   # aj starý hlas bez presných časov slov sa urobí nanovo (čistejší, titulky sedia)
         s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
     want_music = data.get("music", True)
@@ -865,7 +868,7 @@ def _first_lang(iid):
 
 
 def _vopts(data):
-    return {k: data[k] for k in ("style", "base_video_id", "music") if k in data}
+    return {k: data[k] for k in ("style", "base_video_id", "music", "new_voice") if k in data}
 
 
 @app.post("/api/ideas/{iid}/produce-first")
