@@ -11,7 +11,7 @@ const NET_C = { youtube: '#3987e5', tiktok: '#d95926', instagram: '#199e70', fac
 const DM = { v: ['Zobrazenia', 'eye2'], r: ['Reakcie', 'heart'], er: ['Zapojenie', 'pct'], n: ['Príspevky', 'film'] };
 const DAYS = [[7, '7 dní'], [30, '30 dní'], [90, '3 mesiace'], [365, 'Rok']];
 const WD = ['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'];
-S.dash = S.dash || { days: 30, pl: '', c: '', l: '', p: '', m: 'v', demo: null };
+S.dash = S.dash || { days: 30, pl: '', c: '', l: '', p: '', m: 'v' };
 let DD = null; // načítané dáta { key, ... }
 
 const nf = n => Math.round(n).toLocaleString('sk-SK');
@@ -51,12 +51,10 @@ document.addEventListener('mousemove', e => {
 async function pDash(m) {
   const f = S.dash, pid = S.pf || 0;
   const want = f.days * 2;
-  const key = `${want}|${f.demo ? 1 : 0}`;
+  const key = `${want}`;
   if (!DD || DD.key !== key) {
     m.innerHTML = `<div class="top"><div>${pTitle('Dashboard')}</div></div><div class="card">${empty('dash', 'Načítavam čísla…')}</div>`;
-    DD = await api(`/api/dash?days=${want}&demo=${f.demo ? 1 : 0}`); DD.key = key;
-    if (f.demo === null && !DD.real_measured) { f.demo = true; return pDash(m); } // bez skutočných čísel ukáž ukážku
-    if (f.demo === null) f.demo = false;
+    DD = await api(`/api/dash?days=${want}`); DD.key = key;
   }
   const now = Date.now(), dayMs = 864e5, cut = now - f.days * dayMs, cut0 = now - 2 * f.days * dayMs;
   const ts = x => new Date(x.d.replace(' ', 'T')).getTime();
@@ -84,14 +82,12 @@ async function pDash(m) {
     <b>${mfmt(k, mval(k, A))}</b><div class="small">${delta(mval(k, A), mval(k, P))}</div></div>`;
 
   m.innerHTML = `<div class="top"><div>${pTitle('Dashboard')}<p class="sub">Zobrazenia, reakcie a zapojenie zo všetkých sietí. Počíta sa z uložených čísel, nemíňa žiadne AI.</p></div></div>
-  ${DD.demo ? `<div class="card dbanner"><div class="row">${I('sparkles')}<div style="flex:1"><b>Ukážkové čísla.</b> <span class="muted">Skutočné výsledky sa objavia samé, keď appka zverejní prvé videá (čísla sa sťahujú každých 6 hodín).</span></div>
-    ${DD.real_measured ? `<button class="btn sm" onclick="dSet('demo',false)">Ukázať skutočné</button>` : ''}</div></div>` : ''}
+  ${!all.some(x => !proj || x.p === proj) ? `<div class="dfilters"><div class="seg">${DAYS.map(([d, n]) => `<button class="${f.days === d ? 'on' : ''}" onclick="dSet('days',${d})">${n}</button>`).join('')}</div></div><div class="card">${empty('dash', 'Zatiaľ žiadne dáta. Skutočné čísla sa objavia samé, keď appka zverejní prvé videá na pripojené účty (sťahujú sa každých 6 hodín).')}</div>` : `
   <div class="dfilters">
     <div class="seg">${DAYS.map(([d, n]) => `<button class="${f.days === d ? 'on' : ''}" onclick="dSet('days',${d})">${n}</button>`).join('')}</div>
     ${pid ? '' : sel('p', 'Projekt', S.projects.map(p => p.id), v => S.projects.find(p => p.id === +v)?.name || v)}
     ${sel('pl', 'Sieť', nets, v => PL[v])}${sel('c', 'Krajina', ctrs, cName)}${sel('l', 'Jazyk', lngs, lName)}
     ${anyF ? `<button class="btn ghost sm" onclick="dReset()">${I('x', 's')}Zrušiť filtre</button>` : ''}
-    <span class="sp"></span>${!DD.demo ? `<button class="btn ghost sm" onclick="dSet('demo',true)">${I('sparkles', 's')}Ukážka</button>` : ''}
   </div>
   <div class="dkpis">${['v', 'r', 'er', 'n'].map(kpi).join('')}</div>
   ${cur.length ? `
@@ -108,15 +104,15 @@ async function pDash(m) {
   </div>
   <div class="card"><h2>Najlepšie príspevky</h2>${topTable(cur, f.m)}</div>
   <div class="card"><h2>Účty</h2>${accTable(cur, f.m)}</div>`
-    : `<div class="card">${empty('dash', anyF ? 'Pre tieto filtre zatiaľ nie sú žiadne čísla. Skús iné obdobie alebo zruš filtre.' : 'Zatiaľ žiadne zverejnené príspevky v tomto období.')}</div>`}
-  <p class="small dim" style="margin-top:14px">${DD.demo ? 'Ukážka používa vymyslené čísla.' : `Zmerané príspevky: ${DD.real_measured} z ${DD.real_posts}${DD.last ? ' · posledné stiahnutie ' + esc(DD.last.slice(8, 10) + '.' + DD.last.slice(5, 7) + '. ' + DD.last.slice(11, 16)) : ''}`} · Zapojenie = reakcie ÷ zobrazenia. LinkedIn ráta zobrazenia ako impresie, Instagram bez zobrazení ako dosah.</p>`;
+    : `<div class="card">${empty('dash', anyF ? 'Pre tieto filtre zatiaľ nie sú žiadne čísla. Skús iné obdobie alebo zruš filtre.' : 'Zatiaľ žiadne dáta v tomto období.')}</div>`}`}
+  <p class="small dim" style="margin-top:14px">Iba skutočné čísla zo sietí, nič vymyslené${DD.last ? ' · posledné stiahnutie ' + esc(DD.last.slice(8, 10) + '.' + DD.last.slice(5, 7) + '. ' + DD.last.slice(11, 16)) : ''} · Zapojenie = reakcie ÷ zobrazenia. LinkedIn ráta zobrazenia ako impresie, Instagram bez zobrazení ako dosah.</p>`;
   if (cur.length) lineChart($('#dLine'), cur, prev, f, cut, cut0);
 }
 
 function dSet(k, v) {
   const f = S.dash;
   if (k === 'days') v = +v;
-  if (k !== 'm' && k !== 'days' && k !== 'demo' && String(f[k]) === String(v)) v = ''; // druhý klik filter zruší
+  if (k !== 'm' && k !== 'days' && String(f[k]) === String(v)) v = ''; // druhý klik filter zruší
   f[k] = v; pDash($('#main'));
 }
 function dReset() { Object.assign(S.dash, { pl: '', c: '', l: '', p: '' }); pDash($('#main')); }
