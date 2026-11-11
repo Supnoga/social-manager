@@ -22,8 +22,8 @@ Odvtedy stačí **dvojklik na ikonku**. Appka beží na pozadí bez čierneho ok
 2. V projekte, záložka **Videá**, je tabuľa s 5 krokmi:
    1. **Nápad** – „Vymyslieť nápady“ (AI), „Vlastný nápad“ alebo **Autopilot** (všetko naraz).
    2. **Prototyp** – scenár + náhľad videa v telefóne (scény, texty na obrazovke, hlas). Uprav a schváľ.
-   3. **Text a hlas** – preklad do všetkých jazykov projektu a hlasy jedným klikom.
-   4. **Video** – appka urobí videá s textami a hlasom (aj cez tvoje podkladové zábery), alebo nahráš vlastné video ku každému jazyku.
+   3. **Text a hlas** – hlas pre prvú verziu v jednom jazyku (predvolene jazyk scenára, dá sa zmeniť).
+   4. **Video** – najprv sa urobí video len v tomto jednom jazyku. Pozrieš si ho, a keď je dobré, tlačidlo **Rozšíriť do všetkých jazykov** ho preloží do ostatných jazykov s tým istým obrazom (mení sa len text, titulky a hlas). Môžeš aj nahrať vlastné video.
    5. **Siete** – tabuľka jazyky × siete, naplánuješ alebo zverejníš hneď.
 3. **Knižnica** – hromadné videá: pretiahni ich alebo pridaj celý priečinok (jazyk sa spozná z názvu `recept_de.mp4` alebo z priečinka `/de/`).
 4. **Účty a siete** – pripoj kanály a pri každom nastav **projekt a jazyk**.
@@ -58,7 +58,7 @@ TikTok Business si videá **sťahuje z internetu**, nevie ich prijať priamo. Ri
 Zvonka je viditeľné **len** video pod tajným odkazom a overovací súbor, nič iné z appky.
 
 ## 3b. Preklady zadarmo (bez tokenov)
-V **Nastavenia → Preklady zadarmo** vlož kľúč Microsoft Translator (Free F0, 2 mil. znakov mesačne) – návod je priamo tam. Voliteľne DeepL Free (500 tis.) a Google (500 tis.). Potom preklady nestoja žiadne Claude tokeny; Claude len opraví sporné kúsky. V projekte vyplň **Neprekladať** (názov značky, produktov). V kroku **Text a hlas** tlačidlo **Vyrobiť všetky jazyky** spraví preklad, hlasy aj videá naraz.
+V **Nastavenia → Preklady zadarmo** vlož kľúč Microsoft Translator (Free F0, 2 mil. znakov mesačne) – návod je priamo tam. Voliteľne DeepL Free (500 tis.) a Google (500 tis.). Potom preklady nestoja žiadne Claude tokeny; Claude len opraví sporné kúsky. V projekte vyplň **Neprekladať** (názov značky, produktov). Keď je prvá verzia videa dobrá, v kroku **Video** tlačidlo **Rozšíriť do všetkých jazykov** spraví preklad, hlasy aj videá naraz.
 
 ## 3c. Obraz videí (zábery + titulky)
 V **Nastavenia → Zábery a hudba** vlož bezplatný kľúč **Pexels** (a voliteľne Pixabay). Svoje vlastné zábery daj do priečinka **Moje zábery** (tlačidlo ho otvorí) a pomenuj ich podľa obsahu, napr. `varenie-cestoviny.mp4` – appka ich uprednostní. Hudbu (mp3) daj do priečinka **Hudba**.
