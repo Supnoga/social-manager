@@ -622,9 +622,22 @@ def script_voice(sid: int, data: dict = Body(default={})):
     return {"voice_path": path, "engine": engine, "note": note}
 
 
+def _verbal_prefetch(iid):
+    """Čísla nahlas pre všetky jazyky nápadu jednou požiadavkou na AI (len vety s číslom, čo ešte nie sú v pamäti)."""
+    try:
+        from . import verbal
+        items = [(r["lang"], sent) for r in db.q("SELECT lang, voiceover FROM scripts WHERE idea_id=?", (iid,))
+                 for sent in voices.split_sentences(r["voiceover"])]
+        return verbal.ensure(items)
+    except Exception as e:
+        print("čísla nahlas:", e)
+        return 0
+
+
 @app.post("/api/ideas/{iid}/voice-all")
 def idea_voice_all(iid: int, only_missing: int = 0):
     done, errors, notes = 0, [], set()
+    _verbal_prefetch(iid)
     for s in db.q("SELECT id, lang FROM scripts WHERE idea_id=?" + (" AND voice_path=''" if only_missing else ""), (iid,)):
         try:
             r = script_voice(s["id"], {})
@@ -647,7 +660,7 @@ def voice_preview(data: dict = Body(...)):
     text = data.get("text") or voices.sample(lang)
     path, engine, note = voices.synth(text, lang, data.get("voice") or "auto",
                                       data.get("gender", "F"), float(data.get("rate") or 1.0))
-    return {"voice_path": path, "engine": engine, "note": note, "spoken": pronounce.speak(text, lang)[0]}
+    return {"voice_path": path, "engine": engine, "note": note, "spoken": voices.spoken_form(text, lang)[0]}
 
 
 @app.get("/api/pronounce")
@@ -707,7 +720,7 @@ def _broll_ready():
 def script_to_video(sid: int, data: dict = Body(default={})):
     """Vytvorí video: zábery z internetu/tvoje + titulky slovo po slove (predvolené), tvoje podkladové video, alebo farby dizajnu."""
     s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
-    if not s["voice_path"] or not Path(s["voice_path"]).exists() or voices.stale(s["voice_path"], s.get("voice_engine") or ""):
+    if not s["voice_path"] or not Path(s["voice_path"]).exists() or voices.stale(s["voice_path"], s.get("voice_engine") or "", s["voiceover"], s["lang"]):
         script_voice(sid, {})   # aj starý hlas bez presných časov slov sa urobí nanovo (čistejší, titulky sedia)
         s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
     want_music = data.get("music", True)
@@ -898,6 +911,7 @@ def idea_produce_all(iid: int, data: dict = Body(default={})):
 def idea_videos_all(iid: int, data: dict = Body(default={})):
     """Jedným klikom: pre všetky jazyky nápadu urobí hlas + video (s tvojím podkladovým videom, ak ho zvolíš)."""
     made, errors = [], []
+    _verbal_prefetch(iid)
     for s in db.q("SELECT id, lang FROM scripts WHERE idea_id=?", (iid,)):
         if data.get("only_missing") and db.one("SELECT id FROM videos WHERE script_id=?", (s["id"],)):
             continue
@@ -1422,6 +1436,10 @@ from . import weather  # noqa: E402
 app.include_router(weather.router)
 from . import audio  # noqa: E402
 app.include_router(audio.router)
+try:
+    inspire.fix_refrigerant_name()   # „PROLINE R290“ nie je názov, R290 je chladivo (jednorazová oprava textov)
+except Exception as _e:
+    print("oprava R290:", _e)
 app.include_router(brand.router)
 
 

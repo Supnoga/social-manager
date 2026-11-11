@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 
-from . import db, languages, pronounce
+from . import db, languages, pronounce, verbal
 
 VOICE_DIR = db.MEDIA_DIR / "voice"
 VOICE_DIR.mkdir(parents=True, exist_ok=True)
@@ -127,6 +127,25 @@ SR = 24000
 PUNCT = ".!?…,;:"
 ABBR = set("dr mr mrs ms nr no st ing mgr prof doc napr tzv resp tj cca str obr tel max min art fig vs sv ul bzw ca usw etc vgl inkl zzgl ggf evtl "
            "sog bsp jr sr mag dipl ev pol kpt např apod atd atď pozn odst nám př tj tzn mj np tzw itd itp ok godz zob wg m.in ex env av bd".split())
+
+
+def spoken_form(text, lang):
+    """Text tak, ako ho hlas povie: čísla slovom podľa gramatiky (verbal), potom názvy a skratky (pronounce).
+    Vráti (text pre hlas, mapy späť na pôvodný zápis pre titulky)."""
+    s1, sp1 = verbal.say_all(split_sentences(text), lang)
+    s2, sp2 = pronounce.speak(s1, lang)
+    return s2, (sp2, s1, sp1)
+
+
+def unmap(words, spoken, maps, orig):
+    """Časy slov z hlasu -> slová v pôvodnom zápise (titulky ukážu „2 kW“, hlas povie „dva kilowatty“)."""
+    if not isinstance(maps, tuple):          # staré volanie len s úsekmi výslovnosti
+        return punctuate(pronounce.remap(punctuate(words, spoken), spoken, maps), orig)
+    sp2, s1, sp1 = maps
+    w = pronounce.remap(punctuate(words, spoken), spoken, sp2)
+    if sp1:
+        w = pronounce.remap(punctuate(w, s1), s1, sp1)
+    return punctuate(w, orig)
 
 
 def split_sentences(text):
@@ -333,8 +352,12 @@ def _google_tts(text, voice_name, out_path, rate=1.0, lang=""):
     if not key:
         raise RuntimeError("Google hlas nemá zadaný kľúč (Nastavenia → Hlas)")
     parts = split_sentences(text)
-    spoken = [pronounce.speak(p, lang) for p in parts]
-    spoken = [(p, sp, spans) for p, (sp, spans) in zip(parts, spoken) if sp.strip()]
+    verbal.ensure([(lang, p) for p in parts])          # čísla podľa gramatiky jazyka (len vety s číslom, z pamäte zadarmo)
+    spoken = []
+    for p in parts:
+        sp, maps = spoken_form(p, lang)
+        if sp.strip():
+            spoken.append((p, sp, maps))
     if not spoken:
         raise RuntimeError("Prázdny text pre hlas")
     if google_usage()["left"] < sum(len(sp) for _, sp, _ in spoken):
@@ -362,7 +385,7 @@ def _google_tts(text, voice_name, out_path, rate=1.0, lang=""):
         t0, dur = len(pcm) / sr, len(a) / sr
         toks = sp.split()
         ws = [{"w": t, "s": round(t0 + s, 3), "e": round(t0 + e, 3)} for t, (s, e) in zip(toks, _times(toks, dur, gaps))]
-        words += punctuate(pronounce.remap(ws, sp, spans), orig)
+        words += unmap(ws, sp, spans, orig)
         pcm.extend(a)
         end = sp.rstrip()[-1:]
         gap = (0.36 if end in "?!" else 0.42 if end == "…" else 0.30) * pause
@@ -407,8 +430,7 @@ def _edge_tts(text, voice, out_path, rate=1.0, spans=None, orig=None):
     if not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
         raise RuntimeError("Microsoft hlas nevrátil zvuk")
     if words:
-        words = pronounce.remap(punctuate(words, text), text, spans)   # titulky v pôvodnom zápise (PROLINE, nie „prolajn")
-        words = punctuate(words, orig or text)
+        words = unmap(words, text, spans, orig or text)   # titulky v pôvodnom zápise (PROLINE, nie „prolajn"; 2, nie „dve")
         Path(str(out_path) + ".words.json").write_text(json.dumps(words, ensure_ascii=False))
 
 
@@ -466,6 +488,14 @@ def default_voice(lang, gender="F"):
     return "edge:" + languages.voice(lang, gender)
 
 
+def _said(path, text):
+    """Vedľa hlasu si zapíše, čo presne povedal (podľa toho sa pozná, že ho treba urobiť nanovo)."""
+    try:
+        Path(str(path) + ".say.txt").write_text(text, encoding="utf-8")
+    except Exception:
+        pass
+
+
 def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
     """Vytvorí hlas. Vráti (cesta, engine, poznámka). Keď vybraný hlas nejde, skúsi ďalší a povie to.
     Text sa pred hlasom upraví podľa výslovnosti (pronounce); titulky ostanú v pôvodnom zápise.
@@ -473,7 +503,7 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
     orig = re.sub(r"\s+", " ", text or "").strip()
     if not orig:
         raise RuntimeError("Prázdny text pre hlas")
-    text, spans = pronounce.speak(orig, lang)
+    text, spans = spoken_form(orig, lang)
     if not text:
         raise RuntimeError("Prázdny text pre hlas")
     if not voice_id or voice_id == "auto":
@@ -486,6 +516,7 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
     for vid in chain:
         path = Path(out_path or VOICE_DIR / f"{lang}_{hashlib.md5((VOICE_VER + vid + str(rate) + text).encode()).hexdigest()[:12]}.mp3")
         if path.exists() and path.stat().st_size > 1000 and not out_path:
+            _said(path, text)
             return str(path), vid.split(":")[0], "; ".join(errors)
         try:
             Path(str(path) + ".words.json").unlink(missing_ok=True)
@@ -496,15 +527,27 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
             else:
                 from gtts import gTTS
                 gTTS(text, lang={"no": "no"}.get(lang, lang)).save(str(path))
+            _said(path, text)
             return str(path), vid.split(":")[0], "; ".join(errors)
         except Exception as e:
             errors.append(str(e)[:200])
     raise RuntimeError("Hlas sa nepodarilo vytvoriť (skontroluj internet): " + " / ".join(errors))
 
 
-def stale(voice_path, engine=""):
-    """Hlas vyrobený starým spôsobom (Google bez časov slov) – pri ďalšom videu sa urobí nanovo."""
-    return engine == "google" and not Path(str(voice_path) + ".words.json").exists()
+def stale(voice_path, engine="", text=None, lang=None):
+    """Hlas vyrobený starým spôsobom – pri ďalšom videu sa urobí nanovo:
+    Google bez časov slov, alebo hlas, ktorý ešte čítal čísla po starom (bez gramatiky jazyka)."""
+    if engine == "google" and not Path(str(voice_path) + ".words.json").exists():
+        return True
+    if text and lang and verbal.enabled():
+        said = Path(str(voice_path) + ".say.txt")
+        try:
+            if said.exists():
+                return said.read_text(encoding="utf-8") != spoken_form(re.sub(r"\s+", " ", text).strip(), lang)[0]
+            return any(verbal.need(x) for x in split_sentences(text))
+        except Exception:
+            return False
+    return False
 
 
 def project_voice(project, lang):

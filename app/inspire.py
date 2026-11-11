@@ -163,6 +163,50 @@ def templates_prompt(pid, n=5):
     return t
 
 
+# ---------- R290 je chladivo, nie názov produktu ----------
+_R290 = re.compile(r"(PROLINE)[\s\-–]+R[\s\-]?290\b", re.I)
+
+
+def fix_refrigerant_name():
+    """Jednorazová oprava: AI si zo zhrnutia projektu odvodila názov „PROLINE R290“. R290 je len chladivo radu PROLINE.
+    Opraví zhrnutia projektu (z nich AI píše), hotové scenáre a nápady, a pridá „PROLINE R290“ medzi zakázané výrazy."""
+    if db.get_setting("fix_r290_done"):
+        return 0
+    n = 0
+    for p in db.q("SELECT * FROM projects"):
+        upd = {}
+        for f, rep in (("strategy_short", r"\1 (refrigerant R290)"), ("design_summary", r"\1 (refrigerant R290)"),
+                       ("sources_summary", r"\1 (refrigerant R290)"), ("strategy", r"\1 (chladivo R290)")):
+            v = p.get(f) or ""
+            v2 = _R290.sub(rep, v)
+            if "n2n" in (p.get("name") or "").lower():   # N2N sa nemá prezentovať ako slovenský výrobca
+                v2 = v2.replace("Slovak heat pump manufacturer", "European HVAC manufacturer").replace("Slovak-made", "European engineering")
+            if v2 != v:
+                upd[f] = v2
+        hit = bool(upd) or any(_R290.search(str(r.get("voiceover") or "") + str(r.get("scenes") or ""))
+                               for r in db.q("SELECT voiceover, scenes FROM scripts WHERE project_id=?", (p["id"],)))
+        ban = banned_list(p)
+        if hit and not any(b.lower() == "proline r290" for b in ban):
+            upd["banned"] = "; ".join(ban + ["PROLINE R290"])
+        if upd:
+            db.run(f"UPDATE projects SET {', '.join(k + '=?' for k in upd)} WHERE id=?", (*upd.values(), p["id"]))
+            n += 1
+    for r in db.q("SELECT id, title, voiceover, scenes, description, caption FROM scripts"):
+        new = {f: _R290.sub(r"\1", r.get(f) or "") for f in ("title", "voiceover", "scenes", "description", "caption")}
+        if any(new[f] != (r.get(f) or "") for f in new):
+            extra = ", voice_path=''" if new["voiceover"] != (r.get("voiceover") or "") else ""
+            db.run(f"UPDATE scripts SET title=?, voiceover=?, scenes=?, description=?, caption=?{extra} WHERE id=?",
+                   (new["title"], new["voiceover"], new["scenes"], new["description"], new["caption"], r["id"]))
+            n += 1
+    for r in db.q("SELECT id, title, hook, angle FROM ideas"):
+        new = {f: _R290.sub(r"\1", r.get(f) or "") for f in ("title", "hook", "angle")}
+        if any(new[f] != (r.get(f) or "") for f in new):
+            db.run("UPDATE ideas SET title=?, hook=?, angle=? WHERE id=?", (new["title"], new["hook"], new["angle"], r["id"]))
+            n += 1
+    db.set_setting("fix_r290_done", True)
+    return n
+
+
 # ---------- zakázané tvrdenia ----------
 def banned_list(p):
     return [b.strip() for b in re.split(r"[;\n]", p.get("banned") or "") if b.strip()]
