@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 
-from . import db, languages
+from . import db, languages, pronounce
 
 VOICE_DIR = db.MEDIA_DIR / "voice"
 VOICE_DIR.mkdir(parents=True, exist_ok=True)
@@ -163,7 +163,7 @@ def _run(coro):
             loop.close()
 
 
-def _edge_tts(text, voice, out_path, rate=1.0):
+def _edge_tts(text, voice, out_path, rate=1.0, spans=None):
     import edge_tts
     pct = f"{int(round((rate - 1) * 100)):+d}%"
     words = []
@@ -183,6 +183,7 @@ def _edge_tts(text, voice, out_path, rate=1.0):
     if not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
         raise RuntimeError("Microsoft hlas nevrátil zvuk")
     if words:
+        words = pronounce.remap(words, text, spans)   # titulky v pôvodnom zápise (PROLINE, nie „prolajn")
         Path(str(out_path) + ".words.json").write_text(json.dumps(words, ensure_ascii=False))
 
 
@@ -241,8 +242,11 @@ def default_voice(lang, gender="F"):
 
 
 def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
-    """Vytvorí hlas. Vráti (cesta, engine, poznámka). Keď vybraný hlas nejde, skúsi ďalší a povie to."""
-    text = re.sub(r"\s+", " ", text or "").strip()
+    """Vytvorí hlas. Vráti (cesta, engine, poznámka). Keď vybraný hlas nejde, skúsi ďalší a povie to.
+    Text sa pred hlasom upraví podľa výslovnosti (pronounce); titulky ostanú v pôvodnom zápise."""
+    if not re.sub(r"\s+", " ", text or "").strip():
+        raise RuntimeError("Prázdny text pre hlas")
+    text, spans = pronounce.speak(text, lang)
     if not text:
         raise RuntimeError("Prázdny text pre hlas")
     if not voice_id or voice_id == "auto":
@@ -257,10 +261,11 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
         if path.exists() and path.stat().st_size > 1000 and not out_path:
             return str(path), vid.split(":")[0], "; ".join(errors)
         try:
+            Path(str(path) + ".words.json").unlink(missing_ok=True)
             if vid.startswith("google:"):
                 _google_tts(text, vid[7:], path, rate)
             elif vid.startswith("edge:"):
-                _edge_tts(text, vid[5:], path, rate)
+                _edge_tts(text, vid[5:], path, rate, spans)
             else:
                 from gtts import gTTS
                 gTTS(text, lang={"no": "no"}.get(lang, lang)).save(str(path))

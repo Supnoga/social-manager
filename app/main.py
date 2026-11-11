@@ -12,7 +12,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import ai, brand, content, db, footage, languages, media, scheduler, tunnel, updater, voices
+from . import ai, brand, content, db, footage, languages, media, scheduler, tunnel, pronounce, updater, voices
 from .platforms import linkedin, meta, tiktok, tiktok_business, youtube
 from .platforms.common import PORT, PlatformError
 
@@ -644,9 +644,20 @@ def voice_list(lang: str):
 @app.post("/api/voices/preview")
 def voice_preview(data: dict = Body(...)):
     lang = data.get("lang", "sk")
-    path, engine, note = voices.synth(data.get("text") or voices.sample(lang), lang, data.get("voice") or "auto",
+    text = data.get("text") or voices.sample(lang)
+    path, engine, note = voices.synth(text, lang, data.get("voice") or "auto",
                                       data.get("gender", "F"), float(data.get("rate") or 1.0))
-    return {"voice_path": path, "engine": engine, "note": note}
+    return {"voice_path": path, "engine": engine, "note": note, "spoken": pronounce.speak(text, lang)[0]}
+
+
+@app.get("/api/pronounce")
+def pronounce_get():
+    return {"custom": pronounce.custom(), "builtin": pronounce.builtin_list(), "demo": pronounce.demo("sk")}
+
+
+@app.post("/api/pronounce")
+def pronounce_save(data: dict = Body(...)):
+    return {"custom": pronounce.save_custom(data.get("items") or [])}
 
 
 @app.post("/api/voice/test")
