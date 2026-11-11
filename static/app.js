@@ -333,7 +333,7 @@ function pProjectForm(m, p) {
     <p class="muted small">Vlož .md súbory s dizajnom (napr. export z Claude Design, brand manuál). Appka si z nich raz urobí krátke zhrnutie, takže to nemíňa veľa tokenov.</p>
     ${p.design_colors.length ? `<div class="row" style="margin:10px 0">${p.design_colors.map(c => `<div class="col" style="align-items:center;gap:4px"><div class="swatch" style="background:${c}"></div><span class="small dim">${c}</span></div>`).join('')}</div>` : ''}
     ${p.design_summary ? `<div class="hint" style="margin:10px 0">${I('sparkles')}<div>${esc(p.design_summary)}</div></div>` : ''}
-    <div class="drop" id="mdDrop">${I('upload', 'l')}<div style="margin-top:6px">Pretiahni sem .md súbory alebo klikni</div><input type="file" id="mdIn" multiple accept=".md,.markdown,.txt,.pdf" class="hidden"></div>
+    <div class="drop" id="mdDrop">${I('upload', 'l')}<div style="margin-top:6px">Pretiahni sem súbory alebo klikni</div><input type="file" id="mdIn" multiple accept=".md,.markdown,.txt,.pdf" class="hidden"></div>
     <label class="l">…alebo vlož text</label><textarea id="mdText" placeholder="# Brand&#10;Farby: #FF6B00 …"></textarea>
     <div class="row" style="margin-top:10px"><button class="btn sm" onclick="saveDesign(${p.id},'append')">${I('plus', 's')}Pridať</button><button class="btn sec sm" onclick="saveDesign(${p.id},'replace')">${I('refresh', 's')}Nahradiť všetko</button></div>
     ${p.design_md ? `<details style="margin-top:14px"><summary>Zobraziť vložený dizajn (${p.design_md.length.toLocaleString('sk')} znakov)</summary><pre>${esc(p.design_md.slice(0, 20000))}</pre></details>` : ''}
