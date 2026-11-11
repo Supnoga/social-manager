@@ -78,6 +78,12 @@ V menu *Vzhľad účtov*: nahraj raz profilovú fotku, pozadie a napíš popis. 
 - **Naplánovať týždeň** (Publikovanie): jedným klikom rozdelí hotové videá na všetky účty na 7 dní, v najlepšie časy pre každý účet. Kým nie sú vlastné čísla, používa štandardné časy podľa siete a krajiny. Dá sa zapnúť, aby to robila sama každú nedeľu večer.
 - **Zopakovať úspešné** (Radar → Výsledky): úspešné videá idú pri plánovaní prvé na účty, kde ešte neboli, a Claude k nim navrhne nové variácie. Rovnaké video na ten istý účet znova nedávame, siete to trestajú.
 
+## 3d2. Dashboard (výsledky v grafoch)
+
+- **Dashboard** (v menu pod každým projektom aj vo „Všetky projekty naraz“): zobrazenia, reakcie a zapojenie zo všetkých sietí. Filtre: obdobie, projekt, sieť, krajina, jazyk. Klik na riadok v grafe (napr. krajinu) ju vyfiltruje, druhý klik filter zruší.
+- Grafy: vývoj v čase (oproti predchádzajúcemu obdobiu), podľa siete, krajiny, jazyka a projektu, kedy to funguje najlepšie (deň a hodina), z čoho sú reakcie, najlepšie príspevky a účty.
+- Nemíňa žiadne AI. Kým nie sú skutočné čísla, ukazuje ukážkové (je to pri nich napísané).
+
 ## 3e. Súkromné správy (Facebook a Instagram)
 V menu **Správy** (pod každým projektom aj pre všetky projekty naraz) sú súkromné správy zo všetkých Facebook stránok a Instagram účtov. Appka ich načíta sama každú hodinu (zadarmo, bez AI). Klikni **Navrhnúť odpovede**, AI napíše odpoveď v jazyku zákazníka, pod ňou vidíš preklad do slovenčiny. Nič sa neodošle bez tvojho kliknutia.
 

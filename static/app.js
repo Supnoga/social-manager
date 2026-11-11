@@ -134,8 +134,9 @@ function sidebar() {
     ${nav('', 'home', 'Prehľad', !cur)}
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
-      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
+      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Všetky projekty naraz</div>
+    ${nav('dashboard', 'chart', 'Dashboard', cur === 'dashboard')}
     ${nav('kontrola', 'eye', 'Kontrola', cur === 'kontrola', S.meta.review_count)}
     ${nav('kalendar', 'calendar', 'Publikovanie', cur === 'kalendar')}
     ${nav('komentare', 'message', 'Komentáre', cur === 'komentare', S.cmCount)}
@@ -167,6 +168,7 @@ async function render() {
     else if (r[0] === 'komentare') await pComments(m);
     else if (r[0] === 'spravy') await pMessages(m);
     else if (r[0] === 'radar') await pRadar(m);
+    else if (r[0] === 'dashboard') await pDash(m);
     else if (r[0] === 'profily') await pProfiles(m);
     else if (r[0] === 'ucty') await pAccounts(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
@@ -179,6 +181,7 @@ async function render() {
       else if (sec === 'kontrola') await pReview(m);
       else if (sec === 'kalendar') await pCalendar(m);
       else if (sec === 'radar') await pRadar(m);
+      else if (sec === 'dashboard') await pDash(m);
       else if (sec === 'komentare') await pComments(m);
       else if (sec === 'spravy') await pMessages(m);
       else if (sec === 'profily') await pProfiles(m);
