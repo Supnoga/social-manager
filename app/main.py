@@ -1298,6 +1298,8 @@ from . import profiles  # noqa: E402
 app.include_router(profiles.router)
 from . import events  # noqa: E402
 app.include_router(events.router)
+from . import dashboard as dash_page  # noqa: E402
+app.include_router(dash_page.router)
 
 
 def main():
