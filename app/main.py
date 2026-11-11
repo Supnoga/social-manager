@@ -213,6 +213,8 @@ def api_meta():
         "has": {"yt_client": bool(db.get_setting("yt_client")), "tt_creds": bool(db.get_setting("tt_client_key")),
                 "ttb_creds": bool(db.get_setting("ttb_app_id")),
                 "li_creds": bool(db.get_setting("li_client_id")), "li_org": bool(db.get_setting("li_org_client_id"))},
+        "li": {"page_langs": linkedin.page_langs(), "target": db.get_setting("li_target", True),
+               "followers": db.get_setting("li_followers", 0) or 0},
         "scheduler": scheduler.state,
         "yt_usage": youtube.usage(),
         "ffmpeg": bool(media.ffmpeg()),
@@ -231,7 +233,7 @@ def api_settings(data: dict = Body(...)):
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
-               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly"}
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -251,7 +253,7 @@ def dashboard():
     import time as _t
     expiring = []
     for a in db.q("SELECT id, name, tokens, external_id FROM accounts WHERE platform='linkedin'"):
-        exp = json.loads(a["tokens"] or "{}").get("expires_at", 0)
+        exp = linkedin.expiry(a["tokens"])
         if exp and exp < _t.time() + 7 * 86400:
             expiring.append({"name": a["name"], "days": max(0, int((exp - _t.time()) / 86400)),
                              "org": (a["external_id"] or "").startswith("urn:li:organization")})
@@ -970,7 +972,7 @@ def accounts():
     rows = db.q("SELECT a.id, a.platform, a.name, a.external_id, a.project_id, a.lang, a.country, a.tokens, p.name project_name "
                 "FROM accounts a LEFT JOIN projects p ON p.id=a.project_id ORDER BY a.platform, a.name")
     for r in rows:
-        exp = json.loads(r.pop("tokens") or "{}").get("expires_at", 0) if r["platform"] == "linkedin" else 0
+        exp = linkedin.expiry(r.pop("tokens")) if r["platform"] == "linkedin" else 0
         r["days_left"] = max(0, int((exp - _t.time()) / 86400)) if exp else None
         r["org"] = (r["external_id"] or "").startswith("urn:li:organization")
     return rows
@@ -1111,6 +1113,13 @@ def _slots(start, times, per_day, days_skip=None):
         day += timedelta(days=1)
 
 
+def _lang_ok(a, v):
+    if a["platform"] == "linkedin" and linkedin.is_org(a) and not a["lang"]:
+        # jedna firemná stránka pre všetky krajiny: idú len vybrané jazyky, nech sa stránka nezahltí
+        return not v["lang"] or v["lang"] in linkedin.page_langs()
+    return not a["lang"] or not v["lang"] or a["lang"] == v["lang"]
+
+
 @app.post("/api/posts/schedule")
 def schedule(data: dict = Body(...)):
     """Naplánuje veľa videí naraz. Každé video ide na účty svojho projektu a jazyka (alebo na vybrané účty)."""
@@ -1135,7 +1144,7 @@ def schedule(data: dict = Body(...)):
         else:
             targets = [a for a in all_acc if a["platform"] in platforms
                        and (not a["project_id"] or a["project_id"] == v["project_id"])
-                       and (not a["lang"] or not v["lang"] or a["lang"] == v["lang"])]
+                       and _lang_ok(a, v)]
         if not targets:
             skipped.append(v["title"] or v["original_name"])
         for a in targets:

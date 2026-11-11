@@ -2,14 +2,14 @@
 najlepšie hodiny na zverejnenie a krátky výťah „čo funguje“ pre vymýšľanie nápadov.
 
 Čísla sa sťahujú cez oficiálne API sietí, ktoré appka už má pripojené (nič navyše sa neplatí).
-LinkedIn čísla k videám bežnej appke nedáva, preto sa preskakuje.
+LinkedIn dáva čísla len firemnej stránke (osobný profil sa preskakuje).
 """
 import datetime as dt
 import json
 import statistics
 
 from . import db
-from .platforms import meta, tiktok_business, youtube
+from .platforms import linkedin, meta, tiktok_business, youtube
 from .platforms.common import client, tokens
 
 # štandardné časy (slovenský čas), kým appka nemá vlastné čísla; zdroj: verejné prehľady sietí 2025-2026
@@ -111,11 +111,12 @@ def _tt(acc, posts):
     return out
 
 
-FETCHERS = {"youtube": _yt, "facebook": _fb, "instagram": _ig, "tiktok": _tt}
+FETCHERS = {"youtube": _yt, "facebook": _fb, "instagram": _ig, "tiktok": _tt, "linkedin": linkedin.stats}
 
 
 def job():
     """Raz za 6 h: čísla k videám zverejneným za posledných 30 dní (každé video max raz za 12 h)."""
+    linkedin.refresh_all()
     rows = db.q("""SELECT p.*, ps.fetched_at FROM posts p LEFT JOIN post_stats ps ON ps.post_id=p.id
                    WHERE p.status='done' AND p.external_id!='' AND p.updated_at>=?""", (_ago(30),))
     by_acc = {}

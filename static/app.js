@@ -704,7 +704,10 @@ async function pAccounts(m) {
     <div class="row" style="margin:8px 0 14px"><button class="btn sec sm" onclick="saveLi(false)">Uložiť</button><a class="btn sm" href="/api/accounts/linkedin/connect">${I('link', 's')}Pripojiť profil</a></div>
     <b class="small">Firemné stránky</b> ${h.li_org ? ok : ''}<input id="liOId" placeholder="Client ID" style="margin:6px 0"><input id="liOSec" placeholder="Client Secret" type="password">
     <div class="row" style="margin-top:8px"><button class="btn sec sm" onclick="saveLi(true)">Uložiť</button><a class="btn sm" href="/api/accounts/linkedin/connect?org=1">${I('link', 's')}Pripojiť stránky</a></div>
-    <p class="small dim">Prihlásenie platí 60 dní, appka ťa upozorní.</p>`)}
+    ${accs.some(a => a.org) ? `<div style="margin-top:14px"><b class="small">Jazyky na firemnej stránke</b>
+      <p class="small dim">Jedna stránka pre všetky krajiny. Vyber, v ktorých jazykoch tam majú ísť videá (každý jazyk = samostatný príspevok). ${S.meta.li.followers ? `Sledovateľov: <b>${S.meta.li.followers}</b>. ` : ''}${S.meta.li.followers >= 300 ? 'Príspevky sa ukážu hlavne ľuďom v danom jazyku.' : 'Od 300 sledovateľov appka začne každý príspevok ukazovať hlavne ľuďom v jeho jazyku.'}</p>
+      <div class="row small" style="gap:6px;flex-wrap:wrap">${S.meta.languages.map(l => `<label class="chip" style="cursor:pointer"><input type="checkbox" class="liL" value="${l.code}" ${S.meta.li.page_langs.includes(l.code) ? 'checked' : ''} onchange="saveLiLangs()"> ${l.name}</label>`).join('')}</div></div>` : ''}
+    <p class="small dim">Osobný profil treba prihlásiť znova po 60 dňoch, appka ťa upozorní. Firemná stránka sa obnovuje sama.</p>`)}
   </div>`;
 }
 async function uploadYt() { const f = $('#ytJson').files[0]; if (!f) return toast('Vyber JSON súbor', true); const fd = new FormData(); fd.append('file', f); const r = await api('/api/accounts/youtube/client', { method: 'POST', body: fd }); toast(`Uložené (Google projektov: ${r.projects}), teraz klikni Pripojiť kanál`); S.meta = await api('/api/meta'); render(); }
@@ -715,6 +718,7 @@ async function connectMeta() { const r = await api('/api/accounts/meta', { metho
 async function saveTt() { await api('/api/accounts/tiktok/creds', { method: 'POST', body: { client_key: $('#ttKey').value, client_secret: $('#ttSec').value, mode: $('#ttMode').value } }); toast('Uložené'); render(); }
 async function saveTtb() { await api('/api/accounts/ttb/creds', { method: 'POST', body: { app_id: $('#ttbId').value, secret: $('#ttbSec').value } }); toast('Uložené'); render(); }
 async function pasteTtb() { const r = await api('/api/accounts/ttb/paste', { method: 'POST', body: { url: $('#ttbUrl').value } }, 'Pripájam…'); toast(`Pripojených ${r.created}`); render(); }
+async function saveLiLangs() { const v = $$('.liL:checked').map(c => c.value); await api('/api/settings', { method: 'POST', body: { li_page_langs: v } }); S.meta.li.page_langs = v; toast('Uložené'); }
 async function saveLi(org) { await api('/api/accounts/linkedin/creds', { method: 'POST', body: { client_id: $(org ? '#liOId' : '#liId').value, client_secret: $(org ? '#liOSec' : '#liSec').value, org } }); toast('Uložené'); render(); }
 async function accCountry(id, c) { await api('/api/accounts/' + id, { method: 'PUT', body: { country: c } }); toast('Uložené'); render(); }
 async function accSet(id, tr) { await api('/api/accounts/' + id, { method: 'PUT', body: { project_id: +$('.aP', tr).value || null, lang: $('.aL', tr).value } }); toast('Uložené'); }
