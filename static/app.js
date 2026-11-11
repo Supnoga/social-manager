@@ -802,6 +802,7 @@ async function pSettings(m) {
     <div class="row" style="margin-top:8px"><select id="prLang">${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select><button class="btn sec sm" onclick="prTest(this)">${I('play', 's')}Vypočuť</button></div>
     <p class="small dim" id="prOut"></p>
     <details><summary class="small">Čo už hlas vie sám</summary><div id="prBuilt" class="small muted" style="margin-top:8px"></div></details></div>
+  ${typeof soundCard === 'function' ? soundCard() : ''}
   <div class="card"><h2>${I('film')}Zábery a hudba</h2>
     <p class="small muted">Videá sa skladajú zo záberov: najprv tvoje vlastné (priečinok Moje zábery, názov súboru = o čom je záber, napr. <i>varenie-cestoviny.mp4</i>), potom bezplatné Pexels a Pixabay, a keď nič nenájde, AI obrázok (Cloudflare, zadarmo denne). Stiahnuté zábery si appka pamätá. V knižnici: <b>${S.meta.footage?.library || 0}</b> · tvojich: <b>${S.meta.footage?.own || 0}</b> · hudby: <b>${S.meta.footage?.music || 0}</b></p>
     <p class="small muted">Animované schémy vo videách (ako N2N Akadémia): ${S.meta.anim?.ready ? '<span class="ok-t">pripravené</span>' : S.meta.anim?.installing ? 'pripravujem na pozadí (stiahne sa raz, pár minút)…' : 'pripravia sa samé po ďalšom zapnutí appky' + (S.meta.anim?.error ? ' <span class="bad-t">(' + esc(S.meta.anim.error.slice(-120)) + ')</span>' : '')}</p>

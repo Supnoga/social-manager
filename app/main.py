@@ -684,6 +684,20 @@ def _shots_for(s):
     return shots
 
 
+def _scene_cuts(s, scenes, style):
+    """Časy striedania scén (pre zvuk prechodu) – rovnaké, ako použil obraz."""
+    try:
+        total = media.duration(s["voice_path"]) or 0
+        if style == "explainer":
+            sc = json.loads(db.one("SELECT scenes FROM scripts WHERE id=?", (s["id"],))["scenes"] or "[]")
+            return [t0 for t0, _ in explainer.timeline(sc, media.word_times(s["voice_path"], s["voiceover"]), total)][1:]
+        if style == "broll" and scenes:
+            return [total / len(scenes) * i for i in range(1, len(scenes))]
+    except Exception:
+        pass
+    return []
+
+
 def _broll_ready():
     st = footage.status()
     return st["pexels"] or st["pixabay"] or st["own"] > 0 or st["ai"]
@@ -693,9 +707,11 @@ def _broll_ready():
 def script_to_video(sid: int, data: dict = Body(default={})):
     """Vytvorí video: zábery z internetu/tvoje + titulky slovo po slove (predvolené), tvoje podkladové video, alebo farby dizajnu."""
     s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
-    if not s["voice_path"] or not Path(s["voice_path"]).exists():
-        script_voice(sid, {})
+    if not s["voice_path"] or not Path(s["voice_path"]).exists() or voices.stale(s["voice_path"], s.get("voice_engine") or ""):
+        script_voice(sid, {})   # aj starý hlas bez presných časov slov sa urobí nanovo (čistejší, titulky sedia)
         s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
+    want_music = data.get("music", True)
+    data = dict(data, music=False)   # hudbu, efekty a hlasitosť rieši až audio.finish na hotovom videu
     out = VIDEO_DIR / f"script{sid}_{s['lang']}_{secrets.token_hex(3)}.mp4"
     base_id = data.get("base_video_id")
     proj = db.one("SELECT color, design_colors FROM projects WHERE id=?", (s["project_id"],)) or {}
@@ -747,6 +763,11 @@ def script_to_video(sid: int, data: dict = Body(default={})):
             brand.decorate(s["project_id"], out)  # logo v rohu + záverečná karta s logom
     except Exception as e:
         print("logo vo videu:", e)
+    try:  # zvuk: hudba pod hlasom, jemné prechody, hlasitosť ako na sieťach
+        if not base:
+            audio.finish(out, s["voice_path"], _scene_cuts(s, scenes, style if done else ""), s["idea_id"], want_music)
+    except Exception as e:
+        print("zvuk videa:", e)
     vid = _add_video(s["project_id"], str(out), out.name, s["lang"], s)
     return {"video_id": vid, "style": style if done or style != "broll" else "color"}
 
@@ -1399,6 +1420,8 @@ from . import inspire  # noqa: E402
 app.include_router(inspire.router)
 from . import weather  # noqa: E402
 app.include_router(weather.router)
+from . import audio  # noqa: E402
+app.include_router(audio.router)
 app.include_router(brand.router)
 
 

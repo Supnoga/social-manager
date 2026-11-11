@@ -6,9 +6,16 @@ import asyncio
 import base64
 import datetime
 import hashlib
+import io
 import json
 import re
+import subprocess
+import sys
 import threading
+import time
+import wave
+from array import array
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -115,38 +122,255 @@ def _google_add(n):
         db.set_setting("google_tts_usage", u)
 
 
-def _google_tts(text, voice_name, out_path, rate=1.0):
+VOICE_VER = "z2"   # zmena spôsobu výroby hlasu = nové súbory (staré sa nepoužijú)
+SR = 24000
+PUNCT = ".!?…,;:"
+ABBR = set("dr mr mrs ms nr no st ing mgr prof doc napr tzv resp tj cca str obr tel max min art fig vs sv ul bzw ca usw etc vgl inkl zzgl ggf evtl "
+           "sog bsp jr sr mag dipl ev pol kpt např apod atd atď pozn odst nám př tj tzn mj np tzw itd itp ok godz zob wg m.in ex env av bd".split())
+
+
+def split_sentences(text):
+    """Rozdelí text na vety. Pri pochybnosti radšej nedelí (skratky „napr.“, „z. B.“, „Dr.“, „3. mája“)
+    a kratučké vety spojí so susednou, aby zneli prirodzene."""
+    raw = [x for x in re.split(r"(?<=[.!?…])\s+", re.sub(r"\s+", " ", text or "").strip()) if x]
+    parts = []
+    for x in raw:
+        first = next((c for c in x if c.isalpha()), "")
+        prev = parts[-1] if parts else ""
+        last = re.sub(r"[^\w]", "", prev.split()[-1]) if prev.split() else ""
+        abbr = prev.endswith(".") and not prev.endswith("..") and (
+            (len(last) == 1 and last.isalpha()) or (last.isdigit() and len(last) <= 2 and len(prev) > 3) or last.lower() in ABBR)
+        if parts and (first.islower() or abbr):
+            parts[-1] += " " + x
+        else:
+            parts.append(x)
+    out = []
+    for x in parts:
+        if out and len(out[-1]) < 12 and len(out[-1]) + len(x) < 320:
+            out[-1] += " " + x
+        else:
+            out.append(x)
+    if len(out) > 1 and len(out[-1]) < 12:
+        tail = out.pop()
+        out[-1] += " " + tail
+    return out
+
+
+def _pcm(wav):
+    """WAV z Googlu -> vzorky (mono, 16 bit)."""
+    try:
+        with wave.open(io.BytesIO(wav)) as w:
+            sr, ch, data = w.getframerate(), w.getnchannels(), w.readframes(w.getnframes())
+    except Exception:
+        sr, ch, data = SR, 1, wav[44:]
+    a = array("h")
+    a.frombytes(data[:len(data) // 2 * 2])
+    if sys.byteorder == "big":
+        a.byteswap()
+    if ch == 2:
+        a = a[::2]
+    return a, sr
+
+
+def _levels(a, win):
+    return [max(max(seg), -min(seg)) for seg in (a[i:i + win] for i in range(0, len(a), win)) if len(seg)]
+
+
+def _fade(a, n):
+    n = min(n, len(a) // 2)
+    for i in range(n):
+        k = i / n
+        a[i] = int(a[i] * k)
+        a[-1 - i] = int(a[-1 - i] * k)
+
+
+def _tidy(a, sr):
+    """Oreže ticho na začiatku a konci vety, dlhé pauzy vnútri skráti. Vráti (vzorky, pauzy vnútri [(od, do) v s])."""
+    win = sr // 100
+    lv = _levels(a, win)
+    if not lv or max(lv) < 200:
+        return array("h"), []
+    thr = max(160, max(lv) * 0.02)
+    loud = [i for i, v in enumerate(lv) if v > thr]
+    i0, i1 = max(0, loud[0] - 2), min(len(lv), loud[-1] + 7)
+    a, lv = a[i0 * win:i1 * win], lv[i0:i1]
+    runs, start = [], None
+    for i, v in enumerate(lv + [thr + 1]):
+        if v <= thr and start is None:
+            start = i
+        elif v > thr and start is not None:
+            if i - start >= 13 and start > 2:
+                runs.append((start, i))
+            start = None
+    keep, out, gaps, pos = 30, array("h"), [], 0      # pauza vnútri vety najviac 0,3 s
+    for s0, s1 in runs:
+        out.extend(a[pos * win:s0 * win])
+        n = min(s1 - s0, keep)
+        g0 = len(out) / sr
+        out.extend(array("h", bytes(2 * n * win)))
+        gaps.append((g0, len(out) / sr))
+        pos = s1
+    out.extend(a[pos * win:])
+    _fade(out, sr // 200)
+    return out, gaps
+
+
+def _spoken_weight(tok):
+    core = tok.strip(PUNCT + "()\"'„“”«»")
+    n = sum(4 if c.isdigit() else 1 for c in core)
+    return max(1.0, n + 1.5)
+
+
+def _times(tokens, dur, gaps):
+    """Časy slov vo vete: rozdelí hovorený čas podľa dĺžky slov a pauzy (čiarky) priradí k interpunkcii."""
+    if not tokens:
+        return []
+    voiced, last = [], 0.0
+    for g0, g1 in gaps:
+        voiced.append((last, g0))
+        last = g1
+    voiced.append((last, dur))
+    cuts = [i for i, t in enumerate(tokens[:-1]) if t[-1:] in PUNCT or t in ("–", "—", "-")]
+    if gaps and len(cuts) == len(gaps):
+        groups, prev = [], 0
+        for c in cuts:
+            groups.append(tokens[prev:c + 1])
+            prev = c + 1
+        groups.append(tokens[prev:])
+        out = []
+        for grp, (v0, v1) in zip(groups, voiced):
+            w = [_spoken_weight(t) for t in grp]
+            unit, t = (v1 - v0) / sum(w), v0
+            for tok, x in zip(grp, w):
+                out.append((t, t + x * unit))
+                t += x * unit
+        return out
+    # inak: plynule cez hovorený čas, pauzy sa preskočia
+    w = [_spoken_weight(t) for t in tokens]
+    total_v = sum(v1 - v0 for v0, v1 in voiced) or dur
+    unit, acc, out = total_v / sum(w), 0.0, []
+
+    def real(x):
+        for v0, v1 in voiced:
+            if x <= v1 - v0 + 1e-6:
+                return v0 + x
+            x -= v1 - v0
+        return dur
+    for x in w:
+        out.append((real(acc), real(acc + x * unit)))
+        acc += x * unit
+    return out
+
+
+def punctuate(words, text):
+    """Doplní k slovám interpunkciu z textu (Microsoft hlas ju v časovaní nevracia) – titulky a strih podľa viet."""
+    low, pos = (text or "").lower(), 0
+    for w in words:
+        x = (w.get("w") or "").strip()
+        if not x or x[-1:] in PUNCT:
+            continue
+        i = low.find(x.lower(), pos)
+        if i < 0 or i - pos > 60:
+            continue
+        pos = i + len(x)
+        m = re.match(r"[^\s\w]*", low[pos:])
+        tail = "".join(c for c in (m.group(0) if m else "") if c in PUNCT)
+        if tail:
+            w["w"] = x + tail[0]
+    return words
+
+
+def _google_call(body, key):
+    last = ""
+    for attempt in range(4):
+        try:
+            r = httpx.post("https://texttospeech.googleapis.com/v1/text:synthesize", params={"key": key}, json=body, timeout=120)
+        except httpx.HTTPError as e:
+            last = str(e)[:200]
+            time.sleep(1.5 * (attempt + 1))
+            continue
+        if r.status_code == 200:
+            return base64.b64decode(r.json()["audioContent"])
+        try:
+            last = r.json()["error"]["message"]
+        except Exception:
+            last = r.text[:300]
+        if r.status_code not in (429, 500, 502, 503, 504):
+            break
+        time.sleep(2.0 * (attempt + 1))
+    raise RuntimeError("Google hlas: " + last)
+
+
+def _save_voice(pcm, sr, out_path):
+    """Vyrovná hlasitosť a uloží (MP3 vo vysokej kvalite)."""
+    import math
+    lv = sorted(v for v in _levels(pcm, sr // 100) if v > 300)
+    gain = max(-6.0, min(14.0, 20 * math.log10(18000 / max(lv[int(len(lv) * 0.9)], 1)))) if lv else 0.0
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        data = array("h", pcm)
+        if sys.byteorder == "big":
+            data.byteswap()
+        w.writeframes(data.tobytes())
+    from . import media
+    ff = media.ffmpeg()
+    if ff:
+        r = subprocess.run([ff, "-y", "-f", "wav", "-i", "-", "-af", f"volume={gain:.2f}dB,alimiter=limit=0.9:level=false",
+                            "-ar", str(sr), "-c:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", str(out_path)],
+                           input=buf.getvalue(), capture_output=True, start_new_session=True)
+        if r.returncode == 0 and Path(out_path).stat().st_size > 1000:
+            return
+    Path(out_path).write_bytes(buf.getvalue())
+
+
+def _google_tts(text, voice_name, out_path, rate=1.0, lang=""):
+    """Google Chirp 3 HD po vetách, v plnej kvalite (bez stratovej kompresie od Googlu).
+    Vďaka tomu poznáme presný čas každej vety -> titulky a obraz sedia s hlasom; pauzy medzi vetami sú krátke a rovnaké."""
     key = google_key()
     if not key:
         raise RuntimeError("Google hlas nemá zadaný kľúč (Nastavenia → Hlas)")
-    if google_usage()["left"] < len(text):
+    parts = split_sentences(text)
+    spoken = [pronounce.speak(p, lang) for p in parts]
+    spoken = [(p, sp, spans) for p, (sp, spans) in zip(parts, spoken) if sp.strip()]
+    if not spoken:
+        raise RuntimeError("Prázdny text pre hlas")
+    if google_usage()["left"] < sum(len(sp) for _, sp, _ in spoken):
         raise RuntimeError("Google hlas: mesačný bezplatný limit je vyčerpaný, používam bezplatný Microsoft hlas")
     locale = "-".join(voice_name.split("-")[:2])
-    chunks, cur = [], ""
-    for sent in re.split(r"(?<=[.!?…])\s+", text):  # Google berie max ~5000 bajtov naraz
-        if len((cur + " " + sent).encode()) > 4000 and cur:
-            chunks.append(cur)
-            cur = sent
-        else:
-            cur = (cur + " " + sent).strip()
-    if cur:
-        chunks.append(cur)
-    audio = b""
-    for ch in chunks:
-        body = {"input": {"text": ch}, "voice": {"languageCode": locale, "name": voice_name},
-                "audioConfig": {"audioEncoding": "MP3"}}
+
+    def one(sp):
+        body = {"input": {"text": sp}, "voice": {"languageCode": locale, "name": voice_name},
+                "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": SR}}
         if rate and abs(rate - 1.0) > 0.01:
             body["audioConfig"]["speakingRate"] = rate
-        r = httpx.post("https://texttospeech.googleapis.com/v1/text:synthesize", params={"key": key}, json=body, timeout=120)
-        if r.status_code != 200:
-            try:
-                msg = r.json()["error"]["message"]
-            except Exception:
-                msg = r.text[:300]
-            raise RuntimeError("Google hlas: " + msg)
-        audio += base64.b64decode(r.json()["audioContent"])
-        _google_add(len(ch))
-    Path(out_path).write_bytes(audio)
+        wav = _google_call(body, key)
+        _google_add(len(sp))
+        return _pcm(wav)
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        clips = list(ex.map(one, [sp for _, sp, _ in spoken]))
+    sr = clips[0][1]
+    pause = 1 / max(0.8, rate or 1.0) ** 0.5
+    pcm, words = array("h", bytes(2 * int(sr * 0.04))), []
+    for (orig, sp, spans), (a, _) in zip(spoken, clips):
+        a, gaps = _tidy(a, sr)
+        if not len(a):
+            continue
+        t0, dur = len(pcm) / sr, len(a) / sr
+        toks = sp.split()
+        ws = [{"w": t, "s": round(t0 + s, 3), "e": round(t0 + e, 3)} for t, (s, e) in zip(toks, _times(toks, dur, gaps))]
+        words += punctuate(pronounce.remap(ws, sp, spans), orig)
+        pcm.extend(a)
+        end = sp.rstrip()[-1:]
+        gap = (0.36 if end in "?!" else 0.42 if end == "…" else 0.30) * pause
+        pcm.extend(array("h", bytes(2 * int(sr * gap))))
+    if not words:
+        raise RuntimeError("Google hlas nevrátil zvuk")
+    _save_voice(pcm, sr, out_path)
+    Path(str(out_path) + ".words.json").write_text(json.dumps(words, ensure_ascii=False))
 
 
 # ---------- Microsoft Edge ----------
@@ -163,7 +387,7 @@ def _run(coro):
             loop.close()
 
 
-def _edge_tts(text, voice, out_path, rate=1.0, spans=None):
+def _edge_tts(text, voice, out_path, rate=1.0, spans=None, orig=None):
     import edge_tts
     pct = f"{int(round((rate - 1) * 100)):+d}%"
     words = []
@@ -183,7 +407,8 @@ def _edge_tts(text, voice, out_path, rate=1.0, spans=None):
     if not Path(out_path).exists() or Path(out_path).stat().st_size < 1000:
         raise RuntimeError("Microsoft hlas nevrátil zvuk")
     if words:
-        words = pronounce.remap(words, text, spans)   # titulky v pôvodnom zápise (PROLINE, nie „prolajn")
+        words = pronounce.remap(punctuate(words, text), text, spans)   # titulky v pôvodnom zápise (PROLINE, nie „prolajn")
+        words = punctuate(words, orig or text)
         Path(str(out_path) + ".words.json").write_text(json.dumps(words, ensure_ascii=False))
 
 
@@ -243,10 +468,12 @@ def default_voice(lang, gender="F"):
 
 def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
     """Vytvorí hlas. Vráti (cesta, engine, poznámka). Keď vybraný hlas nejde, skúsi ďalší a povie to.
-    Text sa pred hlasom upraví podľa výslovnosti (pronounce); titulky ostanú v pôvodnom zápise."""
-    if not re.sub(r"\s+", " ", text or "").strip():
+    Text sa pred hlasom upraví podľa výslovnosti (pronounce); titulky ostanú v pôvodnom zápise.
+    Vedľa hlasu uloží časy slov (.words.json), podľa ktorých idú titulky a striedanie scén."""
+    orig = re.sub(r"\s+", " ", text or "").strip()
+    if not orig:
         raise RuntimeError("Prázdny text pre hlas")
-    text, spans = pronounce.speak(text, lang)
+    text, spans = pronounce.speak(orig, lang)
     if not text:
         raise RuntimeError("Prázdny text pre hlas")
     if not voice_id or voice_id == "auto":
@@ -257,15 +484,15 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
     chain.append("gtts")
     errors = []
     for vid in chain:
-        path = Path(out_path or VOICE_DIR / f"{lang}_{hashlib.md5((vid + str(rate) + text).encode()).hexdigest()[:12]}.mp3")
+        path = Path(out_path or VOICE_DIR / f"{lang}_{hashlib.md5((VOICE_VER + vid + str(rate) + text).encode()).hexdigest()[:12]}.mp3")
         if path.exists() and path.stat().st_size > 1000 and not out_path:
             return str(path), vid.split(":")[0], "; ".join(errors)
         try:
             Path(str(path) + ".words.json").unlink(missing_ok=True)
             if vid.startswith("google:"):
-                _google_tts(text, vid[7:], path, rate)
+                _google_tts(orig, vid[7:], path, rate, lang)
             elif vid.startswith("edge:"):
-                _edge_tts(text, vid[5:], path, rate, spans)
+                _edge_tts(text, vid[5:], path, rate, spans, orig)
             else:
                 from gtts import gTTS
                 gTTS(text, lang={"no": "no"}.get(lang, lang)).save(str(path))
@@ -273,6 +500,11 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None):
         except Exception as e:
             errors.append(str(e)[:200])
     raise RuntimeError("Hlas sa nepodarilo vytvoriť (skontroluj internet): " + " / ".join(errors))
+
+
+def stale(voice_path, engine=""):
+    """Hlas vyrobený starým spôsobom (Google bez časov slov) – pri ďalšom videu sa urobí nanovo."""
+    return engine == "google" and not Path(str(voice_path) + ".words.json").exists()
 
 
 def project_voice(project, lang):
