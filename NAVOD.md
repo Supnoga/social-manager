@@ -60,7 +60,12 @@ Zvonka je viditeľné **len** video pod tajným odkazom a overovací súbor, ni�
 ## 3b. Preklady zadarmo (bez tokenov)
 V **Nastavenia → Preklady zadarmo** vlož kľúč Microsoft Translator (Free F0, 2 mil. znakov mesačne) – návod je priamo tam. Voliteľne DeepL Free (500 tis.) a Google (500 tis.). Potom preklady nestoja žiadne Claude tokeny; Claude len opraví sporné kúsky. V projekte vyplň **Neprekladať** (názov značky, produktov). Keď je prvá verzia videa dobrá, v kroku **Video** tlačidlo **Rozšíriť do všetkých jazykov** spraví preklad, hlasy aj videá naraz.
 
-## 3c. Obraz videí (zábery + titulky)
+## 3c. Obraz videí: animované schémy ako N2N Akadémia (predvolené)
+Videá sa robia ako vysvetľujúce animácie v štýle videí N2N Akadémie: čierne pozadie, veľký nadpis scény, tenké schémy, ktoré sa postupne kreslia (tok energie cez tepelné čerpadlo, ako funguje cyklus čerpadla, stĺpce, výpočty, správne/nesprávne, ikony, teplomery, tepelné straty domu, počítadlá), titulky so zvýrazneným slovom a lišta priebehu dole. Farba je farba projektu, písmo je písmo značky.
+Claude navrhne schému ku každej scéne rovno pri písaní scenára (staršie scenáre dostanú schémy samé pri ďalšom „Vytvoriť znova“, jedno malé lacné volanie). Pri rozšírení do ďalších jazykov sa obraz nemení, preložia sa len texty v schémach. Všetko zadarmo, renderuje sa u teba na Macu.
+Ak chceš radšej zábery z internetu, v kroku **Video** vyber štýl *Zábery z internetu + titulky*.
+
+### Zábery z internetu (voliteľné)
 V **Nastavenia → Zábery a hudba** vlož bezplatný kľúč **Pexels** (a voliteľne Pixabay). Svoje vlastné zábery daj do priečinka **Moje zábery** (tlačidlo ho otvorí) a pomenuj ich podľa obsahu, napr. `varenie-cestoviny.mp4` – appka ich uprednostní. Hudbu (mp3) daj do priečinka **Hudba**.
 Video potom vyzerá takto: nový záber každé 2–3 s, fotky sa pohybujú, titulky slovo po slove (aktuálne slovo vo farbe projektu), text scény hore. Zábery sa vyberú raz a platia pre všetky jazyky; v kroku **Video** ich vidíš po scénach a môžeš ich vymeniť.
 

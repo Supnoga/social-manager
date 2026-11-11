@@ -16,7 +16,7 @@ from . import db
 
 CACHE = db.MEDIA_DIR / "anim"
 CACHE.mkdir(parents=True, exist_ok=True)
-TYPES = ("counter", "bars", "list", "compare", "kinetic")
+TYPES = ("counter", "bars", "list", "compare", "kinetic", "board")
 STATE = {"installing": False, "error": ""}
 
 BASE_CSS = """
@@ -149,6 +149,9 @@ def texts(a):
     """Texty animácie na preklad (čísla ostávajú)."""
     d = (a or {}).get("d") or {}
     k = (a or {}).get("t")
+    if k == "board":
+        from . import explainer
+        return explainer.texts(d)
     if k == "counter":
         return [d.get("label", "")]
     if k == "bars":
@@ -166,6 +169,10 @@ def with_texts(a, tr):
     """Vráti kópiu animácie s preloženými textami (v rovnakom poradí ako texts())."""
     a = json.loads(json.dumps(a))
     d, k, it = a.get("d") or {}, a.get("t"), iter(tr)
+    if k == "board":
+        from . import explainer
+        a["d"] = explainer.with_texts(d, list(tr))
+        return a
     if k == "counter":
         d["label"] = next(it, d.get("label", ""))
     elif k == "bars":

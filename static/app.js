@@ -525,7 +525,7 @@ function editLang(sid) {
 async function sVideo(b, { p, scripts, src, iid, idea }) {
   if (!src) return sProto(b, { p, src, iid });
   const lib = (await api(`/api/videos?project_id=${p.id}`)).filter(v => !v.script_id);
-  const fs = S.meta.footage || {}, ready = fs.pexels || fs.pixabay || fs.own || fs.ai;
+  const fs = S.meta.footage || {}, ready = fs.pexels || fs.pixabay || fs.own || fs.ai, an = S.meta.anim?.ready;
   const first = firstLangOf(p, idea, src), fsc = scripts.find(s => s.lang === first), fv = fsc && fsc.videos[0];
   const expanded = isExpanded(scripts, first);
   const toDo = p.languages.filter(l => l !== first && !scripts.some(s => s.lang === l && s.videos.length)).length;
@@ -535,16 +535,18 @@ async function sVideo(b, { p, scripts, src, iid, idea }) {
       <button class="btn ghost sm" onclick="oneVideo(${s.id})" title="Vytvoriť znova">${I('refresh', 's')}</button></div></div>`; }).join('');
   b.innerHTML = `<div class="card"><div class="row"><h2 style="margin:0">${I('film')}1. Prvá verzia</h2><span class="sp"></span>${expanded ? `<span class="chip">${langName(first)}</span>` : firstLangSelect(p, idea, src, iid)}</div>
     <div class="g2" style="align-items:end;margin-top:10px"><div><label class="l">Štýl videa</label><select id="vStyle" onchange="$('#baseWrap').style.display=this.value==='base'?'':'none';$('#shotsWrap').style.display=this.value==='broll'?'':'none'">
-      <option value="broll" ${ready ? 'selected' : ''}>Zábery + titulky slovo po slove (odporúčam)</option><option value="color" ${ready ? '' : 'selected'}>Farby dizajnu + texty</option><option value="base">Moje podkladové video + hlas</option></select></div>
+      <option value="explainer" ${an ? 'selected' : ''}>Animované schémy ako N2N Akadémia (odporúčam)</option>
+      <option value="broll" ${!an && ready ? 'selected' : ''}>Zábery z internetu + titulky</option><option value="color" ${!an && !ready ? 'selected' : ''}>Farby dizajnu + texty</option><option value="base">Moje podkladové video + hlas</option></select></div>
     <div id="baseWrap" style="display:none"><label class="l">Podkladové video</label><select id="baseVid"><option value="">—</option>${lib.map(v => `<option value="${v.id}">${esc(v.title || v.original_name)}</option>`).join('')}</select></div></div>
-    ${ready ? '' : `<div class="hint" style="margin-top:12px">${I('alert')}<div>Na zábery zadaj bezplatný kľúč Pexels v <a href="#/nastavenia">Nastaveniach → Zábery a hudba</a>, alebo daj svoje zábery do priečinka Moje zábery.</div></div>`}
+    ${an ? '' : `<div class="hint" style="margin-top:12px">${I('alert')}<div>Animácie sa pripravujú na pozadí (stiahne sa raz, pár minút). Potom daj „Vytvoriť znova“.</div></div>`}
+    ${ready || an ? '' : `<div class="hint" style="margin-top:12px">${I('alert')}<div>Na zábery zadaj bezplatný kľúč Pexels v <a href="#/nastavenia">Nastaveniach → Zábery a hudba</a>, alebo daj svoje zábery do priečinka Moje zábery.</div></div>`}
     ${fv ? `<div class="row" style="margin-top:14px;align-items:flex-start"><video src="/api/file?path=${encodeURIComponent(fv.file_path)}" preload="metadata" controls style="height:420px;max-height:70vh;aspect-ratio:9/16;object-fit:cover;border-radius:12px;background:#000"></video>
       <div class="col" style="gap:8px"><span class="small muted">${langName(first)}${fv.duration ? ' · ' + Math.round(fv.duration) + ' s' : ''}</span>
       <button class="btn sec sm" onclick="produceFirst(${iid})">${I('refresh', 's')}Vytvoriť znova</button>
       <button class="btn ghost sm" onclick="go('p/${p.id}/v/${iid}/prototyp')">${I('pencil', 's')}Upraviť scenár</button>
       ${fsc ? `<label class="btn ghost sm" style="cursor:pointer">${I('upload', 's')}Nahrať vlastné<input type="file" accept="video/*" class="hidden" onchange="attachVid(${fsc.id},this.files[0])"></label>` : ''}</div></div>`
       : `<div class="row" style="margin-top:14px"><button class="btn" onclick="produceFirst(${iid})">${I('film')}Vytvoriť video (${langName(first)})</button><span class="small dim">Urobí hlas a video len v tomto jazyku, aby si si ho mohol pozrieť.</span></div>`}</div>
-  <div class="card" id="shotsWrap" style="${ready ? '' : 'display:none'}"><div class="row"><h2 style="margin:0">${I('film')}Zábery po scénach</h2><span class="sp"></span><button class="btn sec sm" onclick="shotsPick(${iid})">${I('refresh', 's')}Vybrať zábery</button></div>
+  <div class="card" id="shotsWrap" style="${ready && !an ? '' : 'display:none'}"><div class="row"><h2 style="margin:0">${I('film')}Zábery po scénach</h2><span class="sp"></span><button class="btn sec sm" onclick="shotsPick(${iid})">${I('refresh', 's')}Vybrať zábery</button></div>
     <p class="small dim">Rovnaké zábery sa použijú vo všetkých jazykoch. Nepáči sa ti záber? Zmeň slová, daj „Vymeniť“ a potom „Vytvoriť znova“.</p><div id="shotsBox" class="small dim">Načítavam…</div></div>
   <div class="card"><h2>${I('globe')}2. Rozšíriť do ostatných jazykov</h2>
     ${toDo ? `<p class="muted">${fv ? 'Páči sa ti video? Appka ho preloží' : 'Najprv si pozri prvú verziu. Potom ju appka preloží'} do ďalších ${toDo} jazykov a použije ten istý obraz. Mení sa len text, titulky a hlas.</p>
@@ -802,7 +804,7 @@ async function pSettings(m) {
     <details><summary class="small">Čo už hlas vie sám</summary><div id="prBuilt" class="small muted" style="margin-top:8px"></div></details></div>
   <div class="card"><h2>${I('film')}Zábery a hudba</h2>
     <p class="small muted">Videá sa skladajú zo záberov: najprv tvoje vlastné (priečinok Moje zábery, názov súboru = o čom je záber, napr. <i>varenie-cestoviny.mp4</i>), potom bezplatné Pexels a Pixabay, a keď nič nenájde, AI obrázok (Cloudflare, zadarmo denne). Stiahnuté zábery si appka pamätá. V knižnici: <b>${S.meta.footage?.library || 0}</b> · tvojich: <b>${S.meta.footage?.own || 0}</b> · hudby: <b>${S.meta.footage?.music || 0}</b></p>
-    <p class="small muted">Animácie (počítadlá, grafy, zoznamy, porovnania): ${S.meta.anim?.ready ? '<span class="ok-t">pripravené</span>' : S.meta.anim?.installing ? 'pripravujem na pozadí (stiahne sa raz, pár minút)…' : 'pripravia sa samé po ďalšom zapnutí appky' + (S.meta.anim?.error ? ' <span class="bad-t">(' + esc(S.meta.anim.error.slice(-120)) + ')</span>' : '')}</p>
+    <p class="small muted">Animované schémy vo videách (ako N2N Akadémia): ${S.meta.anim?.ready ? '<span class="ok-t">pripravené</span>' : S.meta.anim?.installing ? 'pripravujem na pozadí (stiahne sa raz, pár minút)…' : 'pripravia sa samé po ďalšom zapnutí appky' + (S.meta.anim?.error ? ' <span class="bad-t">(' + esc(S.meta.anim.error.slice(-120)) + ')</span>' : '')}</p>
     <div class="row" style="margin-bottom:10px"><button class="btn sec sm" onclick="api('/api/open-folder',{method:'POST',body:{which:'own'}})">${I('upload', 's')}Otvoriť Moje zábery</button><button class="btn sec sm" onclick="api('/api/open-folder',{method:'POST',body:{which:'music'}})">${I('volume', 's')}Otvoriť Hudbu</button></div>
     <details><summary class="small">Ako získam kľúče (zadarmo)</summary><ol class="small muted">
       <li><b>Pexels</b>: <a href="https://www.pexels.com/api/new/" target="_blank">pexels.com/api</a> → prihlás sa → vyplň krátky formulár → skopíruj API key.</li>
