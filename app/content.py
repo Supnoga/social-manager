@@ -29,6 +29,9 @@ def _ctx(p):
         for k in ("description", "audience", "tone", "goals"):
             if p[k]:
                 parts.append(f"{k.capitalize()}: {p[k][:400]}")
+    from . import inspire
+    if inspire.banned_ctx(p):
+        parts.append(inspire.banned_ctx(p))
     parts.append(f"Source language: {languages.english(p['source_lang'])}")
     return "\n".join(parts)
 
@@ -76,7 +79,13 @@ def ideas_prompt(params):
             pass
     focus = params.get("focus", "").strip()
     fmt = params.get("format", "short")
+    from . import inspire
+    tpl = inspire.templates_prompt(p["id"], 6)
+    qs = inspire.questions(p["id"], p["source_lang"], 5)
+    qtxt = ("Real questions people ask (great topics): " + "; ".join(q["text"][:90] for q in qs)) if qs else ""
     return f"""{_ctx(p)}
+{tpl}
+{qtxt}
 Pillars: {pillars or 'choose yourself'}
 {('Focus for this batch: ' + focus) if focus else ''}
 {('Our real results so far (build on what worked, avoid what flopped): ' + p['learnings']) if p.get('learnings') else ''}
@@ -86,7 +95,7 @@ Already used (do NOT repeat or paraphrase): {prev_txt or 'none'}
 Brainstorm 3x more ideas than needed internally, then return only the {n} strongest.
 Each must have a scroll-stopping hook for the first 2 seconds, a clear payoff, and work in any European country (avoid local-only references unless focus asks).
 Score 1-10 = realistic viral/save/share potential, be strict.
-Return JSON: {{"ideas":[{{"title":"","hook":"exact first sentence spoken","angle":"what makes it unique","pillar":"","why":"why it performs","score":7}}]}}
+Return JSON: {{"ideas":[{{"title":"","hook":"exact first sentence spoken","angle":"what makes it unique","pillar":"","template":"format key","why":"why it performs","score":7}}]}}
 Write in {languages.english(p['source_lang'])}."""
 
 
@@ -95,11 +104,17 @@ def ideas_apply(params, data):
     fmt = params.get("format", "short")
     out = []
     for i in data.get("ideas", []):
-        iid = db.run("INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score) VALUES(?,?,?,?,?,?,?,?)",
+        iid = db.run("INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,template) VALUES(?,?,?,?,?,?,?,?,?)",
                      (pid, i.get("title", "")[:300], i.get("hook", ""), i.get("angle", ""), i.get("pillar", ""),
-                      fmt, i.get("why", ""), int(i.get("score") or 0)))
+                      fmt, i.get("why", ""), int(i.get("score") or 0), _tpl(i.get("template"))))
         out.append(iid)
     return {"created": len(out)}
+
+
+def _tpl(k):
+    from . import inspire
+    k = str(k or "").strip().lower()
+    return k if k in inspire.FMT else ""
 
 
 # ---------- 3. SCENÁRE (dávkovo viac nápadov naraz) ----------
@@ -107,13 +122,15 @@ def scripts_prompt(params):
     ideas = [db.one("SELECT * FROM ideas WHERE id=?", (i,)) for i in params["idea_ids"]]
     ideas = [i for i in ideas if i]
     p = _project(ideas[0]["project_id"])
-    items = "\n".join(f'- id {i["id"]} [{i["format"]}]: {i["title"]} | hook: {i["hook"]} | angle: {i["angle"]}' for i in ideas)
+    from . import inspire
+    items = "\n".join(f'- id {i["id"]} [{i["format"]}]: {i["title"]} | hook: {i["hook"]} | angle: {i["angle"]}'
+                      + (f' | format: {inspire.FMT[i["template"]][2]}' if i.get("template") in inspire.FMT else "") for i in ideas)
     return f"""{_ctx(p)}
 Write production-ready video scripts for these ideas:
 {items}
 
-Rules: short = 110-150 spoken words (~45s), long = 700-1100 words. Start with the hook verbatim, deliver value fast,
-use pattern interrupts, end with a natural CTA (follow/save/comment). Spoken text must sound natural for voice-over (TTS),
+Rules: short = 110-150 spoken words (~45s), long = 700-1100 words. Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
+at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts, end with a natural CTA (follow/save/comment). Spoken text must sound natural for voice-over (TTS),
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Captions/hashtags optimized for TikTok/Reels/Shorts.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"max 90 chars, curiosity-driven","voiceover":"full spoken text",
@@ -263,17 +280,20 @@ Return JSON: {{"<lang code>":{{"core":[],"related":[],"negative":[],"entities":[
 
 
 def _radar_ideas(p, sig, n, purpose, kind, extra=""):
+    from . import inspire
     prev = db.q("SELECT title FROM ideas WHERE project_id=? ORDER BY id DESC LIMIT 40", (p["id"],))
     lines = "\n".join(f'{s["id"]} [{",".join(s["mk"]) if isinstance(s["mk"], list) else s["mk"]}] {s["txt"]}' for s in sig)
     data = ai.ask(f"""{_ctx(p)}
 {('Our results: ' + p['learnings']) if p.get('learnings') else ''}
-Signals this week (T = trend, K = competitor video far above its normal views, E = upcoming event/holiday: video must be ready for that date):
+Signals this week (T = trend, K = competitor video far above its normal views, E = upcoming event/holiday: video must be ready for that date,
+O = real question people ask: answer it, Z = inspiration the owner saved: prefer these):
 {lines or 'none'}
 {extra}
+{inspire.templates_prompt(p["id"], 5)}
 Already have (don't repeat): {'; '.join(r['title'][:50] for r in prev) or 'none'}
 Propose the {n} best short-video ideas for this project. Use a signal only if it truly fits the project; it's fine to ignore weak ones.
 For K signals copy the format/angle, never the content. Score 1-10 strictly.
-Return JSON: {{"ideas":[{{"title":"","hook":"exact first sentence","angle":"","why":"","why_now":"1 short sentence, which signal and why now","signal":"T1|K2|none","markets":"all|list of lang codes","score":7}}]}}
+Return JSON: {{"ideas":[{{"title":"","hook":"exact first sentence","angle":"","template":"format key","why":"","why_now":"1 short sentence, which signal and why now","signal":"T1|K2|O1|Z1|none","markets":"all|list of lang codes","score":7}}]}}
 Write in {languages.english(p['source_lang'])}.""", purpose, kind)
     refs = {s["id"]: s["ref"] for s in sig}
     exp = (_dt.datetime.now() + _dt.timedelta(days=14)).strftime("%Y-%m-%d")
@@ -286,16 +306,17 @@ Write in {languages.english(p['source_lang'])}.""", purpose, kind)
             from . import events
             events._db()
             db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,why_now,
-                      expires_at,due_date,markets) VALUES(?,?,?,?,'','short',?,?,'inbox','event',?,?,?,?,?)""",
+                      expires_at,due_date,markets,template) VALUES(?,?,?,?,'','short',?,?,'inbox','event',?,?,?,?,?,?)""",
                    (p["id"], i["title"][:300], i.get("hook", ""), i.get("angle", ""), i.get("why", ""), int(i.get("score") or 0),
                     ref["event"], i.get("why_now", ""), ref["date"], ref["date"],
-                    ",".join(ref.get("langs") or [])))
+                    ",".join(ref.get("langs") or []), _tpl(i.get("template"))))
             made += 1
             continue
-        db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,why_now,expires_at)
-                  VALUES(?,?,?,?,'','short',?,?,'inbox','radar',?,?,?)""",
+        db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,source_ref,why_now,expires_at,template)
+                  VALUES(?,?,?,?,'','short',?,?,'inbox','radar',?,?,?,?)""",
                (p["id"], i["title"][:300], i.get("hook", ""), i.get("angle", ""), i.get("why", ""), int(i.get("score") or 0),
-                json.dumps(ref, ensure_ascii=False), i.get("why_now", ""), exp))
+                json.dumps(ref, ensure_ascii=False), i.get("why_now", ""), exp, _tpl(i.get("template"))))
+        inspire.mark_used(ref)
         made += 1
     return made
 
@@ -320,6 +341,21 @@ def radar_quick(pid, ref):
             raise ai.AIError("Trend už nie je aktuálny")
         sig = [{"id": "T1", "mk": t["langs"] or "all", "txt": f'"{t["label"]}" {t["stage"]}; ctx: {t["ctx"][:200]}',
                 "ref": {"trend": t["key"], "label": t["label"]}}]
+    elif ref.get("question") or ref.get("swipe"):
+        from . import inspire
+        if ref.get("question"):
+            q = db.one("SELECT * FROM questions WHERE id=?", (int(ref["question"]),))
+            if not q:
+                raise ai.AIError("Otázka už neexistuje")
+            sig = [{"id": "O1", "mk": [q["lang"]] if q["source"] == "search" and q["lang"] else "all",
+                    "txt": f'people ask: "{q["text"]}" (language {q["lang"]})', "ref": {"question": q["id"], "label": q["text"][:80]}}]
+        else:
+            w = db.one("SELECT * FROM swipes WHERE id=?", (int(ref["swipe"]),))
+            if not w:
+                raise ai.AIError("Položka už neexistuje")
+            sig = [{"id": "Z1", "mk": "all", "txt": f'owner likes this ({w["platform"] or "note"}): "{w["title"] or w["url"]}"'
+                    + (f'; note: {w["note"][:300]}' if w["note"] else "") + ". Copy the format/idea, never the content.",
+                    "ref": {"swipe": w["id"], "label": (w["title"] or w["note"] or w["url"])[:80]}}]
     else:
         c = db.one("SELECT * FROM comp_posts WHERE id=?", (int(ref["comp_post"]),))
         sig = [{"id": "K1", "mk": "all", "txt": f'competitor video "{c["title"]}" {c["ratio"]}x its normal, {c["views"]} views',

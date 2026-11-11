@@ -450,7 +450,8 @@ def _housekeeping():
 
 # ---------- plánovač Radaru (samostatné vlákno, nezasahuje do publikovania) ----------
 JOBS = {"gtrends": (2, job_gtrends), "news": (3, job_news), "wiki": (24, job_wiki), "yt_popular": (24, job_yt_popular),
-        "comp_uploads": (6, job_comp_uploads), "comp_stats": (3, job_comp_stats), "own_stats": (6, _own_stats)}
+        "comp_uploads": (6, job_comp_uploads), "comp_stats": (3, job_comp_stats), "own_stats": (6, _own_stats),
+        "questions": (168, lambda: __import__("app.inspire", fromlist=["job_questions"]).job_questions())}
 
 
 def run_job(name):
@@ -525,6 +526,11 @@ def signals(pid, n_trends=6, n_comp=4):
     try:
         from . import events
         out += events.signals(pid)
+    except Exception:
+        pass
+    try:
+        from . import inspire
+        out += inspire.signals(pid)
     except Exception:
         pass
     for i, o in enumerate(outliers(pid)[:n_comp]):
