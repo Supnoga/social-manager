@@ -117,6 +117,17 @@ def _tpl(k):
     return k if k in inspire.FMT else ""
 
 
+def _post_json(post):
+    """Podklady k popisku (háčik je v caption): body, question, save, keywords."""
+    if not isinstance(post, dict):
+        return ""
+    keep = {k: post[k] for k in ("body", "question", "save") if isinstance(post.get(k), str) and post[k].strip()}
+    kw = post.get("keywords")
+    if isinstance(kw, list):
+        keep["keywords"] = [str(x).strip() for x in kw if str(x).strip()][:5]
+    return json.dumps(keep, ensure_ascii=False) if keep else ""
+
+
 # ---------- 3. SCENÁRE (dávkovo viac nápadov naraz) ----------
 def scripts_prompt(params):
     ideas = [db.one("SELECT * FROM ideas WHERE id=?", (i,)) for i in params["idea_ids"]]
@@ -132,11 +143,15 @@ Write production-ready video scripts for these ideas:
 Rules: short = 110-150 spoken words (~45s), long = 700-1100 words. Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
 at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts, end with a natural CTA (follow/save/comment). Spoken text must sound natural for voice-over (TTS),
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
-tied to one language, numbers as digits, brand/product names exact. Captions/hashtags optimized for TikTok/Reels/Shorts.
-Return JSON: {{"scripts":[{{"idea_id":0,"title":"max 90 chars, curiosity-driven","voiceover":"full spoken text",
+tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
+Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
 "scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (4-7 scenes; scene 1 = hook;
 scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.SPEC}),
-"description":"YouTube description 2-4 sentences + CTA","caption":"social caption max 150 chars","hashtags":"#a #b (5-8)"}}]}}
+"description":"YouTube description: first sentence = what viewer learns incl. main search keyword, 2-4 sentences total",
+"caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
+"post":{{"body":"1-2 short sentences of concrete value, use the words people type into search","question":"one easy question that makes viewers comment (opinion or own experience)",
+"save":"short reason to save or send it to someone, max 60 chars","keywords":["2-4 search phrases people type, lowercase"]}},
+"hashtags":"#a #b #c (3-4 specific topic hashtags people really use, no brand, no #fyp/#viral)"}}]}}
 Write in {languages.english(p['source_lang'])}."""
 
 
@@ -147,13 +162,13 @@ def scripts_apply(params, data):
         if not idea:
             continue
         p = _project(idea["project_id"])
-        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption)
-                  VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
+        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption,post)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
                   voiceover=excluded.voiceover, scenes=excluded.scenes, description=excluded.description,
-                  hashtags=excluded.hashtags, caption=excluded.caption""",
+                  hashtags=excluded.hashtags, caption=excluded.caption, post=excluded.post""",
                (p["id"], idea["id"], p["source_lang"], 1, s.get("title", ""), s.get("voiceover", ""),
                 json.dumps(s.get("scenes", []), ensure_ascii=False), s.get("description", ""),
-                s.get("hashtags", ""), s.get("caption", "")))
+                s.get("hashtags", ""), s.get("caption", ""), _post_json(s.get("post"))))
         db.run("UPDATE ideas SET status='scripted' WHERE id=?", (idea["id"],))
         n += 1
     return {"created": n}
@@ -167,13 +182,14 @@ def translate_prompt(params):
     from . import anim
     anims = {str(i): anim.texts(s.get("anim")) for i, s in enumerate(json.loads(src["scenes"] or "[]")) if s.get("anim")}
     payload = {"title": src["title"], "voiceover": src["voiceover"], "onscreen": scenes, **({"anim_texts": anims} if anims else {}),
-               "description": src["description"], "caption": src["caption"], "hashtags": src["hashtags"]}
+               "description": src["description"], "caption": src["caption"], "hashtags": src["hashtags"],
+               **({"post": json.loads(src["post"])} if (src.get("post") or "").startswith("{") else {})}
     names = ", ".join(f"{c}={languages.english(c)}" for c in langs)
     return f"""Localize (not literal translation) this short video script for native speakers. Keep meaning, punch and length
-(voiceover must take about the same time to speak). Use natural idioms, local-relevant hashtags (mix of local + international).
+(voiceover must take about the same time to speak). Use natural idioms. Hashtags: ones locals really use for this topic in that language (not word-for-word), no #fyp/#viral.
 Languages: {names}
 Source: {json.dumps(payload, ensure_ascii=False)}
-Return JSON: {{"<lang code>":{{"title":"","voiceover":"","onscreen":[""],"description":"","caption":"","hashtags":""{', "anim_texts":{"<scene>":[""]}' if anims else ''}}}}}"""
+Return JSON: {{"<lang code>":{{"title":"","voiceover":"","onscreen":[""],"description":"","caption":"","hashtags":""{', "post":{}' if 'post' in payload else ''}{', "anim_texts":{"<scene>":[""]}' if anims else ''}}}}}"""
 
 
 def translate_apply(params, data):
@@ -191,12 +207,13 @@ def translate_apply(params, data):
         for k, tr in (t.get("anim_texts") or {}).items():
             if str(k).isdigit() and int(k) < len(sc) and sc[int(k)].get("anim") and isinstance(tr, list):
                 sc[int(k)]["anim"] = anim.with_texts(sc[int(k)]["anim"], tr)
-        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption)
-                  VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
+        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption,post)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idea_id,lang) DO UPDATE SET title=excluded.title,
                   voiceover=excluded.voiceover, scenes=excluded.scenes, description=excluded.description,
-                  hashtags=excluded.hashtags, caption=excluded.caption""",
+                  hashtags=excluded.hashtags, caption=excluded.caption, post=excluded.post""",
                (src["project_id"], src["idea_id"], lang, 0, t.get("title", ""), t.get("voiceover", ""),
-                json.dumps(sc, ensure_ascii=False), t.get("description", ""), t.get("hashtags", ""), t.get("caption", "")))
+                json.dumps(sc, ensure_ascii=False), t.get("description", ""), t.get("hashtags", ""), t.get("caption", ""),
+                _post_json(t.get("post"))))
         n += 1
     return {"created": n}
 
@@ -209,12 +226,15 @@ def meta_prompt(params):
     return f"""{_ctx(p)}
 Write publishing metadata for a short video. What the video is about: {params.get('about') or v['original_name']}
 Language: {languages.english(lang)}
-Return JSON: {{"title":"max 90 chars","description":"2-4 sentences + CTA","hashtags":"#a #b (5-8)"}}"""
+Return JSON: {{"title":"max 60 chars, main search keyword first","caption":"hook first line max 90 chars with keyword",
+"description":"2-4 sentences, first one with main keyword","post":{{"body":"1-2 sentences of value","question":"easy question for comments",
+"save":"short reason to save/share","keywords":["2-4 search phrases"]}},"hashtags":"#a #b #c (3-4 specific topic tags people use, no brand, no #fyp)"}}"""
 
 
 def meta_apply(params, data):
-    db.run("UPDATE videos SET title=?, description=?, hashtags=? WHERE id=?",
-           (data.get("title", ""), data.get("description", ""), data.get("hashtags", ""), params["video_id"]))
+    db.run("UPDATE videos SET title=?, description=?, hashtags=?, caption=?, post=? WHERE id=?",
+           (data.get("title", ""), data.get("description", ""), data.get("hashtags", ""), data.get("caption", ""),
+            _post_json(data.get("post")), params["video_id"]))
     return data
 
 
@@ -379,6 +399,14 @@ TASKS = {
 }
 
 
+def _register_late():
+    from . import captions
+    TASKS["hashtag_bank"] = (captions.bank_prompt, captions.bank_apply, "cheap")
+
+
+_register_late()
+
+
 def run_task(name, params):
     prompt_fn, apply_fn, kind = TASKS[name]
     prompt = prompt_fn(params)
@@ -403,6 +431,11 @@ def translate_all(script_id, langs, chunk=6):
         explainer.ensure_boards(script_id)  # animované schémy raz v origináli, preklad ich prenesie do všetkých jazykov
     except Exception as e:
         print("schémy:", e)
+    try:
+        from . import captions
+        captions.ensure_bank(db.one("SELECT project_id FROM scripts WHERE id=?", (script_id,))["project_id"])
+    except Exception as e:
+        print("hashtagy:", e)
     done, rest, flags, used = ([], list(langs), {}, [])
     if translate.any_enabled():
         done, rest, flags, used = translate.machine_translate(script_id, langs)

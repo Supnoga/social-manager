@@ -49,7 +49,7 @@ def _upsert(platform, name, ext, t, project_id, lang):
 def upload_facebook(account, video, privacy="public"):
     t = tokens(account)
     tok, page = t["page_token"], t["page_id"]
-    _, text = text_for(video, "facebook")
+    _, text = text_for(video, "facebook", account)
     size = os.path.getsize(video["file_path"])
     dur = video.get("duration") or 0
     with client(timeout=3600) as c:
@@ -76,7 +76,7 @@ def upload_facebook(account, video, privacy="public"):
 def upload_instagram(account, video, privacy="public"):
     t = tokens(account)
     tok, ig = t["page_token"], t["ig_id"]
-    _, text = text_for(video, "instagram")
+    _, text = text_for(video, "instagram", account)
     size = os.path.getsize(video["file_path"])
     auth = {"Authorization": f"OAuth {tok}"}
     with client(timeout=3600) as c:

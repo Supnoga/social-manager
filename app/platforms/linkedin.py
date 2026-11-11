@@ -177,7 +177,7 @@ def upload(account, video, privacy="public"):
     tok, owner = access_token(account), account["external_id"]
     h = headers(tok)
     size = os.path.getsize(video["file_path"])
-    _, text = text_for(video, "linkedin")
+    _, text = text_for(video, "linkedin", account)
     with client(timeout=3600) as c:
         init = check(c.post(f"{REST}/videos", params={"action": "initializeUpload"}, headers=h, json={
             "initializeUploadRequest": {"owner": owner, "fileSizeBytes": size,

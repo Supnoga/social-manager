@@ -161,6 +161,10 @@ MIGRATIONS = [
     "ALTER TABLE ideas ADD COLUMN template TEXT DEFAULT ''",
     "ALTER TABLE projects ADD COLUMN banned TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN first_lang TEXT DEFAULT ''",
+    "ALTER TABLE scripts ADD COLUMN post TEXT DEFAULT ''",
+    "ALTER TABLE videos ADD COLUMN post TEXT DEFAULT ''",
+    "ALTER TABLE projects ADD COLUMN hashtag_bank TEXT DEFAULT '{}'",
+    "ALTER TABLE projects ADD COLUMN brand_tags TEXT DEFAULT ''",
 ]
 
 

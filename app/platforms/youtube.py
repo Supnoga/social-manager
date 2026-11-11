@@ -149,8 +149,9 @@ def access_token(account):
 
 def upload(account, video, privacy="public", publish_at=None):
     tok = access_token(account)
-    title, desc = text_for(video, "youtube")
-    tags = [x.strip("#") for x in (video.get("hashtags") or "").split() if x.startswith("#")][:15]
+    title, desc = text_for(video, "youtube", account)
+    from .. import captions
+    tags = captions.build(video, "youtube", account)["tags"][:15]
     status = {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}
     if publish_at:
         status["privacyStatus"] = "private"

@@ -100,7 +100,7 @@ def upload(account, video, privacy="public"):
     size = os.path.getsize(video["file_path"])
     chunk, count = _chunks(size)
     source = {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": chunk, "total_chunk_count": count}
-    _, text = text_for(video, "tiktok")
+    _, text = text_for(video, "tiktok", account)
     with client(timeout=3600) as c:
         if mode() == "direct":
             info = check(c.post(f"{API}/post/publish/creator_info/query/", headers=h, json={}), "TikTok info").json()

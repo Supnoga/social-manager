@@ -116,7 +116,7 @@ def access_token(account):
 def upload(account, video, privacy="public"):
     tok = access_token(account)
     oid = account["external_id"]
-    _, text = text_for(video, "tiktok")
+    _, text = text_for(video, "tiktok", account)
     post_info = {"caption": text, "disable_comment": False, "disable_duet": False, "disable_stitch": False,
                  "is_brand_organic": False, "is_branded_content": False,
                  "is_ai_generated": bool(db.get_setting("ttb_ai_label", False))}
