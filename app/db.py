@@ -184,8 +184,28 @@ def con():
                 _con.execute(sql)
             except sqlite3.OperationalError:
                 pass  # stĺpec už existuje
+        _accounts_to_projects(_con)
         _con.commit()
     return _con
+
+
+def _accounts_to_projects(c):
+    """Každý účet patrí pod konkrétny projekt (žiadne spoločné účty).
+    Účty bez projektu (alebo po zmazanom projekte) dostanú projekt N2N, inak prvý projekt. Nič sa neodpája.
+    Nový pripojený účet bez projektu dostane projekt, v ktorom bola naposledy otvorená stránka Účty a siete."""
+    try:
+        r = c.execute("SELECT id FROM projects WHERE upper(name) LIKE '%N2N%' ORDER BY id LIMIT 1").fetchone() \
+            or c.execute("SELECT MIN(id) id FROM projects").fetchone()
+        if r and r["id"]:
+            c.execute("UPDATE accounts SET project_id=? WHERE project_id IS NULL OR project_id NOT IN (SELECT id FROM projects)", (r["id"],))
+            c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('connect_project',?)", (json.dumps(r["id"]),))
+        c.execute("""CREATE TRIGGER IF NOT EXISTS acc_default_project AFTER INSERT ON accounts WHEN NEW.project_id IS NULL BEGIN
+            UPDATE accounts SET project_id = COALESCE(
+              (SELECT id FROM projects WHERE id = (SELECT CAST(value AS INTEGER) FROM settings WHERE key='connect_project')),
+              (SELECT MIN(id) FROM projects)) WHERE id = NEW.id;
+            END""")
+    except sqlite3.Error:
+        pass
 
 
 def q(sql, args=()):
