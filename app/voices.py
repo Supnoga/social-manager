@@ -34,6 +34,8 @@ GOOGLE_LOCALES = {
     "sr": "sr-RS", "el": "el-GR", "da": "da-DK", "sv": "sv-SE", "no": "nb-NO", "fi": "fi-FI", "et": "et-EE",
     "lv": "lv-LV", "lt": "lt-LT", "uk": "uk-UA", "ru": "ru-RU", "tr": "tr-TR",
 }
+# Ďalšie prízvuky toho istého jazyka (angličtina: americká popri britskej)
+GOOGLE_MORE = {"en": [("en-US", "americký")]}
 # (meno, pohlavie, krátky popis)
 CHIRP = [
     ("Aoede", "F", "jasný, prirodzený"), ("Kore", "F", "pevný, istý"), ("Leda", "F", "mladistvý"),
@@ -463,7 +465,11 @@ def catalog(lang):
     if loc:
         for n, g, desc in CHIRP:
             out.append({"id": f"google:{loc}-Chirp3-HD-{n}", "name": n, "gender": g, "engine": "google",
-                        "label": f"{n} · {desc}", "best": True})
+                        "label": f"{n} · {desc}" + (" · britský" if lang == "en" else ""), "best": True})
+        for loc2, tag in GOOGLE_MORE.get(lang, []):
+            for n, g, desc in CHIRP:
+                out.append({"id": f"google:{loc2}-Chirp3-HD-{n}", "name": n, "gender": g, "engine": "google",
+                            "label": f"{n} · {desc} · {tag}", "best": True})
     seen = set()
     f, m = languages.voice(lang, "F"), languages.voice(lang, "M")
     prefix = {"no": "nb-"}.get(lang, lang + "-")
