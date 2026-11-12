@@ -205,7 +205,7 @@ def api_meta():
                                                           ("mt_azure_region", ""), ("mt_google", False),
                                                           ("require_approval", True), ("plan_per_day", 1),
                                                           ("auto_plan_week", False), ("radar_enabled", True),
-                                                          ("radar_weekly", True)]},
+                                                          ("radar_weekly", True), ("plan_projects", {})]},
         "inbox_count": db.one("SELECT COUNT(*) n FROM ideas WHERE status='inbox'")["n"],
         "yt_key": bool(db.get_setting("yt_api_key", "")),
         "ttb_redirect": tiktok_business.redirect_uri(), "ttb_redirect_local": tiktok_business.redirect_is_local(),
@@ -233,7 +233,7 @@ def api_settings(data: dict = Body(...)):
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
-               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target"}
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -566,7 +566,7 @@ def ideas(project_id: int, status: str = ""):
 
 @app.patch("/api/ideas/{iid}")
 def idea_update(iid: int, data: dict = Body(...)):
-    for f in ("status", "title", "hook", "angle", "first_lang"):
+    for f in ("status", "title", "hook", "angle", "first_lang", "pillar", "format", "why", "score"):
         if f in data:
             db.run(f"UPDATE ideas SET {f}=? WHERE id=?", (data[f], iid))
     return {"ok": True}

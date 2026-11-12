@@ -52,8 +52,17 @@ def _candidates(acc, platforms_of):
     return out
 
 
+def project_plan(pid):
+    """Vlastný rytmus projektu: {"days":[0..6] (0 = pondelok), "hours":[18]}. Bez neho platí spoločné nastavenie."""
+    pp = (db.get_setting("plan_projects", {}) or {}).get(str(pid)) if pid else None
+    if not pp or not pp.get("days") or not pp.get("hours"):
+        return None
+    return {"days": [int(d) for d in pp["days"]], "hours": sorted(int(h) for h in pp["hours"])}
+
+
 def plan_week(project_ids=None, days=7, per_day=None, dry=False):
     per_day = int(per_day or db.get_setting("plan_per_day", 1) or 1)
+    base_per_day = per_day
     status = "review" if db.get_setting("require_approval", True) else "queued"
     jit = int(db.get_setting("jitter_min", 10) or 0)
     platforms_of = {p["id"]: json.loads(p["platforms"] or "[]") or ["youtube", "tiktok", "instagram", "facebook"]
@@ -67,17 +76,25 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
         cand = _candidates(a, platforms_of)
         if project_ids:
             cand = [v for v in cand if v["project_id"] in project_ids]
-        hours, how = stats.best_hours(a, max(per_day, 1))
-        hours = sorted(hours[:per_day])
-        n, used_days = 0, 0
+        own = project_plan(a["project_id"])
+        if own:  # projekt má vlastné dni a hodiny
+            hours, how, per_day = own["hours"], "plán projektu", len(own["hours"])
+        else:
+            per_day = base_per_day
+            hours, how = stats.best_hours(a, max(per_day, 1))
+            hours = sorted(hours[:per_day])
+        n, used_days, slots_total = 0, 0, 0
         for d in range(days + 1):
             day = (now + dt.timedelta(days=d)).date()
+            if own and day.weekday() not in own["days"]:
+                continue
             slots = [h for h in hours if dt.datetime.combine(day, dt.time(h)) > now + dt.timedelta(minutes=20)]
             if not slots:
                 continue
             used_days += 1
             if used_days > days:
                 break
+            slots_total += len(slots)
             have = db.one("""SELECT COUNT(*) n FROM posts WHERE account_id=? AND status IN ('queued','review','uploading','done')
                              AND substr(scheduled_at,1,10)=?""", (a["id"], day.isoformat()))["n"]
             dated = [v for v in cand if v["due"] == day.isoformat()]
@@ -106,10 +123,10 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
         per_acc.append({"account": a["name"], "platform": a["platform"], "posts": n, "hours": hours, "how": how})
         if n == 0:
             empty.append(a["name"])
-        elif n < per_day * days:
+        elif n < (slots_total if own else per_day * days):
             short.append(a["name"])
     return {"created": created, "accounts": per_acc, "empty": empty, "short": short, "review": status == "review",
-            "per_day": per_day}
+            "per_day": base_per_day}
 
 
 def repeat_winners(pid, variations=True):

@@ -107,9 +107,15 @@ function planDialog() {
   <p class="muted small">Appka rozdelí hotové videá na všetky účty na 7 dní dopredu: každý účet dostane videá svojho projektu a jazyka, ktoré na ňom ešte neboli, v najlepšie časy pre ten účet. Úspešné videá idú prvé.</p>
   <label class="l">Projekty</label><div class="pick">${S.projects.map(p => `<label><input type="checkbox" name="pwp" value="${p.id}" ${!S.pf || S.pf === p.id ? 'checked' : ''}><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</label>`).join('')}</div>
   <label class="l">Koľko videí denne na jeden účet</label><select id="pwN">${[1, 2, 3].map(n => `<option ${n === +st.plan_per_day ? 'selected' : ''}>${n}</option>`).join('')}</select>
+  ${planOwn(st)}
   <label class="row" style="margin-top:12px"><input type="checkbox" id="pwAuto" ${st.auto_plan_week ? 'checked' : ''}> Každú nedeľu večer naplánovať ďalší týždeň samé</label>
   ${st.require_approval !== false ? `<p class="small dim">${I('eye', 's')} Videá najprv čakajú v Kontrole na tvoje schválenie.</p>` : ''}
   <div class="row" style="margin-top:16px"><button class="btn" onclick="planRun()">${I('calendar')}Naplánovať</button></div>`);
+}
+function planOwn(st) {
+  const pp = st.plan_projects || {}, dn = ['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'];
+  const rows = S.projects.filter(p => pp[p.id] && (pp[p.id].days || []).length).map(p => `<b>${esc(p.name)}</b>: ${pp[p.id].days.map(d => dn[d]).join(', ')} o ${pp[p.id].hours.map(h => h + ':00').join(', ')}`);
+  return rows.length ? `<p class="small dim">${I('clock', 's')} Vlastný rytmus podľa stratégie: ${rows.join(' · ')}</p>` : '';
 }
 async function planRun() {
   const ids = $$('[name=pwp]:checked').map(c => +c.value), per = +$('#pwN').value, auto = $('#pwAuto').checked;
