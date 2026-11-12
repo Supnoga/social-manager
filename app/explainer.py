@@ -257,8 +257,10 @@ def timeline(scenes, words, total):
     return [(edges[i], edges[i + 1]) for i in range(n)]
 
 
-def caption_chunks(words, lang):
+def caption_chunks(words, lang, wide=False):
     maxc = 26 if lang in ("de", "fi", "hu", "nl", "et", "is") else 32
+    if wide:
+        maxc += 22
     out, cur = [], []
     for w in words:
         if cur and (len(" ".join(x["w"] for x in cur + [w])) > maxc or cur[-1]["w"][-1:] in ".!?…,;:"):
@@ -326,6 +328,16 @@ svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
 #end img{position:absolute;left:50%;top:50%;max-width:660px;max-height:360px}
 #end .ln{position:absolute;left:50%;top:1180px;width:160px;height:6px;margin-left:-80px;background:var(--acc)}
 #bar{position:absolute;left:0;top:1906px;height:14px;background:var(--acc);width:0}
+body.wide,html.wide{width:1920px;height:1080px}
+.wide #glow{left:900px;top:-120px}
+.wide .kick{left:110px;top:236px}
+.wide .ttl{left:110px;top:284px;width:760px}
+.wide .viz{left:966px;top:190px}
+.wide #cap{left:260px;width:1400px;top:872px;font-size:50px}
+.wide #lg{left:110px;top:84px;max-width:300px;max-height:76px}
+.wide #end .gl{left:310px;top:-110px}
+.wide #end .ln{top:760px}
+.wide #bar{top:1068px;height:12px}
 </style></head><body><div id="glow"></div><div id="root"></div><img id="lg"><div id="cap"></div><div id="end"><div class="gl"></div><img><div class="ln"></div></div><div id="bar"></div>
 <script>
 const D=__DATA__;
@@ -466,10 +478,11 @@ r.innerHTML=`<div class="ln" style="width:56px;height:5px;background:var(--acc);
 return (t,st)=>{const p=st(.1,1);halo.style.opacity=(solo?.5:.42)*st(0,1.2)*(1+.08*Math.sin(t*1.3));fl.style.opacity=.55*st(.3,1);im.style.opacity=cl(p*1.4);im.style.transform=`translateY(${(1-p)*36+Math.sin(t*.9)*5}px) scale(${.93+.07*p})`;
 rows.forEach((r,i)=>{const q=st(1.1+i*.9,.6);r.style.opacity=q;r.style.transform=`translateX(${(1-q)*40}px)`;r.querySelector('.ln').style.transform=`scaleX(${q})`})}};
 // ---------- scény ----------
+const WIDE=!!D.wide;if(WIDE){document.documentElement.classList.add('wide');document.body.classList.add('wide')}
 const root=document.getElementById('root');const SC=D.scenes.map((sc,i)=>{const w=el('div','sc');w.style.display='block';root.append(w);
 const k=el('div','kick','',`<b>${String(i+1).padStart(2,'0')}</b>${D.kicker?' · '+esc(D.kicker):''} · ${i+1}/${D.scenes.length}`);
 const tt=el('div','ttl');tt.lang=D.lang;tt.innerHTML=String(sc.h||'').split(/\s+/).filter(Boolean).map(x=>`<span class="w"><span>${esc(x)}</span></span>`).join(' ');w.append(k,tt);
-const intro=i==0;fit(tt,intro?104:82,44,intro?330:270,860);const th=tt.offsetHeight;const vz=el('div','viz');vz.style.top=Math.max(690,362+th+90)+'px';w.append(vz);
+const intro=i==0;if(WIDE)fit(tt,intro?92:74,36,470,760);else fit(tt,intro?104:82,44,intro?330:270,860);const th=tt.offsetHeight;const vz=el('div','viz');if(!WIDE)vz.style.top=Math.max(690,362+th+90)+'px';w.append(vz);
 let upd=()=>{};try{upd=(V[sc.v.k]||V.text)(vz,sc.v)||(()=>{})}catch(e){vz.textContent=''}
 w.style.display='none';
 return {w,k,tt,vz,upd,t0:sc.t0,t1:sc.t1,steps:sc.steps||0}});
@@ -486,15 +499,15 @@ s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.
 const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>E((lt-.6-a*span)/(b*Math.max(.7,span)));
 s.vz.style.opacity=E((l2-.2)/.4);try{s.upd(lt,st)}catch(e){}});
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
-BAR.style.width=(1080*cl(t/D.total))+'px';
+BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
 if(ending){CAP.innerHTML='';LG.style.opacity=1-cl(et/.3);END.style.display='block';const p=E((et-.25)/.6);END.style.opacity=cl(et/.3);
 EIMG.style.opacity=p;EIMG.style.transform=`translate(-50%,-50%) scale(${.94+.06*p})`;EGL.style.opacity=.30*E((et-.2)/1);ELN.style.transform=`scaleX(${E((et-.6)/.6)})`;
-ELN.style.top=(960+EIMG.offsetHeight/2+70)+'px';return}
+ELN.style.top=((WIDE?540:960)+EIMG.offsetHeight/2+(WIDE?50:70))+'px';return}
 END.style.display='none';LG.style.opacity=.96;
 let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e){ci=i;break}}
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
-const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){fit(CAP,60,38,150,864);lastCap=ci}}
+const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,50,34,130,1400);else fit(CAP,60,38,150,864);lastCap=ci}}
 window.READY=true;
 </script></body></html>"""
 
@@ -540,7 +553,7 @@ def with_product(h, v, products, cache):
 
 
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -561,8 +574,9 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
         sc_data.append({"h": h, "v": v, "t0": round(t0, 3), "t1": round(t1, 3),
                         "steps": STEPS.get(v.get("k"), lambda d: 2)(v)})
     tail = TAIL if (logo_end or logo) else 0
-    data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang),
-            "logo": logo or "", "logoEnd": logo_end or "", "tail": tail}
+    data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
+            "logo": logo or "", "logoEnd": logo_end or "", "tail": tail, "wide": bool(wide)}
+    vw, vh = (H, W) if wide else (W, H)
     html = page(data, font, font_text)
     if total > 90:
         fps = 25
@@ -585,9 +599,16 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
         b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            pg = b.new_page(viewport={"width": W, "height": H}, device_scale_factor=1)
+            pg = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)
+            if thumb:  # náhľadový obrázok: úvodná scéna s názvom, bez titulkov
+                try:
+                    pg.evaluate("renderAt(%.2f);document.getElementById('cap').innerHTML='';document.getElementById('bar').style.width=0"
+                                % min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6))
+                    pg.screenshot(path=str(thumb), type="jpeg", quality=92)
+                except Exception as e:
+                    print("náhľad:", e)
             for i in range(n):
                 pg.evaluate(f"renderAt({i / fps:.4f})")
                 proc.stdin.write(pg.screenshot(type="jpeg", quality=90))

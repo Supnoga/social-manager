@@ -114,7 +114,7 @@ function planDialog() {
 }
 function planOwn(st) {
   const pp = st.plan_projects || {}, dn = ['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'];
-  const rows = S.projects.filter(p => pp[p.id] && (pp[p.id].days || []).length).map(p => `<b>${esc(p.name)}</b>: ${pp[p.id].days.map(d => dn[d]).join(', ')} o ${pp[p.id].hours.map(h => h + ':00').join(', ')}`);
+  const rows = S.projects.filter(p => pp[p.id] && (pp[p.id].days || []).length).map(p => `<b>${esc(p.name)}</b>: ${pp[p.id].days.length === 7 ? 'každý deň' : pp[p.id].days.map(d => dn[d]).join(', ')}${(pp[p.id].hours || []).length ? ', krátke o ' + pp[p.id].hours.map(h => h + ':00').join(', ') : ''}${(pp[p.id].long_hours || []).length ? ', dlhé o ' + pp[p.id].long_hours.map(h => h + ':00').join(', ') : ''}`);
   return rows.length ? `<p class="small dim">${I('clock', 's')} Vlastný rytmus podľa stratégie: ${rows.join(' · ')}</p>` : '';
 }
 async function planRun() {

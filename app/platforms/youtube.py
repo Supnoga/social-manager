@@ -173,5 +173,13 @@ def upload(account, video, privacy="public", publish_at=None):
                                       "Content-Type": "video/*"},
                         content=file_chunks(video["file_path"])), "YouTube nahrávanie")
         vid = r.json()["id"]
+        thumb = os.path.splitext(video["file_path"])[0] + ".jpg"
+        if os.path.exists(thumb):  # dlhé video: vlastný náhľad (ak ho kanál má povolený; inak YouTube vyberie sám)
+            try:
+                with open(thumb, "rb") as f:
+                    c.post("https://www.googleapis.com/upload/youtube/v3/thumbnails/set", params={"videoId": vid},
+                           headers={"Authorization": f"Bearer {tok}", "Content-Type": "image/jpeg"}, content=f.read())
+            except Exception as e:
+                print("YouTube náhľad:", e)
     count_upload(account)
     return vid, f"https://youtu.be/{vid}"
