@@ -177,6 +177,52 @@ def scripts_apply(params, data):
     return {"created": n}
 
 
+# ---------- 3b. SHORTS Z DLHÉHO VIDEA (návnada na celé video; jedno volanie, scenár už existuje) ----------
+def teasers_prompt(params):
+    idea = db.one("SELECT * FROM ideas WHERE id=?", (params["idea_id"],))
+    src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (idea["id"],))
+    p = _project(idea["project_id"])
+    from . import explainer
+    n = int(params.get("count") or 3)
+    return f"""{_ctx(p)}
+Below is the script of our long YouTube video "{src['title']}". Write {n} Shorts that make people want to watch that full video.
+Each Short takes ONE different small part of the long video (one surprising fact, one mistake, one "how it works" moment) and tells it on its own.
+Rules for each Short: 100-140 spoken words (~40s). First sentence = scroll-stopping hook, max 12 words, no greeting, different opening style in each Short.
+The Short must fully pay off its own small question, so the viewer feels they learned something real. Then the last 1-2 sentences open a bigger question
+that only the long video answers (a natural open ending, for example "But there is one case where this goes wrong. The full video shows it."), and say that the full video is linked.
+Never stop mid-sentence, never promise something the long video does not contain, never repeat the same closing words in two Shorts.
+Same style as the long video: simple everyday words, warm storyteller, short sentences, numbers as digits, no emojis or symbols in voiceover.
+Return JSON: {{"scripts":[{{"title":"Shorts title max 60 chars, main search keyword first","hook":"first sentence","voiceover":"full spoken text",
+"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","anim":{{}}}}] (4-6 scenes in voiceover order; last scene onscreen says to watch the full video; EVERY scene gets {explainer.SPEC}),
+"description":"1-2 sentences incl. main search keyword","caption":"hook line max 90 chars, no hashtags",
+"post":{{"body":"1 sentence of value","question":"one easy question for comments","save":"reason to save, max 60 chars","keywords":["2-4 search phrases"]}},
+"hashtags":"#a #b #c"}}]}}
+Write in {languages.english(p['source_lang'])}.
+
+LONG VIDEO SCRIPT:
+{src['voiceover']}"""
+
+
+def teasers_apply(params, data):
+    idea = db.one("SELECT * FROM ideas WHERE id=?", (params["idea_id"],))
+    p = _project(idea["project_id"])
+    ids = []
+    for s in data.get("scripts", [])[:int(params.get("count") or 3)]:
+        if not (s.get("voiceover") or "").strip():
+            continue
+        iid = db.run("""INSERT INTO ideas(project_id,title,hook,angle,pillar,format,why,score,status,source,parent_id)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                     (p["id"], s.get("title", "")[:120] or idea["title"], s.get("hook", ""), "Short from the long video: " + idea["title"],
+                      idea.get("pillar") or "", "short", "", idea.get("score") or 0, "scripted", "teaser", idea["id"]))
+        db.run("""INSERT INTO scripts(project_id,idea_id,lang,is_source,title,voiceover,scenes,description,hashtags,caption,post)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+               (p["id"], iid, p["source_lang"], 1, s.get("title", ""), s.get("voiceover", ""),
+                json.dumps(s.get("scenes", []), ensure_ascii=False), s.get("description", ""),
+                s.get("hashtags", ""), s.get("caption", ""), _post_json(s.get("post"))))
+        ids.append(iid)
+    return {"created": len(ids), "idea_ids": ids}
+
+
 # ---------- 4. LOKALIZÁCIA (lacný model, viac jazykov v 1 volaní) ----------
 def translate_prompt(params):
     src = db.one("SELECT * FROM scripts WHERE id=?", (params["script_id"],))
@@ -397,6 +443,7 @@ TASKS = {
     "strategy": (strategy_prompt, strategy_apply, "creative"),
     "ideas": (ideas_prompt, ideas_apply, "creative"),
     "scripts": (scripts_prompt, scripts_apply, "creative"),
+    "teasers": (teasers_prompt, teasers_apply, "creative"),
     "translate": (translate_prompt, translate_apply, "cheap"),
     "meta": (meta_prompt, meta_apply, "cheap"),
 }

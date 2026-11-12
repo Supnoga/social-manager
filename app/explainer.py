@@ -15,7 +15,7 @@ import threading
 from . import db
 
 W, H = 1080, 1920
-KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero")
+KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
               "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city")
@@ -30,6 +30,10 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
 {"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"} |
 {"k":"hero","i":"icon","w":"2-4 words","s":"optional short second line"} (one big animated picture of the thing we talk about; use it for story, everyday comparisons and scenes without numbers)
+{"k":"draw","e":[...max 14 elements]} = your own animated line drawing on a 432x280 canvas (x right, y down). Use it when the viewer should SEE the thing happen instead of reading about it (example: a 2-blade, a 3-blade and a 4-blade wind turbine side by side, the 2-blade one shaking). Elements:
+{"s":"turbine","p":[xCenter,yGround,height],"n":blades,"l":"label"} | {"s":"path","d":"SVG path data"} | {"s":"line","p":[x1,y1,x2,y2]} | {"s":"arrow","p":[x1,y1,x2,y2]} | {"s":"circle","p":[cx,cy,r]} | {"s":"rect","p":[x,y,w,h]} | {"s":"text","p":[x,y],"t":"1-3 words"} | {"s":"icon","i":"icon name","p":[xCenter,yCenter,size]}.
+Optional on every element: "c":1 (red highlight) or 2 (grey), "a":"spin" / "shake" / "pulse" / "float" / "flow" (moving dots along a line, arrow or path; may combine like "spin shake"; a turbine always spins), "at":0,1,2.. (step when it appears, so the drawing builds up while the voice explains), "l":"label under it".
+Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Use "draw" for the 1-2 key "aha" scenes of a short and 5-8 scenes of a long video.
 Labels max 4 words, numbers as numbers."""
 
 
@@ -47,6 +51,10 @@ def _slots(d):
                 out.append((f, 1))
         elif isinstance(v, list) and f == "l":
             out += [(f, i) for i, x in enumerate(v) if isinstance(x, str) and x.strip()]
+    for i, x in enumerate(d.get("e") or [] if k == "draw" else []):
+        for f in ("t", "l"):
+            if isinstance(x, dict) and isinstance(x.get(f), str) and re.search(r"[^\W\d_]{2,}", x[f]):
+                out.append(("e", i, f))
     for f in ("i", "r"):
         for i, x in enumerate(d.get(f) or []):
             if isinstance(x, str):
@@ -323,7 +331,7 @@ html,body{width:1080px;height:1920px;background:#000;overflow:hidden;font-family
 .ttl{position:absolute;left:72px;top:362px;width:860px;font-size:82px;line-height:1.02;font-weight:800;text-transform:uppercase;letter-spacing:-1px;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word}
 .ttl .w{display:inline-block;overflow:hidden;vertical-align:top;padding-bottom:.08em;margin-bottom:-.08em}
 .ttl .w>span{display:inline-block}
-.viz{position:absolute;left:72px;top:690px;width:864px;height:560px}
+.viz{position:absolute;left:72px;top:735px;width:864px;height:560px}
 .lab{position:absolute;font-size:26px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#bdbdbd;line-height:1.2}
 .lab.a{color:var(--acc)}
 .txt{position:absolute;font-family:var(--ft);font-size:38px;line-height:1.2;color:#fff}
@@ -331,7 +339,7 @@ html,body{width:1080px;height:1920px;background:#000;overflow:hidden;font-family
 .card{position:absolute;border:1.5px solid rgba(255,255,255,.16);background:#0d0d0d;border-radius:14px}
 svg{position:absolute;left:0;top:0;overflow:visible}
 svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
-#cap{position:absolute;left:72px;width:864px;top:1340px;text-align:center;font-family:var(--ft);font-size:60px;font-weight:700;line-height:1.2;color:#fff;text-shadow:0 4px 24px #000;text-wrap:balance}
+#cap{position:absolute;left:72px;width:864px;top:1425px;text-align:center;font-family:var(--ft);font-size:60px;font-weight:700;line-height:1.2;color:#fff;text-shadow:0 4px 24px #000;text-wrap:balance}
 #cap span{color:rgba(255,255,255,.42)}#cap span.on{color:#fff}#cap span.k{color:var(--acc)}
 #lg{position:absolute;left:72px;top:196px;max-width:340px;max-height:88px;display:none}
 #end{position:absolute;inset:0;display:none;background:#000}
@@ -502,6 +510,33 @@ const ic=icon(d.i||'bolt',sz,'#fff',2.2);ic.style.left=(cx-sz/2)+'px';ic.style.t
 const w=el('div','big',`left:0;top:${cy+sz/2+26}px;width:864px;text-align:center;font-size:70px;text-transform:uppercase`,esc(d.w||'')),s2=el('div','lab a',`left:82px;top:${cy+sz/2+112}px;width:700px;text-align:center;font-size:30px`,esc(d.s||''));v.append(w,s2);fit(w,70,34,84,840);fit(s2,30,18,70,700);
 return (t,st)=>{const p=st(0,1.4);draw(ic,p);ic.style.opacity=p>0?1:0;ic.style.transform=`translateY(${Math.sin(t*1.1)*8}px) scale(${.9+.1*E(p)})`;halo.style.opacity=.22*E(st(.3,1.2))*(1+.12*Math.sin(t*1.6));
 rings.forEach((r,i)=>{const q=((t*.32+i/3)%1);const on=cl(st(.8,.6));r.style.transform=`scale(${.72+q*.9})`;r.style.opacity=on*(1-q)*.55});show(w,st(1,.6),30);show(s2,st(1.5,.6),20)}};
+// vlastná kresba: AI opíše jednoduché tvary, appka ich nakreslí a rozhýbe (ukázať, nie len povedať)
+V.draw=(v,d)=>{const s=svg(864,560,'');s.setAttribute('viewBox','0 0 432 280');s.style.position='absolute';s.style.left='0';s.style.top='0';s.style.overflow='visible';v.append(s);
+const COL=c=>c==1?D.acc:c==2?'#8f8f8f':'#fff',n=x=>{const y=parseFloat(x);return isFinite(y)?y:0},okd=x=>/^[MmLlHhVvCcSsQqTtAaZz0-9\s,.\-eE]+$/.test(String(x||''))?String(x):'';
+const mk=(tag,at)=>{const e=document.createElementNS(SVGNS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
+const els=(Array.isArray(d.e)?d.e:[]).slice(0,14).map(o=>{if(!o||typeof o!='object')return null;const p=(Array.isArray(o.p)?o.p:[]).map(n),col=COL(o.c),g=mk('g',{}),A=String(o.a||''),st={stroke:col,'stroke-width':2.4,class:'d',pathLength:1};
+let cx=0,cy=0,ly=0,rot=null,flow=null;
+if(o.s=='turbine'){const x=p[0]||216,y=p[1]||240,h=Math.max(60,p[2]||150),nb=Math.max(1,Math.min(6,Math.round(n(o.n))||3)),R=h*.42,hy=y-h;cx=x;cy=y-h/2;ly=y+16;
+g.append(mk('path',Object.assign({d:`M${x-4} ${y} L${x-1.6} ${hy} H${x+1.6} L${x+4} ${y} Z`},st)));rot=mk('g',{});for(let i=0;i<nb;i++){const a=i*360/nb;rot.append(mk('path',Object.assign({d:`M${x} ${hy} C${x+R*.11} ${hy-R*.3} ${x+R*.1} ${hy-R*.7} ${x} ${hy-R} C${x-R*.06} ${hy-R*.7} ${x-R*.05} ${hy-R*.3} ${x} ${hy} Z`,transform:`rotate(${a} ${x} ${hy})`},st)))}
+rot.append(mk('circle',Object.assign({cx:x,cy:hy,r:3.2},st)));g.append(rot);rot._c=[x,hy];rot._v=nb==2?150:nb>3?70:95}
+else if(o.s=='path'){const e=mk('path',Object.assign({d:okd(o.d)||'M0 0'},st));g.append(e);flow=e}
+else if(o.s=='line'||o.s=='arrow'){const e=mk('path',Object.assign({d:`M${p[0]} ${p[1]} L${p[2]} ${p[3]}`},st));g.append(e);flow=e;cx=(p[0]+p[2])/2;cy=(p[1]+p[3])/2;ly=Math.max(p[1],p[3])+16;
+if(o.s=='arrow'){const a=Math.atan2(p[3]-p[1],p[2]-p[0]),L=9;g.append(mk('path',Object.assign({d:`M${p[2]-L*Math.cos(a-.5)} ${p[3]-L*Math.sin(a-.5)} L${p[2]} ${p[3]} L${p[2]-L*Math.cos(a+.5)} ${p[3]-L*Math.sin(a+.5)}`},st)))}}
+else if(o.s=='circle'){g.append(mk('circle',Object.assign({cx:p[0],cy:p[1],r:Math.max(1,p[2]||10)},st)));cx=p[0];cy=p[1];ly=p[1]+(p[2]||10)+16}
+else if(o.s=='rect'){g.append(mk('rect',Object.assign({x:p[0],y:p[1],width:Math.max(1,p[2]),height:Math.max(1,p[3]),rx:4},st)));cx=p[0]+p[2]/2;cy=p[1]+p[3]/2;ly=p[1]+p[3]+16}
+else if(o.s=='text'){const e=mk('text',{x:p[0],y:p[1],fill:col,'font-size':Math.max(9,Math.min(26,n(o.z)||15)),'font-weight':800,'text-anchor':'middle','letter-spacing':.6});e.textContent=String(o.t||'').toUpperCase();g.append(e);cx=p[0];cy=p[1]}
+else if(o.s=='icon'){const z=Math.max(20,p[2]||60),ic=icon(o.i,z,col,3);ic.setAttribute('x',p[0]-z/2);ic.setAttribute('y',p[1]-z/2);g.append(ic);cx=p[0];cy=p[1];ly=p[1]+z/2+16}
+else return null;
+if(o.s=='path'&&flow){try{const b=flow.getBBox();cx=b.x+b.width/2;cy=b.y+b.height/2;ly=b.y+b.height+16}catch(e){}}
+let lb=null;if(o.l&&o.s!='text'){lb=mk('text',{x:cx,y:Math.min(274,ly),fill:o.c==1?D.acc:'#bdbdbd','font-size':Math.max(7.5,Math.min(12,150/Math.max(1,String(o.l).length))),'font-weight':700,'text-anchor':'middle','letter-spacing':.8});lb.textContent=String(o.l).toUpperCase();s.append(lb)}
+s.append(g);const dots=/flow/.test(A)&&flow?[0,1,2].map(()=>{const c=mk('circle',{r:3.2,fill:D.acc,opacity:0});s.append(c);return c}):[];
+return {g,lb,rot,cx,cy,A,at:Math.max(0,n(o.at)),dots,flow,ph:cx*.05+cy*.03,spin:/spin/.test(A)&&!rot}}).filter(Boolean);
+return (t,stf)=>els.forEach(o=>{const p=stf(o.at,.9);o.g.style.opacity=p>0?1:0;o.g.querySelectorAll('.d').forEach(e=>{e.style.strokeDasharray='1 1';e.style.strokeDashoffset=1-cl(p)});o.g.querySelectorAll('text').forEach(e=>e.style.opacity=cl(p));if(o.lb)o.lb.style.opacity=E(stf(o.at+.5,.5));
+let tr='';if(/shake/.test(o.A)){const k=cl(p)*2.6;tr+=`translate(${Math.sin(t*31+o.ph)*k} ${Math.cos(t*27+o.ph)*k*.5}) rotate(${Math.sin(t*23+o.ph)*1.6*cl(p)} ${o.cx} ${o.cy+60}) `}
+if(/float/.test(o.A))tr+=`translate(0 ${Math.sin(t*1.4+o.ph)*5}) `;if(/pulse/.test(o.A)){const k=1+.07*Math.sin(t*3.2+o.ph);tr+=`translate(${o.cx} ${o.cy}) scale(${k}) translate(${-o.cx} ${-o.cy}) `}
+if(o.spin)tr+=`rotate(${(t*80)%360} ${o.cx} ${o.cy}) `;o.g.setAttribute('transform',tr);
+if(o.rot)o.rot.setAttribute('transform',`rotate(${(t*o.rot._v*cl(p*1.5))%360} ${o.rot._c[0]} ${o.rot._c[1]})`);
+if(o.dots.length){let L=0;try{L=o.flow.getTotalLength()}catch(e){}o.dots.forEach((c,i)=>{const q=((t*.45+i/3)%1);if(!L||p<1){c.setAttribute('opacity',0);return}const pt=o.flow.getPointAtLength(q*L);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);c.setAttribute('opacity',Math.sin(q*Math.PI))})}})};
 V.text=(v,d)=>{const ws=String(d.w||'').split(/\s+/).filter(Boolean).slice(0,6);const box=el('div','',`position:absolute;left:0;top:40px;width:864px;height:480px;display:flex;flex-wrap:wrap;align-content:center;gap:0 22px;font-weight:900;text-transform:uppercase;line-height:1.02;font-size:118px;letter-spacing:-2px`);
 const sp=ws.map((w,i)=>{const e=el('span','',i==ws.length-1?'color:var(--acc)':'',esc(w));box.append(e);return e});v.append(box);fit(box,118,48,480,864);
 return (t,st)=>sp.forEach((e,i)=>{const p=st(i*.25,.45);e.style.opacity=p;e.style.display='inline-block';e.style.transform=`translateY(${(1-E(p))*50}px)`})};
@@ -517,7 +552,7 @@ rows.forEach((r,i)=>{const q=st(1.1+i*.9,.6);r.style.opacity=q;r.style.transform
 const WIDE=!!D.wide;if(WIDE){document.documentElement.classList.add('wide');document.body.classList.add('wide')}
 const PW=WIDE?1920:1080,PH=WIDE?1080:1920,GAP=90;
 // jedno veľké plátno: scény ležia vedľa seba (had), kamera sa medzi nimi presúva a na konci ukáže celý obraz
-const NS=D.scenes.length,COLS=Math.max(1,Math.ceil(Math.sqrt(NS))),ROWS=Math.ceil(NS/COLS),WW=COLS*PW+(COLS-1)*GAP,WH=ROWS*PH+(ROWS-1)*GAP;
+const NS=D.scenes.length,COLS=Math.max(1,WIDE?Math.ceil(Math.sqrt(NS)):Math.min(NS,Math.ceil(Math.sqrt(NS*1.7)))),ROWS=Math.ceil(NS/COLS),WW=COLS*PW+(COLS-1)*GAP,WH=ROWS*PH+(ROWS-1)*GAP;
 const root=document.getElementById('root');const SC=D.scenes.map((sc,i)=>{const w=el('div','sc');w.style.display='block';root.append(w);
 const row=Math.floor(i/COLS),kk=i%COLS,col=row%2?COLS-1-kk:kk;const X0=col*(PW+GAP),Y0=row*(PH+GAP);w.style.left=X0+'px';w.style.top=Y0+'px';w.style.width=PW+'px';w.style.height=PH+'px';const fr=el('div','fr');w.append(fr);
 const k=el('div','kick','',`<b>${String(i+1).padStart(2,'0')}</b>${D.kicker?' · '+esc(D.kicker):''} · ${i+1}/${D.scenes.length}`);
@@ -541,21 +576,21 @@ function renderAt(t){let cur=SC.length-1;for(let i=0;i<SC.length;i++){if(t<SC[i]
 const ending=TAIL>0&&t>=D.total,et=t-D.total;
 const MV=.8,LD=SC.length?SC[SC.length-1].t1-SC[SC.length-1].t0:0,ZO=NS>2?Math.min(3.2,Math.max(1.8,LD*.5)):0;const zo=ZO?EI((t-(D.total-ZO))/(ZO*.75)):0;
 let cx=SC[cur].c[0],cy=SC[cur].c[1],zs=1;if(cur>0){const p=EI((t-SC[cur].t0)/MV);if(p<1){const b=SC[cur-1].c;cx=b[0]+(cx-b[0])*p;cy=b[1]+(cy-b[1])*p;zs=1-.14*Math.sin(Math.PI*p)}}
-let sx=PW/2,sy=PH/2;if(zo>0){const AW=WIDE?1700:864,AH=WIDE?790:1080,fs=Math.min(AW/WW,AH/WH);cx+=(WW/2-cx)*zo;cy+=(WH/2-cy)*zo;zs=1+(fs-1)*zo;sx+=((WIDE?960:504)-sx)*zo;sy+=((WIDE?465:750)-sy)*zo}
+let sx=PW/2,sy=PH/2;if(zo>0){const AW=WIDE?1700:864,AH=WIDE?790:1150,fs=Math.min(AW/WW,AH/WH);cx+=(WW/2-cx)*zo;cy+=(WH/2-cy)*zo;zs=1+(fs-1)*zo;sx+=((WIDE?960:504)-sx)*zo;sy+=((WIDE?465:750)-sy)*zo}
 root.style.transform=`translate(${sx-cx*zs}px,${sy-cy*zs}px) scale(${zs})`;root.style.opacity=ending?1-cl(et/.3):1;
 SC.forEach((s,i)=>{const lt=t-s.t0,dur=s.t1-s.t0;const vis=!(ending&&et>.3)&&(zo>0?i<=cur:(i==cur||(i==cur-1&&t-SC[cur].t0<MV)));s.w.style.display=vis?'block':'none';if(!vis)return;
 s.fr.style.opacity=zo;if(i!=cur)return;
 const l2=i==0?lt:lt-.12;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
 const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=E((l2-.2)/.4);s.vz.style.transform=`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.12:1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+s.vz.style.opacity=E((l2-.2)/.4);s.vz.style.transform=`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.12:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
 SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
 if(ending){CAP.innerHTML='';LG.style.opacity=1-cl(et/.3);END.style.display='block';const p=E((et-.25)/.6);END.style.opacity=cl(et/.3);
 EIMG.style.opacity=p;EIMG.style.transform=`translate(-50%,-50%) scale(${.94+.06*p})`;EGL.style.opacity=.30*E((et-.2)/1);ELN.style.transform=`scaleX(${E((et-.6)/.6)})`;
 ELN.style.top=((WIDE?540:960)+EIMG.offsetHeight/2+(WIDE?50:70))+'px';return}
-END.style.display='none';LG.style.opacity=.96;
+END.style.display='none';LG.style.opacity=.96*(1-cl(zo*1.6));
 let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e){ci=i;break}}
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
@@ -567,6 +602,7 @@ STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars":
          "calc": lambda d: len(d.get("r") or []) + .5, "compare": lambda d: 2.5, "count": lambda d: 2, "list": lambda d: len(d.get("i") or []),
          "icons": lambda d: len(d.get("i") or []) + .5, "temp": lambda d: 3.5, "house": lambda d: len(d.get("i") or []) + 1.5,
          "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5, "hero": lambda d: 2.5,
+         "draw": lambda d: max([int(x.get("at") or 0) for x in (d.get("e") or []) if isinstance(x, dict)] or [0]) + 1.5,
          "product": lambda d: len(d.get("i") or []) + 1.5}
 
 _lock = threading.Lock()

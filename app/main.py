@@ -902,6 +902,26 @@ def idea_produce_first(iid: int, data: dict = Body(default={})):
     return out
 
 
+@app.post("/api/ideas/{iid}/teasers")
+def idea_teasers(iid: int, data: dict = Body(default={})):
+    """Shorts z dlhého videa: každý vysvetlí jeden kúsok a otvoreným koncom pozve na celé video. Jedno volanie AI."""
+    idea = db.one("SELECT * FROM ideas WHERE id=?", (iid,))
+    if not idea or idea["format"] != "long":
+        raise HTTPException(400, "Toto ide len z dlhého videa")
+    if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
+        raise HTTPException(400, "Dlhé video ešte nemá scenár")
+    out = content.run_task("teasers", {"idea_id": iid, "count": max(1, min(6, int(data.get("count") or 3)))})
+    if data.get("produce"):
+        out["videos"] = 0
+        for i in out["idea_ids"]:
+            try:
+                idea_produce_first(i, {})
+                out["videos"] += 1
+            except Exception as e:
+                out.setdefault("errors", []).append(str(e)[:200])
+    return out
+
+
 @app.post("/api/ideas/{iid}/produce-all")
 def idea_produce_all(iid: int, data: dict = Body(default={})):
     """Rozšírenie schválenej prvej verzie: preklad do ostatných jazykov -> hlasy -> videá.
@@ -1029,7 +1049,8 @@ def _produce_once():
         for pid_s, c in cfg.items():
             pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
             made = 0
-            for fmt in ("short", "long"):
+            from_long = bool(c.get("from_long")) and int(c.get("long") or 0) > 0
+            for fmt in (("long", "short") if from_long else ("short", "long")):
                 per = int(c.get(fmt) or 0)
                 if not per:
                     continue
@@ -1061,6 +1082,10 @@ def _produce_once():
                     try:
                         idea_produce_first(i, {})
                         made += 1
+                        if fmt == "long" and from_long and int(c.get("short") or 0):
+                            PROD["step"] = "Robím Shorts z dlhého videa"
+                            k = max(1, round(int(c["short"]) / int(c["long"])))
+                            made += idea_teasers(i, {"count": k, "produce": True}).get("videos", 0)
                     except Exception as e:
                         PROD["log"].append(f"nápad {i}: {e}")
                         db.run("UPDATE ideas SET status='new' WHERE id=?", (i,))  # nech sa na ňom výroba nezasekne
