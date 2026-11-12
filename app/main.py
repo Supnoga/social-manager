@@ -754,12 +754,14 @@ def script_to_video(sid: int, data: dict = Body(default={})):
             pr = db.one("SELECT name FROM projects WHERE id=?", (s["project_id"],)) or {}
             sc2 = explainer.localized_scenes(s)
             bo, lg = brand.opts(s["project_id"]), brand.video_logo(s["project_id"], dark_bg=True)
+            wide = ((db.one("SELECT format FROM ideas WHERE id=?", (s["idea_id"],)) or {}).get("format") == "long")  # dlhé video = na šírku
             explainer.make(sc2, s["voice_path"], out, acc, s["lang"], s["voiceover"], pr.get("name") or "",
                            footage.music_track(sid) if data.get("music", True) else None, brand.current_font(),
                            font_text=brand.current_text_font(),
                            logo=brand.logo_data_uri(lg, 680, 176) if lg and bo["logo_corner"] else None,
                            logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
-                           products=brand.product_images(s["project_id"]))
+                           products=brand.product_images(s["project_id"]), wide=wide,
+                           thumb=out.with_suffix(".jpg") if wide else None)
             done = logo_in = True
         except Exception as e:
             print("animované video:", e)

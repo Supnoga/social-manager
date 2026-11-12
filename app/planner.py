@@ -19,7 +19,7 @@ def _fmt(t):
 def _candidates(acc, platforms_of):
     """Hotové videá pre účet, ktoré na ňom ešte neboli (ani naplánované). Jedno video na nápad."""
     rows = db.q("""SELECT v.*, COALESCE(i.score,0) score, s.idea_id, i.source isrc, COALESCE(i.due_date,'') due,
-                   COALESCE(i.markets,'') markets FROM videos v
+                   COALESCE(i.markets,'') markets, COALESCE(i.format,'short') fmt, COALESCE(i.pillar,'') pillar FROM videos v
                    LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
                    WHERE v.status='ready' AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND p.account_id=?
                          AND p.status!='failed')
@@ -53,11 +53,51 @@ def _candidates(acc, platforms_of):
 
 
 def project_plan(pid):
-    """Vlastný rytmus projektu: {"days":[0..6] (0 = pondelok), "hours":[18]}. Bez neho platí spoločné nastavenie."""
+    """Vlastný rytmus projektu: {"days":[0..6] (0 = pondelok), "hours":[12,18,22], "long_hours":[15]}.
+    hours = krátke videá, long_hours = dlhé videá na šírku. Bez neho platí spoločné nastavenie."""
     pp = (db.get_setting("plan_projects", {}) or {}).get(str(pid)) if pid else None
-    if not pp or not pp.get("days") or not pp.get("hours"):
+    if not pp or not pp.get("days") or not (pp.get("hours") or pp.get("long_hours")):
         return None
-    return {"days": [int(d) for d in pp["days"]], "hours": sorted(int(h) for h in pp["hours"])}
+    return {"days": [int(d) for d in pp["days"]], "hours": sorted(int(h) for h in pp.get("hours") or []),
+            "long_hours": sorted(int(h) for h in pp.get("long_hours") or [])}
+
+
+def _plan_own(a, own, cand, days, now, status, jit, dry):
+    """Účet projektu s vlastným rytmom: každý deň krátke videá v ich hodinách a dlhé v ich hodinách.
+    V jeden deň nejdú dve videá z tej istej série (pilier), kým je z čoho vyberať."""
+    slots_def = sorted([(h, "short") for h in own["hours"]] + [(h, "long") for h in own["long_hours"]])
+    n = total = 0
+    for d in range(days + 1):
+        day = (now + dt.timedelta(days=d)).date()
+        if day.weekday() not in own["days"]:
+            continue
+        iso = day.isoformat()
+        there = db.q("""SELECT p.scheduled_at, COALESCE(i.pillar,'') pillar FROM posts p JOIN videos v ON v.id=p.video_id
+                        LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
+                        WHERE p.account_id=? AND p.status IN ('queued','review','uploading','done')
+                        AND substr(p.scheduled_at,1,10)=?""", (a["id"], iso))
+        taken = {int(r["scheduled_at"][11:13]) for r in there}
+        used = {r["pillar"] for r in there if r["pillar"]}
+        for h, kind in slots_def:
+            if dt.datetime.combine(day, dt.time(h)) <= now + dt.timedelta(minutes=20):
+                continue
+            total += 1
+            if h in taken:
+                continue
+            pool = [v for v in cand if (v["fmt"] == "long") == (kind == "long") and (not v["due"] or v["due"] == iso)]
+            if not pool:
+                continue
+            pool.sort(key=lambda v: (v["due"] != iso, v["pillar"] in used))  # video k dnešnej udalosti prvé, potom iná séria
+            v = pool[0]
+            cand.remove(v)
+            if v["pillar"]:
+                used.add(v["pillar"])
+            when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
+            if not dry:
+                db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
+                       (v["id"], a["id"], _fmt(when), "public", status))
+            n += 1
+    return n, total
 
 
 def plan_week(project_ids=None, days=7, per_day=None, dry=False):
@@ -78,16 +118,21 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
             cand = [v for v in cand if v["project_id"] in project_ids]
         own = project_plan(a["project_id"])
         if own:  # projekt má vlastné dni a hodiny
-            hours, how, per_day = own["hours"], "plán projektu", len(own["hours"])
-        else:
-            per_day = base_per_day
-            hours, how = stats.best_hours(a, max(per_day, 1))
-            hours = sorted(hours[:per_day])
+            n, slots_total = _plan_own(a, own, cand, days, now, status, jit, dry)
+            created += n
+            per_acc.append({"account": a["name"], "platform": a["platform"], "posts": n,
+                            "hours": sorted(own["hours"] + own["long_hours"]), "how": "plán projektu"})
+            if n == 0:
+                empty.append(a["name"])
+            elif n < slots_total:
+                short.append(a["name"])
+            continue
+        per_day = base_per_day
+        hours, how = stats.best_hours(a, max(per_day, 1))
+        hours = sorted(hours[:per_day])
         n, used_days, slots_total = 0, 0, 0
         for d in range(days + 1):
             day = (now + dt.timedelta(days=d)).date()
-            if own and day.weekday() not in own["days"]:
-                continue
             slots = [h for h in hours if dt.datetime.combine(day, dt.time(h)) > now + dt.timedelta(minutes=20)]
             if not slots:
                 continue
@@ -123,7 +168,7 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
         per_acc.append({"account": a["name"], "platform": a["platform"], "posts": n, "hours": hours, "how": how})
         if n == 0:
             empty.append(a["name"])
-        elif n < (slots_total if own else per_day * days):
+        elif n < per_day * days:
             short.append(a["name"])
     return {"created": created, "accounts": per_acc, "empty": empty, "short": short, "review": status == "review",
             "per_day": base_per_day}
