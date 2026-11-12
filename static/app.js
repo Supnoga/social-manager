@@ -773,7 +773,7 @@ async function pAccounts(m) {
     <input id="ttbId" placeholder="App ID" style="margin:6px 0"><input id="ttbSec" placeholder="Secret" type="password">
     <p class="small dim">Redirect URL: <code>${esc(S.meta.ttb_redirect)}</code></p>
     <div class="row"><button class="btn sec sm" onclick="saveTtb()">Uložiť</button><a class="btn sm" href="/api/accounts/ttb/connect">${I('link', 's')}Pripojiť účet</a></div>
-    <details style="margin-top:10px"><summary>Presmerovanie neprešlo?</summary><input id="ttbUrl" placeholder="Vlož adresu, kde si skončil" style="margin-top:8px"><button class="btn sec sm" style="margin-top:6px" onclick="pasteTtb()">Pripojiť z adresy</button></details>
+    <details style="margin-top:10px" ${S.meta.ttb_redirect_local ? '' : 'open'}><summary>Po prihlásení v TikToku sa stránka nenačíta? Skopíruj jej adresu sem</summary><input id="ttbUrl" placeholder="Vlož adresu, kde si skončil" style="margin-top:8px"><button class="btn sec sm" style="margin-top:6px" onclick="pasteTtb()">Pripojiť z adresy</button></details>
     <p class="small dim">Pre ďalší účet sa v TikToku prihlás do iného účtu a klikni Pripojiť znova.</p>`)}
   ${c('tiktok', 'TikTok – koncepty (záloha)', `<p class="small muted">Video príde ako koncept do TikTok appky, zverejníš ho v mobile. Nepotrebuje verejnú adresu.</p>${h.tt_creds ? ok : ''}
     <input id="ttKey" placeholder="Client key" style="margin:6px 0"><input id="ttSec" placeholder="Client secret" type="password">

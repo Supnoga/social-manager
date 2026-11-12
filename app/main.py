@@ -208,7 +208,7 @@ def api_meta():
                                                           ("radar_weekly", True)]},
         "inbox_count": db.one("SELECT COUNT(*) n FROM ideas WHERE status='inbox'")["n"],
         "yt_key": bool(db.get_setting("yt_api_key", "")),
-        "ttb_redirect": tiktok_business.redirect_uri(),
+        "ttb_redirect": tiktok_business.redirect_uri(), "ttb_redirect_local": tiktok_business.redirect_is_local(),
         "tunnel": tunnel.status(),
         "has": {"yt_client": bool(db.get_setting("yt_client")), "tt_creds": bool(db.get_setting("tt_client_key")),
                 "ttb_creds": bool(db.get_setting("ttb_app_id")),
@@ -229,7 +229,7 @@ def api_meta():
 @app.post("/api/settings")
 def api_settings(data: dict = Body(...)):
     allowed = {"ai_mode", "model_creative", "model_cheap", "paused", "claude_path", "meta_api_version", "tt_mode",
-               "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min",
+               "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min", "ttb_redirect",
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",

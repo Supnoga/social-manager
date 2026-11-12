@@ -32,9 +32,18 @@ def public_base():
     return b
 
 
+APPROVED_REDIRECT = "https://videa.n2ntechnology.com/oauth/ttb/callback/"
+
+
 def redirect_uri():
+    """Musí sedieť presne s adresou v schválenej TikTok appke. Nezávisí od verejnej adresy (tunela):
+    ak presmerovanie nikam nevedie, adresu z prehliadača vložíš do appky (Pripojiť z adresy)."""
+    return (db.get_setting("ttb_redirect", "") or "").strip() or APPROVED_REDIRECT
+
+
+def redirect_is_local():
     b = (db.get_setting("public_base_url", "") or "").rstrip("/")
-    return (b or "https://localhost:8765") + "/oauth/ttb/callback/"
+    return bool(b) and redirect_uri().startswith(b + "/")
 
 
 def _secret():
