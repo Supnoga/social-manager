@@ -205,7 +205,7 @@ def api_meta():
                                                           ("mt_azure_region", ""), ("mt_google", False),
                                                           ("require_approval", True), ("plan_per_day", 1),
                                                           ("auto_plan_week", False), ("radar_enabled", True),
-                                                          ("radar_weekly", True), ("plan_projects", {})]},
+                                                          ("radar_weekly", True), ("plan_projects", {}), ("auto_produce", {})]},
         "inbox_count": db.one("SELECT COUNT(*) n FROM ideas WHERE status='inbox'")["n"],
         "yt_key": bool(db.get_setting("yt_api_key", "")),
         "ttb_redirect": tiktok_business.redirect_uri(), "ttb_redirect_local": tiktok_business.redirect_is_local(),
@@ -233,7 +233,7 @@ def api_settings(data: dict = Body(...)):
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
-               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects"}
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -986,6 +986,121 @@ def _autopilot(params):
         AUTO["running"] = False
 
 
+# ---------------- Denná výroba: appka si sama drží zásobu hotových videí podľa plánu projektu ----------------
+PROD = {"running": False, "step": "", "log": [], "wait_until": 0}
+
+
+def _prod_supply(pid, fmt):
+    """Koľko hotových videí daného formátu ešte čaká na zverejnenie (nenaplánované + naplánované do budúcna)."""
+    return db.one("""SELECT COUNT(DISTINCT s.idea_id) n FROM videos v JOIN scripts s ON s.id=v.script_id JOIN ideas i ON i.id=s.idea_id
+                     WHERE v.project_id=? AND v.status='ready' AND COALESCE(i.format,'short')=?
+                     AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND p.status!='failed'
+                                     AND (p.status='done' OR p.scheduled_at<=datetime('now','localtime')))""", (pid, fmt))["n"]
+
+
+def _prod_pick(pid, fmt, n):
+    """Najlepšie schválené nápady bez scenára; každý z inej série, kým sa dá."""
+    rows = db.q("""SELECT i.id, COALESCE(i.pillar,'') pillar FROM ideas i WHERE i.project_id=? AND i.status='approved'
+                   AND COALESCE(i.format,'short')=? AND (i.due_date IS NULL OR i.due_date='')
+                   AND NOT EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id) ORDER BY i.score DESC, i.id""", (pid, fmt))
+    last = [r["pillar"] for r in db.q("""SELECT COALESCE(i.pillar,'') pillar FROM videos v JOIN scripts s ON s.id=v.script_id
+                   JOIN ideas i ON i.id=s.idea_id WHERE v.project_id=? ORDER BY v.id DESC LIMIT 2""", (pid,))]
+    out, used = [], set(x for x in last if x)
+    for r in rows:  # najprv z každej série jeden
+        if len(out) < n and r["pillar"] not in used:
+            out.append(r["id"])
+            if r["pillar"]:
+                used.add(r["pillar"])
+    for r in rows:  # keď inú sériu niet, ďalší najlepší
+        if len(out) < n and r["id"] not in out:
+            out.append(r["id"])
+    return out, len(rows)
+
+
+def _produce_once():
+    import time as _t
+    cfg = db.get_setting("auto_produce", {}) or {}
+    if not cfg or PROD["running"] or AUTO["running"] or db.get_setting("paused", False) or _t.time() < PROD["wait_until"]:
+        return
+    if any(not j.get("done") for j in JOBS.values()):
+        return  # používateľ práve niečo vyrába
+    PROD["running"] = True
+    try:
+        for pid_s, c in cfg.items():
+            pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
+            made = 0
+            for fmt in ("short", "long"):
+                per = int(c.get(fmt) or 0)
+                if not per:
+                    continue
+                need = min(per, per * ahead - _prod_supply(pid, fmt))
+                if need <= 0:
+                    continue
+                ids, left = _prod_pick(pid, fmt, need)
+                if left < per * 3 and not c.get("no_ideas"):  # zásoba nápadov dochádza: doplň ju jedným volaním
+                    PROD["step"] = "Dopĺňam nápady"
+                    try:
+                        before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
+                        content.run_task("ideas", {"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt})
+                        for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
+                            if r["id"] not in before and (r["score"] or 0) >= 7:
+                                db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))
+                        ids, left = _prod_pick(pid, fmt, need)
+                    except Exception as e:
+                        PROD["log"].append(f"nápady: {e}")
+                if ids and fmt == "short":
+                    PROD["step"] = "Píšem scenáre krátkych videí"
+                    make_scripts({"idea_ids": ids})
+                for i in ids:
+                    if fmt == "long":
+                        PROD["step"] = "Píšem scenár dlhého videa"
+                        make_scripts({"idea_ids": [i]})
+                    if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (i,)):
+                        continue
+                    PROD["step"] = f"Robím {'dlhé' if fmt == 'long' else 'krátke'} video"
+                    try:
+                        idea_produce_first(i, {})
+                        made += 1
+                    except Exception as e:
+                        PROD["log"].append(f"nápad {i}: {e}")
+                        db.run("UPDATE ideas SET status='new' WHERE id=?", (i,))  # nech sa na ňom výroba nezasekne
+            if made:
+                from . import planner
+                r = planner.plan_week([pid])
+                PROD["log"].append(f"{dt_now()} projekt {pid}: {made} nových videí, naplánovaných {r['created']}")
+        PROD["step"] = ""
+    except ai.NeedManual:
+        PROD["step"] = "Denná výroba potrebuje Claude Code"
+        PROD["wait_until"] = _t.time() + 3600
+    except Exception as e:
+        PROD["step"] = f"Chyba: {e}"
+        PROD["wait_until"] = _t.time() + 1800
+    finally:
+        PROD["running"] = False
+        PROD["log"] = PROD["log"][-30:]
+
+
+def dt_now():
+    import datetime as _d
+    return _d.datetime.now().strftime("%d.%m. %H:%M")
+
+
+def _produce_loop():
+    import time as _t
+    _t.sleep(90)
+    while True:
+        try:
+            _produce_once()
+        except Exception as e:
+            print("denná výroba:", e)
+        _t.sleep(300)
+
+
+@app.get("/api/produce")
+def produce_status():
+    return dict(PROD, config=db.get_setting("auto_produce", {}) or {})
+
+
 @app.post("/api/autopilot")
 def autopilot(params: dict = Body(...)):
     import threading
@@ -1545,7 +1660,8 @@ def main():
     except Exception:
         pass
     updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()) or bool(scheduler.state.get("current"))
-                               or AUTO.get("running"))
+                               or AUTO.get("running") or PROD.get("running"))
+    threading.Thread(target=_produce_loop, daemon=True).start()
     if os.environ.get("SM_NO_BROWSER") != "1":
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     try:
