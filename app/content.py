@@ -148,7 +148,7 @@ at least one concrete number, short sentences, a new visual every 2-4 s, pattern
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 4-7 scenes, long: 26-36 scenes; scene 1 = hook; onscreen headlines in plain words, not jargon; mix diagram kinds, use \"hero\" for story moments and number diagrams only when a number is spoken;
+"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 4-7 scenes, long: 26-36 scenes; scene 1 = hook; onscreen headlines in plain words, not jargon; SHOW, do not just tell: most scenes are a moving \"draw\" picture of the exact thing being described, number diagrams only when a number is spoken;
 scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.SPEC}),
 "description":"YouTube description: first sentence = what viewer learns incl. main search keyword, 2-4 sentences total",
 "caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
