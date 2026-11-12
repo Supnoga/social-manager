@@ -116,7 +116,7 @@ function planOwn(st) {
   const pp = st.plan_projects || {}, dn = ['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'];
   const rows = S.projects.filter(p => pp[p.id] && (pp[p.id].days || []).length).map(p => `<b>${esc(p.name)}</b>: ${pp[p.id].days.length === 7 ? 'každý deň' : pp[p.id].days.map(d => dn[d]).join(', ')}${(pp[p.id].hours || []).length ? ', krátke o ' + pp[p.id].hours.map(h => h + ':00').join(', ') : ''}${(pp[p.id].long_hours || []).length ? ', dlhé o ' + pp[p.id].long_hours.map(h => h + ':00').join(', ') : ''}`);
   const ap = st.auto_produce || {};
-  const auto = S.projects.filter(p => ap[p.id]).map(p => `<b>${esc(p.name)}</b>: ${ap[p.id].short || 0} krátke a ${ap[p.id].long || 0} dlhé denne`);
+  const auto = S.projects.filter(p => ap[p.id]).map(p => `<b>${esc(p.name)}</b>: ${ap[p.id].short || 0} krátke a ${ap[p.id].long || 0} dlhé denne${ap[p.id].from_long ? ' (Shorts sa robia z dlhého videa a idú von až po ňom)' : ''}`);
   return (rows.length ? `<p class="small dim">${I('clock', 's')} Vlastný rytmus podľa stratégie: ${rows.join(' · ')}</p>` : '')
     + (auto.length ? `<p class="small dim">${I('sparkles', 's')} Videá si appka vyrába a plánuje sama: ${auto.join(' · ')}</p>` : '');
 }

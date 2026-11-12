@@ -19,7 +19,8 @@ def _fmt(t):
 def _candidates(acc, platforms_of):
     """Hotové videá pre účet, ktoré na ňom ešte neboli (ani naplánované). Jedno video na nápad."""
     rows = db.q("""SELECT v.*, COALESCE(i.score,0) score, s.idea_id, i.source isrc, COALESCE(i.due_date,'') due,
-                   COALESCE(i.markets,'') markets, COALESCE(i.format,'short') fmt, COALESCE(i.pillar,'') pillar FROM videos v
+                   COALESCE(i.markets,'') markets, COALESCE(i.format,'short') fmt, COALESCE(i.pillar,'') pillar,
+                   COALESCE(i.parent_id,0) parent FROM videos v
                    LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
                    WHERE v.status='ready' AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND p.account_id=?
                          AND p.status!='failed')
@@ -67,6 +68,9 @@ def _plan_own(a, own, cand, days, now, status, jit, dry):
     V jeden deň nejdú dve videá z tej istej série (pilier), kým je z čoho vyberať."""
     slots_def = sorted([(h, "short") for h in own["hours"]] + [(h, "long") for h in own["long_hours"]])
     n = total = 0
+    # Shorts vyrobené z dlhého videa idú von až po ňom; najprv tie z najnovšieho dlhého videa
+    par = {r["idea_id"]: r["at"] for r in db.q("""SELECT s.idea_id, MIN(p.scheduled_at) at FROM posts p JOIN videos v ON v.id=p.video_id
+                   JOIN scripts s ON s.id=v.script_id WHERE p.account_id=? AND p.status!='failed' GROUP BY s.idea_id""", (a["id"],))}
     for d in range(days + 1):
         day = (now + dt.timedelta(days=d)).date()
         if day.weekday() not in own["days"]:
@@ -84,15 +88,21 @@ def _plan_own(a, own, cand, days, now, status, jit, dry):
             total += 1
             if h in taken:
                 continue
-            pool = [v for v in cand if (v["fmt"] == "long") == (kind == "long") and (not v["due"] or v["due"] == iso)]
+            slot = _fmt(dt.datetime.combine(day, dt.time(h)))
+            pool = [v for v in cand if (v["fmt"] == "long") == (kind == "long") and (not v["due"] or v["due"] == iso)
+                    and (not v["parent"] or par.get(v["parent"], "9") <= slot)]
             if not pool:
                 continue
-            pool.sort(key=lambda v: (v["due"] != iso, v["pillar"] in used))  # video k dnešnej udalosti prvé, potom iná séria
+            newest = max((par[v["parent"]] for v in pool if v["parent"]), default="")
+            pool.sort(key=lambda v: (v["due"] != iso, not (v["parent"] and par[v["parent"]] == newest),
+                                     v["pillar"] in used and not v["parent"]))  # video k dnešnej udalosti prvé, potom iná séria
             v = pool[0]
             cand.remove(v)
             if v["pillar"]:
                 used.add(v["pillar"])
             when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
+            if kind == "long" and v["idea_id"]:
+                par.setdefault(v["idea_id"], slot)
             if not dry:
                 db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
                        (v["id"], a["id"], _fmt(when), "public", status))

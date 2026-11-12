@@ -147,11 +147,30 @@ def access_token(account):
     return t["access_token"]
 
 
+FULL = {"en": "Watch the full video", "sk": "Celé video", "cs": "Celé video", "de": "Das ganze Video", "fr": "La vidéo complète",
+        "es": "El video completo", "it": "Il video completo", "pl": "Cały film", "pt": "O vídeo completo", "nl": "De volledige video"}
+
+
+def full_video_line(video, account):
+    """Short vyrobený z dlhého videa: prvý riadok popisu je odkaz na celé video (ak už je na tomto kanáli)."""
+    try:
+        r = db.one("""SELECT p.external_id FROM scripts s JOIN ideas i ON i.id=s.idea_id JOIN scripts ps ON ps.idea_id=i.parent_id
+                      JOIN videos pv ON pv.script_id=ps.id JOIN posts p ON p.video_id=pv.id
+                      WHERE s.id=? AND i.parent_id>0 AND p.account_id=? AND p.external_id!='' ORDER BY p.id DESC LIMIT 1""",
+                   (video.get("script_id") or 0, account["id"]))
+    except Exception:
+        r = None
+    if not r:
+        return ""
+    return f"{FULL.get(video.get('lang') or 'en', '▶')}: https://youtu.be/{r['external_id']}\n\n"
+
+
 def upload(account, video, privacy="public", publish_at=None):
     tok = access_token(account)
     title, desc = text_for(video, "youtube", account)
     from .. import captions
     tags = captions.build(video, "youtube", account)["tags"][:15]
+    desc = (full_video_line(video, account) + desc)[:4900]
     status = {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}
     if publish_at:
         status["privacyStatus"] = "private"
