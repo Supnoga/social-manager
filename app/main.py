@@ -238,12 +238,20 @@ def api_settings(data: dict = Body(...)):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
         db.set_setting("verify_files", vf)
-    if "cf_tunnel_token" in data:
-        tunnel.stop()
-        tunnel.start()
+    if "cf_tunnel_token" in data:  # Cloudflare kopíruje celý príkaz, vezmeme len token eyJ…
+        import re as _re
+        raw = str(data["cf_tunnel_token"] or "").strip()
+        m = _re.search(r"eyJ[A-Za-z0-9_\-=.+/]+", raw)
+        data["cf_tunnel_token"] = m.group(0) if m else raw
+        restart = data["cf_tunnel_token"] != db.get_setting("cf_tunnel_token", "")
+    else:
+        restart = False
     for k, v in data.items():
         if k in allowed:
             db.set_setting(k, v)
+    if restart:
+        tunnel.stop()
+        tunnel.start()
     return {"ok": True}
 
 

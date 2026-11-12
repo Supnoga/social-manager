@@ -48,12 +48,13 @@ def _run(token):
     global _proc
     try:
         b = _binary()
-        _proc = subprocess.Popen([b, "tunnel", "--no-autoupdate", "run", "--token", token],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        p = _proc = subprocess.Popen([b, "tunnel", "--no-autoupdate", "run", "--token", token],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
         _state.update(running=True, error="")
-        err = _proc.stderr.read()
-        _proc.wait()
-        _state.update(running=False, error=(err or "")[-300:])
+        err = p.stderr.read()
+        p.wait()
+        if _proc is p:  # starý (zastavený) tunel neprepíše stav nového
+            _state.update(running=False, error=(err or "")[-300:])
     except Exception as e:
         _state.update(running=False, error=str(e))
 
@@ -65,8 +66,15 @@ def start():
 
 
 def stop():
-    if _proc and _proc.poll() is None:
-        _proc.terminate()
+    global _proc
+    p, _proc = _proc, None
+    if p and p.poll() is None:
+        p.terminate()
+        try:
+            p.wait(timeout=10)
+        except Exception:
+            p.kill()
+    _state.update(running=False)
 
 
 def status():

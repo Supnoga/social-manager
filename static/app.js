@@ -890,7 +890,7 @@ async function pSettings(m) {
   <div class="card"><h2>${I('globe')}Verejná adresa (TikTok Business)</h2>
     <p class="small muted">TikTok si videá sťahuje z internetu. Appka ich sprístupní cez bezplatný Cloudflare Tunnel na tvojej doméne – zvonka sú viditeľné len tajné odkazy na videá.</p>
     <label class="l">Verejná adresa</label><input id="pubUrl" value="${esc(st.public_base_url)}" placeholder="https://videa.tvojadomena.sk">
-    <label class="l">Cloudflare Tunnel token</label><input id="cfTok" type="password" value="${esc(st.cf_tunnel_token)}">
+    <label class="l">Cloudflare Tunnel token</label><input id="cfTok" type="password" value="${esc(st.cf_tunnel_token)}" placeholder="Vlož celý príkaz z Cloudflare, appka si token vyberie sama">
     <p class="small">Tunel: ${S.meta.tunnel.running ? '<span class="ok-t">beží</span>' : S.meta.tunnel.configured ? '<span class="bad-t">nebeží</span> ' + esc(S.meta.tunnel.error || '') : '<span class="dim">nenastavený</span>'}</p>
     <div class="g2"><div><label class="l">Overovací súbor – názov</label><input id="vfName" placeholder="tiktokXXXX.txt"></div><div><label class="l">…a obsah</label><input id="vfCont"></div></div>
     <p class="small dim">Uložené: ${Object.keys(st.verify_files || {}).map(esc).join(', ') || 'žiadne'}</p>
