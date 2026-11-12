@@ -15,9 +15,10 @@ import threading
 from . import db
 
 W, H = 1080, 1920
-KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text")
+KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
-              "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield")
+              "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
+              "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city")
 
 # Stručný popis pre AI (pridá sa do promptu scenára, cca 200 tokenov)
 SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: black, thin line schematics drawn step by step). Pick ONE that explains the point visually:
@@ -27,7 +28,8 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"k":"compare","a":["worse option","value"],"b":["better option","value"]} | {"k":"count","v":75,"pre":"","suf":" %","l":"label"} |
 {"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons: """ + ",".join(ICON_NAMES) + """ |
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
-{"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"}
+{"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"} |
+{"k":"hero","i":"icon","w":"2-4 words","s":"optional short second line"} (one big animated picture of the thing we talk about; use it for story, everyday comparisons and scenes without numbers)
 Labels max 4 words, numbers as numbers."""
 
 
@@ -35,7 +37,7 @@ Labels max 4 words, numbers as numbers."""
 def _slots(d):
     """Zoznam (cesta) k textom v diagrame. Čísla sa neprekladajú."""
     k, out = d.get("k"), []
-    for f in ("a", "b", "c", "x", "l", "w", "u", "pre", "suf"):
+    for f in ("a", "b", "c", "x", "l", "w", "s", "u", "pre", "suf"):
         v = d.get(f)
         if isinstance(v, str) and v.strip() and not (f in ("u", "pre", "suf") and not re.search(r"[^\W\d_]{4,}", v)):
             out.append((f,))
@@ -97,7 +99,12 @@ KEYWORDS = [
     (r"podlah|floor|fußboden", "floor"),
     (r"€|eur|úspor|ušetr|cena|cien|náklad|platí|faktúr|price|cost|kosten|spar", "coin"),
     (r"zim|mráz|chlad|-\s?\d+\s?°|winter|cold|frost|kalt", "snow"),
-    (r"leto|slnk|solár|fotovolt|summer|sun|solar|sonne", "sun"),
+    (r"solár|fotovolt|solar panel|panel|photovolt", "panel"),
+    (r"veter|turbín|wind|turbine", "turbine"),
+    (r"batéri|battery|batterie|akumul", "battery"),
+    (r"elektromobil|auto\b|\bcar\b|\bev\b", "car"),
+    (r"sieť|grid|netz|vedenie|blackout", "pylon"),
+    (r"leto|slnk|summer|sun|sonne", "sun"),
     (r"plyn|gas|kotol|boiler|kessel|drev|pelet", "flame"),
     (r"elektr|prúd|kwh|strom|electric|power", "bolt"),
     (r"teplá voda|voda|water|wasser|bojler|zásobník", "drop"),
@@ -142,6 +149,8 @@ def guess(onscreen, visual=""):
         m = re.search(r"-?\d[\d\s.,]*\s*(%|€|kWh|kW|°C|×|x)?", onscreen)
         suf = (m.group(1) or "") if m else ""
         return {"k": "count", "v": n, "pre": "", "suf": (" " + suf) if suf and suf not in "%×x" else suf, "l": ""}
+    if len(icons) == 1:
+        return {"k": "hero", "i": icons[0], "w": ""}
     if icons:
         return {"k": "icons", "i": [[i, ""] for i in icons[:3]]}
     return {"k": "text", "w": onscreen or ""}
@@ -328,17 +337,22 @@ svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
 #end img{position:absolute;left:50%;top:50%;max-width:660px;max-height:360px}
 #end .ln{position:absolute;left:50%;top:1180px;width:160px;height:6px;margin-left:-80px;background:var(--acc)}
 #bar{position:absolute;left:0;top:1906px;height:14px;background:var(--acc);width:0}
+#bg{position:absolute;left:0;top:0}
+/* bezpečná zóna na výšku: vpravo tlačidlá, dole popis a názov kanála, hore lišta aplikácie */
+#stage{position:absolute;inset:0;transform-origin:72px 196px;transform:translate(24px,74px) scale(.92)}
+.viz{transform-origin:center}
 body.wide,html.wide{width:1920px;height:1080px}
-.wide #glow{left:900px;top:-120px}
-.wide .kick{left:110px;top:236px}
-.wide .ttl{left:110px;top:284px;width:760px}
-.wide .viz{left:966px;top:190px}
-.wide #cap{left:260px;width:1400px;top:872px;font-size:50px}
-.wide #lg{left:110px;top:84px;max-width:300px;max-height:76px}
+.wide #stage{transform:none}
+.wide #glow{left:310px;top:-110px}
+.wide #lg{left:150px;top:72px;max-width:280px;max-height:64px}
+.wide .kick{left:150px;top:166px;font-size:22px}
+.wide .ttl{left:150px;top:200px;width:1620px}
+.wide .viz{left:528px;top:300px}
+.wide #cap{left:260px;width:1400px;top:902px;font-size:44px}
 .wide #end .gl{left:310px;top:-110px}
 .wide #end .ln{top:760px}
 .wide #bar{top:1068px;height:12px}
-</style></head><body><div id="glow"></div><div id="root"></div><img id="lg"><div id="cap"></div><div id="end"><div class="gl"></div><img><div class="ln"></div></div><div id="bar"></div>
+</style></head><body><canvas id="bg"></canvas><div id="glow"></div><div id="stage"><div id="root"></div><img id="lg"><div id="cap"></div></div><div id="end"><div class="gl"></div><img><div class="ln"></div></div><div id="bar"></div>
 <script>
 const D=__DATA__;
 document.documentElement.style.setProperty('--acc',D.acc);document.documentElement.lang=D.lang||'en';
@@ -375,8 +389,21 @@ cross:'<circle cx="50" cy="50" r="36"/><path d="M36 36 L64 64 M64 36 L36 64"/>',
 user:'<circle cx="50" cy="34" r="16"/><path d="M18 88 C18 64 32 56 50 56 C68 56 82 64 82 88"/>',
 tool:'<path d="M64 12 A20 20 0 0 0 46 40 L14 72 A8 8 0 0 0 26 84 L58 52 A20 20 0 0 0 86 34 L74 40 L64 30 L70 18 Z"/>',
 chart:'<path d="M14 14 V86 H88"/><path d="M24 70 L44 50 L58 60 L84 28"/><path d="M72 28 H84 V40"/>',
-shield:'<path d="M50 10 L82 22 V46 C82 68 68 82 50 90 C32 82 18 68 18 46 V22 Z"/><path d="M36 50 L46 60 L66 38"/>'};
-function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[name]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});return s}
+shield:'<path d="M50 10 L82 22 V46 C82 68 68 82 50 90 C32 82 18 68 18 46 V22 Z"/><path d="M36 50 L46 60 L66 38"/>',
+panel:'<path d="M22 30 H78 L90 76 H10 Z"/><path d="M41 30 L36 76 M59 30 L64 76 M18 46 H82 M14 61 H86"/><path d="M50 76 V90 M36 90 H64"/>',
+turbine:'<path d="M50 44 L46 92 H54 Z"/><g class="spin"><circle cx="50" cy="40" r="4"/><path d="M50 36 C54 26 54 14 50 6 C46 14 46 26 50 36 Z"/><path d="M53.5 42 C60 50 70 56 79 57 C74 49 64 43 53.5 42 Z"/><path d="M46.5 42 C36 43 26 49 21 57 C30 56 40 50 46.5 42 Z"/></g>',
+battery:'<rect x="24" y="20" width="52" height="70" rx="8"/><path d="M40 20 V12 H60 V20"/><path d="M34 76 H66 M34 62 H66 M34 48 H66"/>',
+car:'<path d="M12 62 V50 L24 46 L34 30 H66 L78 46 L88 50 V62 Z"/><path d="M34 46 H68"/><circle cx="30" cy="66" r="8"/><circle cx="70" cy="66" r="8"/><path d="M52 12 L46 22 H54 L48 30"/>',
+pylon:'<path d="M40 90 L46 14 H54 L60 90"/><path d="M22 30 H78 M30 48 H70"/><path d="M44 30 L57 48 M56 30 L43 48 M42 66 L58 80 M58 66 L42 80"/><path d="M22 30 V36 M78 30 V36 M30 48 V54 M70 48 V54"/>',
+bulb:'<path d="M36 62 C26 54 22 44 24 34 A26 26 0 0 1 76 34 C78 44 74 54 64 62 V72 H36 Z"/><path d="M40 80 H60 M44 88 H56"/><path d="M44 62 V48 L50 42 L56 48 V62"/>',
+meter:'<rect x="18" y="14" width="64" height="72" rx="8"/><path d="M28 28 H72 V46 H28 Z"/><path d="M36 37 H44 M50 37 H64"/><circle cx="50" cy="66" r="10"/><path d="M50 66 L56 60"/>',
+globe:'<circle cx="50" cy="50" r="36"/><path d="M14 50 H86"/><path d="M50 14 C34 26 34 74 50 86 C66 74 66 26 50 14 Z"/><path d="M22 30 C38 38 62 38 78 30 M22 70 C38 62 62 62 78 70"/>',
+window:'<rect x="20" y="14" width="60" height="72" rx="3"/><path d="M50 14 V86 M20 50 H80"/><path d="M28 24 L38 34 M60 60 L70 70"/>',
+factory:'<path d="M10 88 V48 L34 60 V48 L58 60 V48 L70 54 V18 H84 V88 Z"/><path d="M22 74 H30 M44 74 H52 M64 74 H72"/><path d="M72 10 C76 6 82 8 84 4"/>',
+cloud:'<path d="M28 70 A16 16 0 0 1 30 38 A22 22 0 0 1 72 42 A14 14 0 0 1 72 70 Z"/><path d="M36 80 L32 90 M52 80 L48 90 M68 80 L64 90"/>',
+city:'<path d="M8 88 H92"/><rect x="14" y="40" width="20" height="48"/><rect x="40" y="18" width="22" height="70"/><rect x="68" y="50" width="18" height="38"/><path d="M20 50 H28 M20 62 H28 M46 30 H56 M46 44 H56 M46 58 H56 M73 60 H81 M73 72 H81"/>'};
+function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[name]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
+const SPIN=[];
 function draw(s,p){s.querySelectorAll('.d').forEach(d=>{d.style.strokeDasharray='1 1';d.style.strokeDashoffset=1-cl(p)})}
 function show(e,p,dy){e.style.opacity=cl(p);e.style.transform=`translateY(${(1-E(p))*(dy==null?24:dy)}px)`}
 // ---------- diagramy ----------
@@ -466,6 +493,13 @@ V.split=(v,d)=>{const I=(d.i||[]).slice(0,3);const tot=I.reduce((s,x)=>s+N(x[1])
 const segs=I.map((x,i)=>{const w=N(x[1])/tot*864;const r=el('div','',`position:absolute;left:${x0}px;top:170px;height:120px;width:0;background:${cols[i]}`);
 const n=el('div','big',`left:${x0}px;top:${i%2?330:40}px;width:${Math.max(w,300)}px;font-size:72px;color:${i==0?'var(--acc)':'#fff'}`);const lb=el('div','lab',`left:${x0}px;top:${i%2?412:122}px;width:${Math.max(w,300)}px`,esc(x[0]));v.append(r,n,lb);fit(lb,24,16,40);
 const o={r,n,lb,w,v:N(x[1])};x0+=w;return o});return (t,st)=>segs.forEach((o,i)=>{const p=st(i*1.1,.9);o.r.style.width=(E(p)*o.w)+'px';o.n.textContent=NF(o.v*E(p),decs(o.v))+(d.u?' '+d.u:'');show(o.n,p,0);show(o.lb,p,0)})};
+V.hero=(v,d)=>{const has=!!(d.w||d.s);const sz=has?330:400,cx=432,cy=has?200:270;
+const rings=[0,1,2].map(i=>{const r=el('div','',`position:absolute;left:${cx-sz*.5}px;top:${cy-sz*.5}px;width:${sz}px;height:${sz}px;border-radius:50%;border:2px solid var(--acc);opacity:0`);v.append(r);return r});
+const halo=el('div','',`position:absolute;left:${cx-sz*.95}px;top:${cy-sz*.95}px;width:${sz*1.9}px;height:${sz*1.9}px;border-radius:50%;background:radial-gradient(circle,var(--acc) 0%,transparent 62%);opacity:0`);v.append(halo);
+const ic=icon(d.i||'bolt',sz,'#fff',2.2);ic.style.left=(cx-sz/2)+'px';ic.style.top=(cy-sz/2)+'px';v.append(ic);
+const w=el('div','big',`left:0;top:${cy+sz/2+26}px;width:864px;text-align:center;font-size:70px;text-transform:uppercase`,esc(d.w||'')),s2=el('div','lab a',`left:82px;top:${cy+sz/2+112}px;width:700px;text-align:center;font-size:30px`,esc(d.s||''));v.append(w,s2);fit(w,70,34,84,840);fit(s2,30,18,70,700);
+return (t,st)=>{const p=st(0,1.4);draw(ic,p);ic.style.opacity=p>0?1:0;ic.style.transform=`translateY(${Math.sin(t*1.1)*8}px) scale(${.9+.1*E(p)})`;halo.style.opacity=.22*E(st(.3,1.2))*(1+.12*Math.sin(t*1.6));
+rings.forEach((r,i)=>{const q=((t*.32+i/3)%1);const on=cl(st(.8,.6));r.style.transform=`scale(${.72+q*.9})`;r.style.opacity=on*(1-q)*.55});show(w,st(1,.6),30);show(s2,st(1.5,.6),20)}};
 V.text=(v,d)=>{const ws=String(d.w||'').split(/\s+/).filter(Boolean).slice(0,6);const box=el('div','',`position:absolute;left:0;top:40px;width:864px;height:480px;display:flex;flex-wrap:wrap;align-content:center;gap:0 22px;font-weight:900;text-transform:uppercase;line-height:1.02;font-size:118px;letter-spacing:-2px`);
 const sp=ws.map((w,i)=>{const e=el('span','',i==ws.length-1?'color:var(--acc)':'',esc(w));box.append(e);return e});v.append(box);fit(box,118,48,480,864);
 return (t,st)=>sp.forEach((e,i)=>{const p=st(i*.25,.45);e.style.opacity=p;e.style.display='inline-block';e.style.transform=`translateY(${(1-E(p))*50}px)`})};
@@ -482,7 +516,7 @@ const WIDE=!!D.wide;if(WIDE){document.documentElement.classList.add('wide');docu
 const root=document.getElementById('root');const SC=D.scenes.map((sc,i)=>{const w=el('div','sc');w.style.display='block';root.append(w);
 const k=el('div','kick','',`<b>${String(i+1).padStart(2,'0')}</b>${D.kicker?' · '+esc(D.kicker):''} · ${i+1}/${D.scenes.length}`);
 const tt=el('div','ttl');tt.lang=D.lang;tt.innerHTML=String(sc.h||'').split(/\s+/).filter(Boolean).map(x=>`<span class="w"><span>${esc(x)}</span></span>`).join(' ');w.append(k,tt);
-const intro=i==0;if(WIDE)fit(tt,intro?92:74,36,470,760);else fit(tt,intro?104:82,44,intro?330:270,860);const th=tt.offsetHeight;const vz=el('div','viz');if(!WIDE)vz.style.top=Math.max(690,362+th+90)+'px';w.append(vz);
+const intro=i==0;if(WIDE)fit(tt,intro?66:58,34,76,1620);else fit(tt,intro?104:82,44,intro?330:270,860);const th=tt.offsetHeight;const vz=el('div','viz');if(!WIDE)vz.style.top=Math.max(690,362+th+90)+'px';w.append(vz);
 let upd=()=>{};try{upd=(V[sc.v.k]||V.text)(vz,sc.v)||(()=>{})}catch(e){vz.textContent=''}
 w.style.display='none';
 return {w,k,tt,vz,upd,t0:sc.t0,t1:sc.t1,steps:sc.steps||0}});
@@ -490,6 +524,13 @@ const CAP=document.getElementById('cap'),BAR=document.getElementById('bar'),GLOW
 const EIMG=END.querySelector('img'),ELN=END.querySelector('.ln'),EGL=END.querySelector('.gl');const TAIL=D.tail||0;
 if(D.logo){LG.src=D.logo;LG.style.display='block'}if(D.logoEnd||D.logo)EIMG.src=D.logoEnd||D.logo;
 const XF=.22;
+// pozadie v pohybe: jemná mriežka a čiastočky energie, ktoré pomaly stúpajú
+const BG=document.getElementById('bg'),PW=WIDE?1920:1080,PH=WIDE?1080:1920;BG.width=PW;BG.height=PH;const CX=BG.getContext('2d');
+let _sd=7;const rnd=()=>{_sd=(_sd*16807)%2147483647;return _sd/2147483647};
+const PT=Array.from({length:WIDE?46:38},()=>({x:rnd(),y:rnd(),r:1.2+rnd()*2.6,v:.012+rnd()*.03,ph:rnd()*6.28,a:rnd()<.3}));
+function drawBg(t,ending){CX.clearRect(0,0,PW,PH);if(ending)return;const g=120,off=(t*9)%g;CX.strokeStyle='rgba(255,255,255,.035)';CX.lineWidth=1;CX.beginPath();
+for(let x=-g+off;x<PW+g;x+=g){CX.moveTo(x,0);CX.lineTo(x,PH)}for(let y=-g+off*.6;y<PH+g;y+=g){CX.moveTo(0,y);CX.lineTo(PW,y)}CX.stroke();
+PT.forEach(p=>{const y=((p.y-t*p.v)%1+1)%1*PH,x=p.x*PW+Math.sin(t*.5+p.ph)*26;const al=(.10+.10*Math.sin(t*.9+p.ph))*(p.a?1.9:1);CX.fillStyle=p.a?D.acc:'#fff';CX.globalAlpha=Math.max(0,al);CX.beginPath();CX.arc(x,y,p.r,0,6.3);CX.fill()});CX.globalAlpha=1}
 function renderAt(t){let cur=SC.length-1;for(let i=0;i<SC.length;i++){if(t<SC[i].t1){cur=i;break}}
 const ending=TAIL>0&&t>=D.total,et=t-D.total;
 SC.forEach((s,i)=>{const lt=t-s.t0,dur=s.t1-s.t0;const vis=!(ending&&et>.3)&&(i==cur||(i==cur-1&&t-SC[cur].t0<XF));s.w.style.display=vis?'block':'none';if(!vis)return;
@@ -497,7 +538,8 @@ if(i<cur){const o=cl((t-SC[cur].t0)/XF);s.w.style.opacity=1-o;s.w.style.transfor
 s.w.style.opacity=ending?1-cl(et/.3):1;s.w.style.transform='';const l2=i==0?lt:lt-XF;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
 const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=E((l2-.2)/.4);try{s.upd(lt,st)}catch(e){}});
+s.vz.style.opacity=E((l2-.2)/.4);s.vz.style.transform=`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.12:1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
 if(ending){CAP.innerHTML='';LG.style.opacity=1-cl(et/.3);END.style.display='block';const p=E((et-.25)/.6);END.style.opacity=cl(et/.3);
@@ -507,14 +549,14 @@ END.style.display='none';LG.style.opacity=.96;
 let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e){ci=i;break}}
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
-const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,50,34,130,1400);else fit(CAP,60,38,150,864);lastCap=ci}}
+const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,30,112,1400);else fit(CAP,60,38,150,864);lastCap=ci}}
 window.READY=true;
 </script></body></html>"""
 
 STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars": lambda d: len(d.get("i") or []) + 1,
          "calc": lambda d: len(d.get("r") or []) + .5, "compare": lambda d: 2.5, "count": lambda d: 2, "list": lambda d: len(d.get("i") or []),
          "icons": lambda d: len(d.get("i") or []) + .5, "temp": lambda d: 3.5, "house": lambda d: len(d.get("i") or []) + 1.5,
-         "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5,
+         "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5, "hero": lambda d: 2.5,
          "product": lambda d: len(d.get("i") or []) + 1.5}
 
 _lock = threading.Lock()

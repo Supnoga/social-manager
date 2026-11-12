@@ -140,12 +140,15 @@ def scripts_prompt(params):
 Write production-ready video scripts for these ideas:
 {items}
 
-Rules: short = 110-150 spoken words (~45s), long = 900-1200 words for a horizontal YouTube video (6-8 min): open with the question and promise the answer in the first 20 seconds, then 4-5 clear chapters (how it works, the numbers with stated assumptions, common mistakes or myths, what to do), a one-sentence recap and a question for comments; never pad. Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
+Rules: short = 110-150 spoken words (~45s). long = 1300-1700 words for a horizontal YouTube video (8-10 min).
+STYLE (most important): tell it like a great popular-science storyteller, not like a datasheet. Talk to one curious person with no technical background. Describe what actually happens, step by step, in plain everyday words, so the viewer can picture it. Use comparisons from daily life (a fridge, a bicycle pump, a bathtub, a sponge). Explain every technical word the moment you first use it, or do not use it. Keep curiosity alive: open small questions and answer them a few sentences later ("So where does the heat come from? Here is the surprising part."). Prefer one memorable number over five; never list specs. Sound warm, calm and a little amazed by how things work.
+Long videos: open with the question and promise the answer, then tell a story in 4-5 chapters that flow into each other (what people believe, what really happens inside, what it means in real life, the mistakes, what to do), end with a one-sentence recap and a question for comments; take your time, never rush, never pad.
+Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
 at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts, end with a natural CTA (follow/save/comment). Spoken text must sound natural for voice-over (TTS),
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 4-7 scenes, long: 18-26 scenes; scene 1 = hook;
+"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 4-7 scenes, long: 26-36 scenes; scene 1 = hook; onscreen headlines in plain words, not jargon; mix diagram kinds, use \"hero\" for story moments and number diagrams only when a number is spoken;
 scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.SPEC}),
 "description":"YouTube description: first sentence = what viewer learns incl. main search keyword, 2-4 sentences total",
 "caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
