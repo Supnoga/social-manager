@@ -1193,6 +1193,7 @@ def _prod_plan(pid, made):
 
 
 SCRIPTS = {"running": False, "written": 0, "step": "", "pause_until": 0, "log": []}
+_refill_lock = threading.Lock()
 
 
 def _script_need(pid, c):
@@ -1202,8 +1203,26 @@ def _script_need(pid, c):
 
 def _script_one(pid, c):
     """Napíše vopred jeden scenár dlhého videa + scenáre jeho Shorts (bez skladania videa). Vráti True, ak niečo napísal."""
-    ids, _ = _prod_pick(pid, "long", 1, int(c.get("min_score") or 0))
+    ms = int(c.get("min_score") or 0)
+    ids, _ = _prod_pick(pid, "long", 1, ms)
+    rk = f"{dt_now()[:6]}:{pid}"
+    with _refill_lock:
+        tries = SCRIPTS.setdefault("refills", {}).get(rk, 0)
+        if not ids and tries < int(nightly.cfg().get("idea_refills") or 8):
+            SCRIPTS["refills"][rk] = tries + 1
+        else:
+            tries = -1
+    if not ids and tries >= 0:  # nápady s dosť vysokým hodnotením došli: vymysli ďalšie (jedno volanie AI)
+        SCRIPTS["step"] = f"Vymýšľam nápady (projekt {pid})"
+        before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
+        content.run_task("ideas", {"project_id": pid, "count": 10, "format": "long"})
+        for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
+            if r["id"] not in before and (r["score"] or 0) >= max(7, ms):
+                db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))
+        ids, _ = _prod_pick(pid, "long", 1, ms)
     if not ids:
+        if tries < 0:  # dnes už vymýšľať nebudeme: projekt preskakuj do zajtra
+            SCRIPTS.setdefault("empty", {})[rk] = True
         return False
     iid = ids[0]
     db.run("UPDATE ideas SET ahead=1 WHERE id=?", (iid,))
@@ -1239,7 +1258,7 @@ def _script_ahead_loop():
                     best = None
                     for pid_s, c in cfg.items():
                         pid = int(pid_s)
-                        if pid in busy or not int(c.get("long") or 0):
+                        if pid in busy or not int(c.get("long") or 0) or SCRIPTS.get("empty", {}).get(f"{dt_now()[:6]}:{pid}"):
                             continue
                         need = _script_need(pid, c)
                         if need > 0 and (best is None or need > best[0]):
