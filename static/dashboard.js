@@ -166,9 +166,17 @@ function prodCard(proj, days) {
   const per = DAYS.find(d => d[0] === days)?.[1] || days + ' dní';
   const t = (ic, n, label, cls = '', hint = '') => `<div class="dp ${cls}" ${hint ? `data-tip="${esc(hint)}"` : ''}>${I(ic, 's')}<b>${nf(n)}</b><span>${label}</span></div>`;
   return `<div class="card"><div class="row"><h2 style="margin:0;flex:1">Výroba videí</h2><span class="small dim">${nx ? 'najbližšie zverejnenie ' + nx.slice(8, 10) + '.' + nx.slice(5, 7) + '. ' + nx.slice(11, 16) : ''}</span></div>
-    <div class="dprod">${t('bulb', s('ideas'), 'nápadov v zásobníku')}${t('pencil', s('scripts'), 'scenárov za ' + per)}${t('film', s('made'), 'vyrobených videí za ' + per, '', 'Každá jazyková verzia sa ráta zvlášť.')}
+    <div class="dprod">${t('bulb', s('ideas'), 'nápadov v zásobníku')}${t('file', s('ready'), 'scenárov pripravených na video', '', 'Hotové scenáre, z ktorých ešte nie je video. Zásoba dopredu.')}${t('pencil', s('scripts'), 'scenárov napísaných za ' + per, '', 'Celkom ' + nf(s('scripts_all')) + ' scenárov od začiatku.')}${t('film', s('made'), 'vyrobených videí za ' + per, '', 'Každá jazyková verzia sa ráta zvlášť.')}
     ${t('eye', s('review'), 'čaká na schválenie', s('review') ? 'warn' : '')}${t('calendar', s('queued'), 'naplánovaných')}${t('send', s('done'), 'zverejnených za ' + per, 'ok')}
-    ${s('failed') ? t('alert', s('failed'), 's chybou', 'bad', 'Pozri Publikovanie.') : ''}</div></div>`;
+    ${s('failed') ? t('alert', s('failed'), 's chybou', 'bad', 'Pozri Publikovanie.') : ''}</div>${proj ? '' : prodByProject(P)}</div>`;
+}
+
+function prodByProject(P) {
+  const rows = (S.projects || []).map(p => ({ p, x: P[String(p.id)] || {} })).filter(r => r.x.ready || r.x.ideas || r.x.queued || r.x.scripts_all)
+    .sort((a, b) => (b.x.ready || 0) - (a.x.ready || 0));
+  if (rows.length < 2) return '';
+  return `<table class="dtab" style="margin-top:14px"><thead><tr><th>Projekt</th><th class="r">Nápady</th><th class="r">Scenáre pripravené</th><th class="r">Scenáre celkom</th><th class="r">Naplánované videá</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${esc(r.p.color || 'var(--acc)')}"></span> ${esc(r.p.name)}</td><td class="r">${nf(r.x.ideas || 0)}</td><td class="r"><b>${nf(r.x.ready || 0)}</b></td><td class="r">${nf(r.x.scripts_all || 0)}</td><td class="r">${nf(r.x.queued || 0)}</td></tr>`).join('')}</tbody></table>`;
 }
 
 function yppCard(yt, f) {
