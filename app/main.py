@@ -1110,21 +1110,26 @@ def _produce_once():
     try:
         _prod_resume(cfg)
         cap = int(nightly.cfg().get("max_long_day") or 0)  # strop dlhých videí za deň (šetrí týždenný limit Claude Max)
-        workers = max(1, min(4, int(nightly.cfg().get("workers") or 1)))  # koľko videí sa robí naraz
-        items = list(cfg.items())
-        groups = [items[k::workers] for k in range(workers)]
+        workers = max(1, min(8, int(nightly.cfg().get("workers") or 1)))  # koľko videí sa robí naraz
+        queue = list(cfg.items())  # spoločný rad projektov: voľný pracovník si vezme ďalší
+        qlock = threading.Lock()
         errs = []
 
-        def run_group(g):
+        def run_group(_):
             try:
-                for pid_s, c in g:
+                while True:
+                    with qlock:
+                        if not queue:
+                            return
+                        pid_s, c = queue.pop(0)
                     if cap and _long_today() >= cap:
                         PROD["step"] = f"Dnešný strop {cap} dlhých videí splnený"
                         return
                     _prod_project(pid_s, c)
             except Exception as e:
                 errs.append(e)
-        ths = [threading.Thread(target=run_group, args=(g,), daemon=True) for g in groups if g]
+        groups = list(range(workers))
+        ths = [threading.Thread(target=run_group, args=(g,), daemon=True) for g in groups]
         for t in ths:
             t.start()
         for t in ths:
@@ -1247,11 +1252,13 @@ def _produce_loop():
     import time as _t
     _t.sleep(90)
     while True:
+        before = db.one("SELECT COUNT(*) n FROM videos")["n"]
         try:
             _produce_once()
         except Exception as e:
             print("denná výroba:", e)
-        _t.sleep(300)
+        made = db.one("SELECT COUNT(*) n FROM videos")["n"] > before
+        _t.sleep(15 if made else 300)  # kým je čo robiť, ďalšie kolo hneď
 
 
 @app.post("/api/storage/clean")
