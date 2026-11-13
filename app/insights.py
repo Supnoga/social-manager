@@ -244,8 +244,9 @@ def page_subs(channel_id):
     h = r.text
     if re.search(r'"(?:simpleText|content|label)":"No subscribers', h):
         return 0
-    m = re.search(r'"(?:simpleText|content|label)":"([\d.,]+\s?[KMB]?) subscribers?"', h)
-    return _num(m.group(1).replace(" ", "")) if m else None
+    m = re.search(r'"(?:simpleText|content|label|accessibilityLabel)":"([\d.,]+)(?:\s|\\u00a0|\xa0)?([KMB]?)'
+                  r'(?:\s|\\u00a0|\xa0)(?:subscribers?|odberate\w*|odběratel\w*|Abonnent\w*)"', h)
+    return _num(m.group(1) + m.group(2)) if m else None
 
 
 def _subs_from_pages(done=()):
