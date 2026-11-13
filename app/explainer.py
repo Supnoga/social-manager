@@ -327,7 +327,32 @@ def _font_face(family, path):
     return f"@font-face{{font-family:{family};font-weight:1 1000;src:url(data:font/{ext};base64,{b64})}}"
 
 
-def page(data, font=None, font_text=None):
+# Svetlý vzhľad (napr. Dupie): krémové pozadie, tmavý text, farba značky na zvýraznenia, nadpisy bez veľkých písmen.
+LIGHT = {"bg": "#FFF2F6", "fg": "#2B2330", "mut": "#8A7F92", "card": "#FFFFFF", "dim": "#FFD0DE", "lite": "#FFB3C9"}
+
+
+def _light(html):
+    c = LIGHT
+    ink = "43,35,48"
+    swaps = [(r"text-shadow:[^;\"`]*", "text-shadow:none"),
+             (r"rgba\(255,255,255,", f"rgba({ink},"),
+             (r"#0d0d0d\b", c["card"]), (r"#000\b", c["bg"]), (r"#fff\b", c["fg"]),
+             (r"#3b3b3b\b", c["lite"]), (r"#e9e9e9\b", c["dim"]), (r"#555\b", c["lite"]),
+             (r"#(?:a9a9a9|bdbdbd|cfcfcf|d0d0d0|aaa|9a9a9a|8f8f8f|8a8a8a|888|777)\b", c["mut"]),
+             (r"text-transform:uppercase", "text-transform:none")]
+    for a, b in swaps:
+        html = re.sub(a, b, html)
+    return html.replace("/*THEME*/", "#glow,#end .gl{opacity:.35!important}#cap span{color:rgba(43,35,48,.38)}"
+                        "#cat{position:absolute;right:46px;bottom:34px;width:170px;display:none}.wide #cat{right:70px;bottom:60px;width:170px}")
+
+
+def page(data, font=None, font_text=None, theme=""):
+    if theme == "light":
+        return _light(_page(data, font, font_text))
+    return _page(data, font, font_text)
+
+
+def _page(data, font=None, font_text=None):
     fcss = _font_face("BrandF", font)
     if fcss:
         fcss += ":root{--f:BrandF,var(--f0);--ft:BrandF,var(--f0)}"
@@ -383,7 +408,8 @@ body.wide,html.wide{width:1920px;height:1080px}
 .wide #end .gl{left:310px;top:-110px}
 .wide #end .ln{top:760px}
 .wide #bar{top:1068px;height:12px}
-</style></head><body><canvas id="bg"></canvas><div id="glow"></div><div id="stage"><div id="root"></div><img id="lg"><div id="cap"></div></div><div id="end"><div class="gl"></div><img><div class="ln"></div></div><div id="bar"></div>
+/*THEME*/
+</style></head><body><canvas id="bg"></canvas><div id="glow"></div><div id="stage"><div id="root"></div><img id="lg"><div id="cap"></div></div><div id="end"><div class="gl"></div><img><div class="ln"></div></div><div id="bar"></div><img id="cat">
 <script>
 const D=__DATA__;
 document.documentElement.style.setProperty('--acc',D.acc);document.documentElement.lang=D.lang||'en';
@@ -664,6 +690,9 @@ GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'trans
 const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?820:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
 T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length-1?'var(--acc)':'#fff'}">${esc(w)}</span>`).join(' ');s.w.append(T);
 fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}};
+if(D.cat){const C=document.getElementById('cat');C.src=D.cat;C.style.display='block';const R0=renderAt;
+renderAt=function(t){R0(t);const ending=TAIL>0&&t>=D.total,a=cl(t/.5),hop=Math.abs(Math.sin(t*Math.PI/1.6));
+C.style.opacity=ending?0:a;C.style.transform=`translateY(${(1-E(a))*60-hop*10}px) rotate(${Math.sin(t*2.6)*4}deg) scale(${1+.03*Math.sin(t*3.1)})`;C.style.transformOrigin='50% 100%'}}
 window.READY=true;
 </script></body></html>"""
 
@@ -731,7 +760,8 @@ def thumb_index(scenes, sc_data, want=None):
 
 
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None,
+         theme="", cat=None):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -753,9 +783,9 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
                         "steps": STEPS.get(v.get("k"), lambda d: 2)(v)})
     tail = TAIL if (logo_end or logo) else 0
     data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
-            "logo": logo or "", "logoEnd": logo_end or "", "tail": tail, "wide": bool(wide)}
+            "logo": logo or "", "logoEnd": logo_end or "", "tail": tail, "wide": bool(wide), "cat": cat or ""}
     vw, vh = (H, W) if wide else (W, H)
-    html = page(data, font, font_text)
+    html = page(data, font, font_text, theme)
     if total > 90:
         fps = 25
     length = total + (tail or 0.3)

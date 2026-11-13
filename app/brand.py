@@ -731,3 +731,29 @@ def asset_file(aid: int, preview: int = 0):
             im.save(pv, "PNG")
         return FileResponse(pv)
     return FileResponse(a["path"])
+
+
+def video_theme(pid):
+    """Vzhľad animovaných videí projektu: '' = tmavý (bežný), 'light' = svetlý (krémové pozadie, tmavý text)."""
+    return db.get_setting(f"video_theme_{pid}", "") or ""
+
+
+def mascot_uri(pid, box=420):
+    """Maskot značky do rohu svetlých videí (logo/obrázok s 'wink', 'mascot' alebo 'maskot' v názve), inak None."""
+    import base64
+    import io
+    from PIL import Image
+    cand = [a for a in assets(pid, "logo") + assets(pid, "photo")
+            if re.search(r"wink|mascot|maskot", a["name"], re.I) and not re.search(r"nahlad|tag|wave|ink|white", a["name"], re.I)
+            and Path(a["path"]).suffix.lower() in (".png", ".webp")]
+    if not cand:
+        return None
+    a = sorted(cand, key=lambda a: (not re.search(r"rose|pink", a["name"], re.I), a["id"]))[0]
+    try:
+        im = Image.open(a["path"]).convert("RGBA")
+        im.thumbnail((box, box))
+        buf = io.BytesIO()
+        im.save(buf, "PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None

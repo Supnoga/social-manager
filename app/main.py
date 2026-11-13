@@ -363,6 +363,7 @@ def projects():
         r["design_colors"] = json.loads(r.get("design_colors") or "[]")
         r["platforms"] = json.loads(r.get("platforms") or "[]")
         r["voices"] = json.loads(r.get("voices") or "{}")
+        r["video_theme"] = db.get_setting(f"video_theme_{r['id']}", "") or ""
         r["sources"] = [{"kind": x["kind"], "name": x["name"], "url": x.get("url", ""), "chars": len(x["text"])}
                         for x in json.loads(r.get("sources") or "[]")]
     return rows
@@ -387,6 +388,8 @@ def update_project(pid: int, data: dict = Body(...)):
         db.run("UPDATE projects SET voices=? WHERE id=?", (json.dumps(data["voices"]), pid))
     if "platforms" in data:
         db.run("UPDATE projects SET platforms=? WHERE id=?", (json.dumps(data["platforms"]), pid))
+    if data.get("video_theme") in ("", "light"):
+        db.set_setting(f"video_theme_{pid}", data["video_theme"])
     if "strategy" in data and isinstance(data["strategy"], dict):
         db.run("UPDATE projects SET strategy=?, strategy_short=? WHERE id=?",
                (json.dumps(data["strategy"], ensure_ascii=False), data["strategy"].get("summary", "")[:600], pid))
@@ -812,15 +815,18 @@ def script_to_video(sid: int, data: dict = Body(default={})):
         try:
             pr = db.one("SELECT name FROM projects WHERE id=?", (s["project_id"],)) or {}
             sc2 = explainer.localized_scenes(s)
-            bo, lg = brand.opts(s["project_id"]), brand.video_logo(s["project_id"], dark_bg=True)
+            theme = brand.video_theme(s["project_id"])
+            dark = theme != "light"
+            bo, lg = brand.opts(s["project_id"]), brand.video_logo(s["project_id"], dark_bg=dark)
             wide = ((db.one("SELECT format FROM ideas WHERE id=?", (s["idea_id"],)) or {}).get("format") == "long")  # dlhé video = na šírku
             explainer.make(sc2, s["voice_path"], out, acc, s["lang"], s["voiceover"], pr.get("name") or "",
                            footage.music_track(sid) if data.get("music", True) else None, brand.current_font(),
                            font_text=brand.current_text_font(),
-                           logo=brand.logo_data_uri(lg, 680, 176) if lg and bo["logo_corner"] else None,
-                           logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
+                           logo=brand.logo_data_uri(lg, 680, 176, dark) if lg and bo["logo_corner"] else None,
+                           logo_end=brand.logo_data_uri(lg, 1320, 720, dark) if lg and bo["logo_end"] else None,
                            products=brand.product_images(s["project_id"]), wide=wide,
-                           thumb=out.with_suffix(".jpg") if wide else None, **_thumb_opts(s))
+                           thumb=out.with_suffix(".jpg") if wide else None, **_thumb_opts(s),
+                           theme=theme, cat=brand.mascot_uri(s["project_id"]) if not dark else None)
             done = logo_in = True
         except Exception as e:
             print("animované video:", e)
