@@ -246,6 +246,7 @@ def api_meta():
                "followers": db.get_setting("li_followers", 0) or 0},
         "scheduler": scheduler.state,
         "yt_usage": youtube.usage(),
+        "yt_loc": {"log": (db.get_setting("yt_loc_log", []) or [])[-5:], "fixed": len(db.get_setting("yt_loc_done", []) or [])},
         "ffmpeg": bool(media.ffmpeg()),
         "google_tts": voices.google_usage(),
         "mt": __import__("app.translate", fromlist=["usage"]).usage(),

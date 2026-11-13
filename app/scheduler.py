@@ -158,7 +158,7 @@ def tick():
     if not due and not db.one("""SELECT 1 FROM posts p JOIN accounts a ON a.id=p.account_id WHERE a.platform='youtube'
                                  AND ((p.status='review' AND COALESCE(p.stash_id,'')='') OR p.status='uploading') LIMIT 1"""):
         try:
-            youtube.caption_one()
+            youtube.localize_one() or youtube.caption_one()  # najprv preklady názvov (lacné), potom titulky
         except Exception:
             traceback.print_exc()
     try:

@@ -243,6 +243,12 @@ def add_to_series(account, video, yt_id):
 LOCALIZE_LANGS = ["de", "es", "pt", "fr", "it", "pl", "nl", "tr", "id", "hi"]
 
 
+def _loc_log(msg):
+    log = (db.get_setting("yt_loc_log", []) or [])[-19:]
+    log.append(time.strftime("%d.%m. %H:%M ") + str(msg)[:200])
+    db.set_setting("yt_loc_log", log)
+
+
 def _localizations(account, video, title, desc):
     """Preložené názvy (a pri dlhých videách prvý odsek popisu) cez bezplatný prekladač, bez AI a bez kvóty YouTube navyše:
     pošlú sa priamo pri nahratí. Len pre anglické Xplained kanály (alebo podľa nastavenia yt_localize) a len kým má
@@ -270,10 +276,18 @@ def _localizations(account, video, title, desc):
     for lg in langs:
         if lg == src:
             continue
-        try:
-            tr, _ = translate.translate_texts([title, first] if first else [title], src, lg, glossary)
-        except Exception:
-            break  # prekladač nemá voľný limit: zvyšok preskoč
+        tr = None
+        for attempt in range(3):
+            try:
+                tr, _ = translate.translate_texts([title, first] if first else [title], src, lg, glossary)
+                break
+            except Exception as e:
+                _loc_log(f"{lg}: {e}")
+                if "limit" in str(e).lower() and "rate" not in str(e).lower():
+                    return out  # mesačný limit prekladača: zvyšok preskoč
+                time.sleep(2 + attempt * 3)  # krátke pribrzdenie prekladača, skúsiť znova
+        if not tr:
+            continue
         t = (tr[0] or "").strip()[:100]
         if not t:
             continue
@@ -453,3 +467,57 @@ def delete_video(account, video_id):
         if r.status_code not in (204, 404):
             check(r, "YouTube zmazanie")
 
+
+LOC_COST_EVERY = 2  # videos.update (50 jednotiek) ~ polovica nahratia videa
+
+
+def localize_one():
+    """Doplní preložené názvy a popisy už nahratým Xplained videám, ktorým chýbajú. Len z voľnej kvóty. True = niečo spravil."""
+    done = set(db.get_setting("yt_loc_done", []) or [])
+    rows = db.q("""SELECT p.id pid, COALESCE(NULLIF(p.external_id,''), p.stash_id) yt, a.*, v.id vid FROM posts p
+                   JOIN accounts a ON a.id=p.account_id JOIN videos v ON v.id=p.video_id
+                   WHERE a.platform='youtube' AND a.name LIKE '%Xplained' AND p.status IN ('done','queued','review')
+                   AND COALESCE(NULLIF(p.external_id,''), p.stash_id, '')!='' ORDER BY p.scheduled_at LIMIT 400""")
+    for r in rows:
+        if r["yt"] in done:
+            continue
+        acc = {k: r[k] for k in r.keys() if k not in ("pid", "yt", "vid")}
+        acc["id"] = r["account_id"] if "account_id" in r.keys() else acc.get("id")
+        if not quota_ok(acc):
+            continue
+        video = db.one("SELECT * FROM videos WHERE id=?", (r["vid"],))
+        tok = access_token(acc)
+        h = {"Authorization": f"Bearer {tok}"}
+        with client(timeout=60) as c:
+            g = c.get("https://www.googleapis.com/youtube/v3/videos", params={"part": "snippet,localizations", "id": r["yt"]}, headers=h)
+            items = g.json().get("items") or [] if g.status_code == 200 else None
+            if items is None:
+                _loc_log(f"spätne {r['yt']}: {g.status_code} {g.text[:120]}")
+                return False
+            if not items or len(items[0].get("localizations") or {}) >= 5:
+                done.add(r["yt"])
+                db.set_setting("yt_loc_done", sorted(done))
+                continue
+            sn = items[0]["snippet"]
+            loc = _localizations(acc, video, sn.get("title") or "", sn.get("description") or "")
+            if not loc:
+                return False  # prekladač nemá limit alebo je vypnutý
+            body = {"id": r["yt"], "localizations": loc,
+                    "snippet": {k: sn[k] for k in ("title", "description", "tags", "categoryId", "defaultAudioLanguage") if k in sn}}
+            body["snippet"]["defaultLanguage"] = sn.get("defaultLanguage") or (video.get("lang") or "en")
+            u = c.put("https://www.googleapis.com/youtube/v3/videos", params={"part": "snippet,localizations"}, headers=h, json=body)
+        n = int(db.get_setting("yt_loc_n", 0) or 0) + 1
+        db.set_setting("yt_loc_n", n)
+        if n % LOC_COST_EVERY == 0:
+            count_upload(acc)
+        if u.status_code < 300:
+            done.add(r["yt"])
+            db.set_setting("yt_loc_done", sorted(done))
+        else:
+            _loc_log(f"spätne {r['yt']}: {u.status_code} {u.text[:160]}")
+            if u.status_code == 403:
+                return False
+            done.add(r["yt"])  # nevracať sa k nemu dookola
+            db.set_setting("yt_loc_done", sorted(done))
+        return True
+    return False
