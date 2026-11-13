@@ -18,7 +18,8 @@ from . import db, icons_extra
 
 W, H = 1080, 1920
 KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene",
-         "map", "timeline", "line", "growth", "pie", "stack", "dots", "size", "layers", "mech")
+         "map", "timeline", "line", "growth", "pie", "stack", "dots", "size", "layers", "mech",
+         "forces", "waterfall", "funnel", "loan", "inflation", "crack", "sim", "lines")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
               "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
@@ -55,18 +56,30 @@ PACK = {
     "dots": '{"k":"dots","n":100,"h":23,"l":"of people ..."} = 100 dots, h of them light up (probability, percent of people, 1 in N)',
     "size": '{"k":"size","u":"m","d":"v or h","i":[["Burj Khalifa",828,"skyscraper"],["Eiffel Tower",330],["Person",1.8,"user"]]} = real sizes side by side in true scale (heights v, lengths h), optional icon, max 4',
     "layers": '{"k":"layers","u":"cm","z":0,"i":[["Plaster",2],["Brick",30],["Insulation",15,1]]} = cross-section layer by layer, top to bottom, real thickness (third value 1 = highlighted layer; "z":1 adds a depth ruler, for ground and underground)',
-    "mech": '{"k":"mech","m":"piston|gears|wing|wave|radar|orbit|pendulum","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine (l = the 4 strokes), gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
+    "forces": '{"k":"forces","i":"plane","f":[["Lift","up",3],["Weight","down",3],["Thrust","right",2],["Drag","left",1]]} = force arrows on one object (icon), arrow length = size of the force, first arrow highlighted',
+    "waterfall": '{"k":"waterfall","t":5,"u":"€","l":"Coffee","i":[["Rent",1.2],["Staff",1.5],["Beans",0.4],["Profit",0.5,1]]} = what a price is made of (third value 1 = highlight)',
+    "funnel": '{"k":"funnel","i":[["See the ad",10000],["Visit",800],["Buy",40]]} = how many people are left at each step',
+    "loan": '{"k":"loan","p":200000,"r":4,"y":30,"u":"€"} = loan or mortgage: the app CALCULATES the monthly payment, total paid and interest',
+    "inflation": '{"k":"inflation","v":100,"r":3,"y":20,"u":"€","i":"cart"} = what the same money buys after y years of r % inflation (the app calculates)',
+    "crack": '{"k":"crack","l":[6,8,10,12,16],"set":"lower|mixed|all"} = time to guess a password by length (the app calculates at 10 billion guesses per second)',
+    "sim": '{"k":"sim","m":"doors|coin|dice","n":1000,"l":["stay","switch"]} = the experiment played 1000 times live, result in % (doors = the three doors puzzle, dice = chance of sum 7)',
+    "lines": '{"k":"lines","x":["6:00","9:00","12:00","15:00","18:00"],"s":[["Solar",[0,30,80,50,5]],["Demand",[40,60,55,60,90]]]} = 2-3 lines over the same time (supply vs demand, two brands)',
+    "hist": '{"k":"map","y":[-200,-1,117],"h":["Roman Empire"],"l":"optional tag"} = HISTORICAL map: approximate borders in that year (1-4 years show growth or fall over time), h = empire or state names as in history books',
+    "truesize": '{"k":"map","c":["RU"],"t":"US"} = true size: the first country slides onto country t at the same real size',
+    "mech": '{"k":"mech","m":"piston|gears|wing|wave|radar|orbit|pendulum|jet","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine (l = the 4 strokes), gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
 }
 CHANNEL_PACKS = {
-    "cash": ("growth", "pie", "stack", "dots"), "wallet": ("growth", "pie", "stack", "dots"), "stocks": ("growth", "pie", "stack", "dots"),
-    "company": ("pie", "stack", "dots", "growth"), "brands": ("pie", "stack", "dots"),
-    "machines": ("mech", "size", "layers"), "engines": ("mech", "size", "pie"), "flight": ("mech", "size", "dots"),
-    "mega": ("size", "layers", "mech"), "house": ("layers", "size", "pie"), "underground": ("layers", "size", "mech"),
-    "industry": ("size", "stack", "layers", "mech"), "inventions": ("mech", "size"), "arsenal": ("mech", "size", "layers"),
-    "forces": ("mech", "dots", "size"), "digital": ("mech", "dots", "stack"), "logic": ("dots", "pie", "stack", "growth"),
-    "logistics": ("size", "stack"), "maps": ("dots", "size", "stack"), "nations": ("dots", "pie", "size", "stack"),
-    "energy": ("mech", "size", "pie", "stack"), "n2n": ("layers", "pie"),
+    "cash": ("growth", "inflation", "pie", "stack", "dots", "lines"), "wallet": ("loan", "growth", "pie", "waterfall", "inflation", "stack"),
+    "stocks": ("growth", "lines", "pie", "stack", "dots", "sim"), "company": ("waterfall", "funnel", "pie", "stack", "dots", "growth"),
+    "brands": ("lines", "pie", "funnel", "waterfall", "stack"),
+    "machines": ("mech", "forces", "size", "layers"), "engines": ("mech", "forces", "size", "lines", "pie"), "flight": ("forces", "mech", "size", "dots"),
+    "mega": ("size", "forces", "layers", "mech"), "house": ("layers", "size", "pie", "waterfall"), "underground": ("layers", "size", "mech"),
+    "industry": ("size", "stack", "layers", "mech", "waterfall"), "inventions": ("mech", "size", "lines"), "arsenal": ("mech", "forces", "size", "layers"),
+    "forces": ("forces", "mech", "dots", "size", "sim"), "digital": ("crack", "mech", "dots", "stack", "funnel"), "logic": ("sim", "dots", "pie", "stack", "growth"),
+    "logistics": ("size", "stack", "funnel", "waterfall"), "maps": ("hist", "truesize", "dots", "size", "stack"), "nations": ("truesize", "hist", "dots", "pie", "size", "stack"),
+    "energy": ("lines", "mech", "size", "pie", "stack", "waterfall"), "n2n": ("layers", "pie", "waterfall"),
 }
+
 
 
 def packs_for(project=None):
@@ -105,13 +118,13 @@ def _slots(d):
         for i, x in enumerate(d.get(f) or []):
             if isinstance(x, list) and len(x) > j and isinstance(x[j], str) and re.search(r"[^\W\d_]{2,}", x[j]):
                 out.append((f, i, j))
-    for f in ("i", "r") if k != "map" else ():
-        for i, x in enumerate(d.get(f) or []):
+    for f in ("i", "r", "f") if k != "map" else ():
+        for i, x in enumerate(d.get(f) if isinstance(d.get(f), list) else []):
             if isinstance(x, str):
                 out.append((f, i))
             elif isinstance(x, list):
                 for j, y in enumerate(x):
-                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and not (k in ("bars", "size") and j == 2) and (
+                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and not (k in ("bars", "size") and j == 2) and not (k == "forces" and j == 1) and (
                             k == "calc" or re.search(r"[^\W\d_]{2,}", y)):
                         out.append((f, i, j))
     return out
@@ -418,7 +431,12 @@ def page(data, font=None, font_text=None):
     geo_js = ""
     if any((sc.get("v") or {}).get("k") == "map" for sc in data.get("scenes", [])):
         from . import geo
-        geo_js = (geo.libs_js() + "\nwindow.TOPO=" + geo.world_json() + ";").replace("</", "<\\/")
+        hist = {}
+        for sc in data.get("scenes", []):
+            for f in (sc.get("v") or {}).get("hist") or []:
+                hist[str(f["y"])] = geo.hist_json(f["y"])
+        geo_js = (geo.libs_js() + "\nwindow.TOPO=" + geo.world_json() + ";\nwindow.HIST={"
+                  + ",".join(json.dumps(k) + ":" + v for k, v in hist.items()) + "};").replace("</", "<\\/")
     return (TEMPLATE.replace("/*FONT*/", fcss).replace("/*GEOLIBS*/", geo_js, 1)
             .replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/")))
 
@@ -767,11 +785,14 @@ STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars":
          "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5, "hero": lambda d: 2.5, "scene": lambda d: len(d.get("n") or []) + 1.5,
          "draw": lambda d: max([int(x.get("at") or 0) for x in (d.get("e") or []) if isinstance(x, dict)] or [0]) + 1.5,
          "product": lambda d: len(d.get("i") or []) + 1.5,
-         "map": lambda d: 2.2 + .6 * len(d.get("r") or []) + .4 * len(d.get("pts") or []) + .5 * len(d.get("v") or []),
+         "map": lambda d: 2.2 + .6 * len(d.get("r") or []) + .4 * len(d.get("pts") or []) + .5 * len(d.get("v") or [])
+                          + 1.25 * max(0, len(d.get("hist") or []) - 1) + (1.6 if d.get("onto") else 0),
          "timeline": lambda d: len(d.get("i") or []) * .8 + .8, "line": lambda d: 3,
          "growth": lambda d: 3.2, "pie": lambda d: len(d.get("i") or []) * .55 + .6, "stack": lambda d: len(d.get("i") or []) * .9 + .6,
          "dots": lambda d: 2.4, "size": lambda d: len(d.get("i") or []) * .7 + .6, "layers": lambda d: len(d.get("i") or []) * .45 + .6,
-         "mech": lambda d: 2}
+         "mech": lambda d: 2, "forces": lambda d: len(d.get("f") or []) * .5 + 1, "waterfall": lambda d: len(d.get("i") or []) * .5 + .8,
+         "funnel": lambda d: len(d.get("i") or []) * .55 + .4, "loan": lambda d: 2.7, "inflation": lambda d: 2.2,
+         "crack": lambda d: len(d.get("l") or [1] * 5) * .45 + .5, "sim": lambda d: 3.2, "lines": lambda d: 2.6}
 
 _lock = threading.Lock()
 

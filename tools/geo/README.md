@@ -9,3 +9,6 @@ Všetko zadarmo s licenciou vhodnou na komerčné videá:
 Obnova dát: v prázdnom priečinku `npm i d3-geo d3-array topojson-client topojson-server topojson-simplify i18n-iso-countries flag-icons`,
 stiahnuť z github.com/nvkelso/natural-earth-vector/geojson súbory ne_10m_admin_0_countries_deu (ako pov10_deu.geojson),
 ne_10m_populated_places, ne_50m_rivers_lake_centerlines, potom `node build.js 0.002`, `node names.js <jazyky>`, `python3 places.py`.
+
+## Historické mapy (1.50.0)
+Zdroj: aourednik/historical-basemaps (GPL-3.0), commit 4b5039e50d8d2464b065bd76ad6086cd4597108d. `node tools/geo/hist.js` vytvorí app/geo/hist/<rok>.json a index.json. Hranice sú približné, vo videu s „≈ rok“.
