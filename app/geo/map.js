@@ -48,7 +48,8 @@ ctx.globalAlpha=hp;ctx.strokeStyle=D.acc;ctx.lineWidth=4;ctx.beginPath();ctx.arc
 RV.forEach((x,i)=>{const rp=st(NST+.6+i*.5,1.4);if(rp<=0)return;ctx.strokeStyle='#fff';ctx.lineWidth=3.2;ctx.globalAlpha=.95;ctx.shadowColor='#fff';ctx.shadowBlur=8;
 x.l.forEach(ln=>{const n=Math.max(2,Math.round(ln.length*rp));ctx.beginPath();path({type:'LineString',coordinates:ln.slice(0,n)});ctx.stroke()});ctx.shadowBlur=0;ctx.globalAlpha=1});
 // trasy po oblúku zemegule s bodom, ktorý po nej beží
-RT.forEach((r,i)=>{const rp=st(NST+1+i*.6,1.2);if(rp<=0)return;const g=d3.geoInterpolate(r[0],r[1]);const N=60,k=Math.max(2,Math.round(N*rp));const L=[];for(let j=0;j<=k;j++)L.push(g(j/N));
+const RTP=RT.map(r=>{const P=[];for(let a=0;a<r.length-1;a++){const g=d3.geoInterpolate(r[a],r[a+1]);const n=Math.max(6,Math.round(d3.geoDistance(r[a],r[a+1])*60));for(let j=a?1:0;j<=n;j++)P.push(g(j/n))}return P});
+RT.forEach((r,i)=>{const rp=st(NST+1+i*.6,1.2+.3*(r.length-2));if(rp<=0)return;const AP=RTP[i];const N=AP.length-1,k=Math.max(1,Math.round(N*rp));const L=AP.slice(0,k+1);const g=u=>AP[Math.min(N,Math.floor(u*N))];
 ctx.strokeStyle=D.acc;ctx.lineWidth=4.5;ctx.setLineDash([14,9]);ctx.lineDashOffset=-t*30;ctx.beginPath();path({type:'LineString',coordinates:L});ctx.stroke();ctx.setLineDash([]);
 const hd=proj(rp<1?L[L.length-1]:g((t*.35+i*.3)%1));if(hd){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(hd[0],hd[1],7,0,6.3);ctx.fill()}});
 // mestá

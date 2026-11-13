@@ -123,6 +123,24 @@ def river(name):
     return None, None
 
 
+# námorné body (prielivy, kanály, mysy) na lodné trasy, aby čiara išla po mori a nie cez pevninu
+SEA = {"strait of malacca": (2.5, 101.2), "singapore strait": (1.2, 104.0), "bab el mandeb": (12.6, 43.4), "gulf of aden": (12.5, 47.5),
+       "suez canal": (30.5, 32.35), "port said": (31.3, 32.4), "red sea": (20.0, 38.5), "strait of gibraltar": (35.95, -5.6),
+       "english channel": (50.2, -1.0), "dover strait": (51.0, 1.45), "north sea": (55.5, 3.5), "strait of hormuz": (26.6, 56.4),
+       "bosporus": (41.1, 29.05), "panama canal": (9.1, -79.7), "cape of good hope": (-34.6, 18.4), "cape horn": (-56.2, -67.3),
+       "arabian sea": (15.0, 63.0), "bay of bengal": (13.0, 88.0), "south china sea": (13.0, 113.0), "sri lanka south": (5.5, 80.6),
+       "mediterranean": (35.5, 18.0), "sicily channel": (37.2, 11.5), "crete south": (34.4, 25.0), "atlantic": (35.0, -40.0),
+       "bay of biscay": (45.5, -6.0), "cape finisterre": (43.2, -10.0), "caribbean": (15.0, -75.0), "pacific": (20.0, -150.0),
+       "taiwan strait": (24.5, 119.5), "danish straits": (55.6, 10.9), "baltic sea": (56.5, 19.0), "drake passage": (-58.5, -65.0),
+       "mozambique channel": (-17.0, 41.5), "strait of magellan": (-53.5, -70.5), "black sea": (43.3, 34.0), "persian gulf": (27.0, 51.5)}
+
+
+def sea_point(name):
+    k = norm(re.sub(r"(?i)^the ", "", str(name or "")))
+    c = SEA.get(k)
+    return [c[1], c[0]] if c else None
+
+
 def _list(v):
     if isinstance(v, str):
         return [v]
@@ -158,13 +176,21 @@ def resolve(d, lang="en"):
         if not (isinstance(r, list) and len(r) >= 2):
             continue
         ends = []
-        for e in r[:2]:
-            ll = add_city(e) if isinstance(e, str) else None
-            if not ll and isinstance(e, str) and country(e):
+        r = r[:18]
+        for j, e in enumerate(r):
+            if not isinstance(e, str):
+                continue
+            if 0 < j < len(r) - 1:  # medzibody: najprv more, potom mesto bez popisku
+                c = city(e, ccs)
+                ll = sea_point(e) or (c and [c[3], c[2]])
+            else:  # začiatok a koniec: mesto s popiskom
+                ll = add_city(e) or sea_point(e)
+            if not ll and country(e):
                 cx = P["countries"][country(e)]
                 ll = [cx["x"], cx["y"]]
-            ends.append(ll)
-        if all(ends):
+            if ll:
+                ends.append(ll)
+        if len(ends) >= 2:
             routes.append(ends)
     riv = []
     for v in _list(d.get("v"))[:2]:
