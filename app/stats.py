@@ -40,6 +40,10 @@ def _yt(acc, posts):
             ids = [p["external_id"] for p in posts[i:i + 50]]
             r = c.get("https://www.googleapis.com/youtube/v3/videos", headers={"Authorization": f"Bearer {tok}"},
                       params={"part": "statistics", "id": ",".join(ids)})
+            if r.status_code == 403 and "quota" in r.text.lower():
+                from .insights import block_today
+                block_today(acc)
+                break
             r.raise_for_status()
             for v in r.json().get("items", []):
                 s = v.get("statistics", {})

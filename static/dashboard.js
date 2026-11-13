@@ -148,8 +148,8 @@ S.dash.ym = S.dash.ym || 'v';
 function dScope(v) { S.dash.all = v ? 1 : 0; S.dash.p = ''; pDash($('#main')); }
 async function dRefresh(b) {
   b.disabled = true;
-  const r = await api('/api/dash/refresh', { method: 'POST', body: '{}' });
-  toast(r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.');
+  const r = await api('/api/dash/refresh', { method: 'POST', body: {} });
+  toast((r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.') + (r.yt_limit ? ' YouTube má dnes vyčerpaný denný limit, preto sa pozretia jednotlivých YouTube videí doplnia zajtra (odberatelia a čas sledovania idú normálne).' : ''));
   DD.busy = true; b.innerHTML = I('refresh', 's') + 'Sťahujem…';
   let n = 0; const t = setInterval(async () => {
     n++; if (!location.hash.includes('dashboard') || n > 20) return clearInterval(t);
@@ -397,8 +397,8 @@ async function homeProjects(el) {
 }
 async function hRefresh(b) {
   b.disabled = true;
-  const r = await api('/api/dash/refresh', { method: 'POST', body: '{}' });
-  toast(r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.');
+  const r = await api('/api/dash/refresh', { method: 'POST', body: {} });
+  toast((r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.') + (r.yt_limit ? ' YouTube má dnes vyčerpaný denný limit, preto sa pozretia jednotlivých YouTube videí doplnia zajtra (odberatelia a čas sledovania idú normálne).' : ''));
   S.hp.busy = 1; b.innerHTML = I('refresh', 's') + 'Sťahujem…';
   setTimeout(() => { S.hp.busy = 0; homeProjects($('#hProj')); }, 15000);
 }
