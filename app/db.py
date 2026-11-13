@@ -220,9 +220,31 @@ def _accounts_to_projects(c):
         pass
 
 
+def _reset():
+    """Spojenie s databázou sa pokazilo (napr. po chybe zápisu): zahodiť ho a otvoriť nové."""
+    global _con
+    try:
+        _con.rollback()
+        _con.close()
+    except Exception:
+        pass
+    _con = None
+
+
+def _retry(fn):
+    try:
+        return fn()
+    except sqlite3.IntegrityError:
+        raise
+    except (sqlite3.OperationalError, sqlite3.ProgrammingError, sqlite3.DatabaseError) as e:
+        print("Databáza: chyba, otváram spojenie znova:", e)
+        _reset()
+        return fn()
+
+
 def q(sql, args=()):
     with _lock:
-        return [dict(r) for r in con().execute(sql, args).fetchall()]
+        return _retry(lambda: [dict(r) for r in con().execute(sql, args).fetchall()])
 
 
 def one(sql, args=()):
@@ -231,10 +253,12 @@ def one(sql, args=()):
 
 
 def run(sql, args=()):
-    with _lock:
+    def go():
         cur = con().execute(sql, args)
         con().commit()
         return cur.lastrowid
+    with _lock:
+        return _retry(go)
 
 
 def get_setting(key, default=None):
