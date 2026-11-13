@@ -399,3 +399,37 @@ def _broll(scenes, shots, voice, out, accent, lang, text, music, anims):
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
         _run_ff(cmd)
     return str(out)
+
+
+def _ts(t):
+    ms = int(round(max(0, t) * 1000))
+    return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+
+def srt(voice, text):
+    """Titulky (SRT) z presného textu hlasu a časov slov: po vetách, max. 2 riadky po ~42 znakov a 7 s."""
+    words = word_times(voice, text)
+    cues, cur = [], []
+    for w in words:
+        if cur and (len(" ".join(x["w"] for x in cur + [w])) > 84 or w["e"] - cur[0]["s"] > 7):
+            cues.append(cur)
+            cur = []
+        cur.append(w)
+        if w["w"][-1:] in ".!?…" and len(" ".join(x["w"] for x in cur)) > 20:
+            cues.append(cur)
+            cur = []
+    if cur:
+        cues.append(cur)
+    out = []
+    for i, c in enumerate(cues, 1):
+        line = " ".join(x["w"] for x in c)
+        if len(line) > 42:  # rozdeliť na dva riadky pri medzere najbližšie stredu
+            mid = len(line) // 2
+            sp = min((k for k, ch in enumerate(line) if ch == " "), key=lambda k: abs(k - mid), default=-1)
+            if sp > 0:
+                line = line[:sp] + "\n" + line[sp + 1:]
+        end = c[-1]["e"] + 0.3
+        if i < len(cues):
+            end = min(end, cues[i][0]["s"])
+        out.append(f"{i}\n{_ts(c[0]['s'])} --> {_ts(end)}\n{line}\n")
+    return "\n".join(out)

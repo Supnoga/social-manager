@@ -328,9 +328,84 @@ def upload(account, video, privacy="public", publish_at=None):
             except Exception as e:
                 print("YouTube náhľad:", e)
     count_upload(account)
+    try:
+        save_srt(video, vid)
+    except Exception as e:
+        print("YouTube titulky (príprava):", e)
     if status["privacyStatus"] == "public" or publish_at:
         add_to_series(account, video, vid)
     return vid, f"https://youtu.be/{vid}"
+
+
+SRT_DIR = db.MEDIA_DIR / "srt"
+CAPTION_COST = 4  # captions.insert = 400 jednotiek kvóty, teda ako 4 nahratia videa
+
+
+def save_srt(video, yt_id):
+    """Dlhé video: titulky z presného textu hlasu odloží bokom (hlas sa neskôr z Macu maže); nahrajú sa z voľnej kvóty."""
+    if (db.get_setting("yt_captions", True) is False) or not video.get("script_id"):
+        return
+    from .. import crosslink, media
+    if not crosslink.is_long(video):
+        return
+    s = db.one("SELECT voice_path, voiceover, lang FROM scripts WHERE id=?", (video["script_id"],))
+    if not s or not s["voice_path"] or not os.path.exists(s["voice_path"]) or not (s["voiceover"] or "").strip():
+        return
+    body = media.srt(s["voice_path"], s["voiceover"])
+    if body:
+        SRT_DIR.mkdir(exist_ok=True)
+        (SRT_DIR / f"{yt_id}.srt").write_text(body, encoding="utf-8")
+        (SRT_DIR / f"{yt_id}.lang").write_text((s["lang"] or video.get("lang") or "en")[:2])
+
+
+def caption_one():
+    """Nahrá jedny čakajúce titulky, len z kvóty, ktorú nepotrebujú videá. Vráti True, ak niečo nahral."""
+    if not SRT_DIR.exists():
+        return False
+    files = sorted(SRT_DIR.glob("*.srt"), key=lambda f: f.stat().st_mtime)
+    for f in files[:20]:
+        yt_id = f.stem
+        post = db.one("""SELECT a.* FROM posts p JOIN accounts a ON a.id=p.account_id WHERE a.platform='youtube'
+                         AND (p.external_id=? OR p.stash_id=?) LIMIT 1""", (yt_id, yt_id))
+        if not post:
+            if time.time() - f.stat().st_mtime > 7 * 86400:
+                f.unlink(missing_ok=True)
+            continue
+        acc = dict(post)
+        if _uploads().get(str(_client_idx(acc)), 0) + CAPTION_COST > DAILY_UPLOADS:
+            continue
+        lf = f.with_suffix(".lang")
+        lang = lf.read_text().strip() if lf.exists() else "en"
+        tok = access_token(acc)
+        meta = json.dumps({"snippet": {"videoId": yt_id, "language": lang, "name": "", "isDraft": False}})
+        boundary = "srtpart" + str(int(time.time()))
+        data = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta}\r\n"
+                f"--{boundary}\r\nContent-Type: application/octet-stream\r\n\r\n").encode() + f.read_bytes() + \
+            f"\r\n--{boundary}--".encode()
+        with client(timeout=120) as c:
+            r = c.post("https://www.googleapis.com/upload/youtube/v3/captions",
+                       params={"part": "snippet", "uploadType": "multipart"},
+                       headers={"Authorization": f"Bearer {tok}", "Content-Type": f"multipart/related; boundary={boundary}"},
+                       content=data)
+        for _ in range(CAPTION_COST):
+            count_upload(acc)
+        if r.status_code < 300 or r.status_code in (404, 409) or "captionExists" in r.text:
+            for x in (f, lf, f.with_suffix(".try")):
+                x.unlink(missing_ok=True)
+        elif r.status_code == 403 and "quota" in r.text.lower():
+            return False
+        else:
+            print("YouTube titulky:", r.status_code, r.text[:300])
+            tf = f.with_suffix(".try")
+            n = int(tf.read_text() or 0) + 1 if tf.exists() else 1
+            if n >= 3:  # po 3 neúspechoch to vzdá
+                for x in (f, lf, tf):
+                    x.unlink(missing_ok=True)
+            else:
+                tf.write_text(str(n))
+                os.utime(f)  # skúsi neskôr, ostatné nebrzdí
+        return True
+    return False
 
 
 def release(account, video_id, when=None):

@@ -151,6 +151,13 @@ def tick():
                 nightly.clean()
             except Exception:
                 traceback.print_exc()
+    # titulky dlhých videí: len z kvóty, ktorú práve nepotrebujú videá (stoja ako 4 nahratia)
+    if not due and not db.one("""SELECT 1 FROM posts p JOIN accounts a ON a.id=p.account_id WHERE a.platform='youtube'
+                                 AND ((p.status='review' AND COALESCE(p.stash_id,'')='') OR p.status='uploading') LIMIT 1"""):
+        try:
+            youtube.caption_one()
+        except Exception:
+            traceback.print_exc()
     try:
         nightly.awake_tick(busy=bool(state["current"]))
     except Exception:
