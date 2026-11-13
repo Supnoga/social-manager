@@ -198,14 +198,27 @@ def _long_rules(p, ideas):
         pat = ""
     return ("LONG VIDEO PACKAGING (decides clicks and watch time, follow strictly):\n"
             "- Title 40-60 chars, concrete and curious: one clear promise or open question a normal person would click "
-            "(e.g. 'Why Japan Can't Raise Interest Rates', 'What Happens to Your Money in a Bank Run'); main keyword early; no ALL CAPS, no lies."
+            "(e.g. 'Why Japan Can't Raise Interest Rates', 'What Happens to Your Money in a Bank Run'); the plain topic word people search "
+            "(interest rates, dishwasher, bank run) MUST be in the title, early; no ALL CAPS, no lies."
             + (f" Title styles that win in this niche: {pat}." if pat else "") + "\n"
             "- The first spoken sentence confirms the title promise within 5 seconds (viewer must feel: I clicked the right video).\n"
             "- 0-30 s: no intro, no channel name, no 'in this video'. 0-5 s: the most surprising fact or question with the strongest visual. "
             "5-20 s: why it matters to the viewer (money, safety, daily life) + one concrete number. 20-30 s: promise what they will understand by the end "
             "and plant one open question answered only near the end.\n"
             "- Re-hook at the start of every chapter (every 60-90 s) with a new small question; never summarise what was already said.\n"
-            "- Every long video must be different in structure and story from the previous ones: own example, own characters, own numbers.\n")
+            "- Every long video must be different in structure and story from the previous ones: own example, own characters, own numbers.\n"
+            "- Last 20 s: one-sentence recap, a question for comments, then name the next episode of this series as a concrete teaser "
+            "(e.g. 'Next in this series: why Switzerland never goes to war').\n"
+            + _finance_rule(p))
+
+
+def _finance_rule(p):
+    """Finančné kanály: od 7/2026 YouTube nepodporuje AI postavy, ktoré dávajú finančné rady -> len vysvetľovať."""
+    txt = " ".join(str(p.get(k) or "") for k in ("name", "description", "strategy_short")).lower()
+    if not any(w in txt for w in ("money", "financ", "stock", "invest", "wallet", "cash", "economy", "business model", "peniaze", "akcie")):
+        return ""
+    return ("- FINANCE: explain how things work, never give advice. Never say 'buy', 'sell', 'invest in', 'I recommend', 'you should', "
+            "never name a stock or coin to pick, no promises of returns. Add one neutral line: 'This is an explanation, not financial advice.'\n")
 
 
 def scripts_apply(params, data):
@@ -243,7 +256,7 @@ Below is the script of our long YouTube video "{src['title']}". Write {n} Shorts
 Each Short takes ONE different small part of the long video (one surprising fact, one mistake, one "how it works" moment) and tells it on its own.
 Rules for each Short: 100-140 spoken words (~40s). First sentence = scroll-stopping hook, max 12 words, no greeting, different opening style in each Short.
 The Short must fully pay off its own small question, so the viewer feels they learned something real. Then the last 1-2 sentences open a bigger question
-that only the long video answers (a natural open ending, for example "But there is one case where this goes wrong. The full video shows it."), and say that the full video is linked.
+that only the long video answers (a natural open ending, for example "But there is one case where this goes wrong. The full video shows it."), and say the long video's exact title aloud and that it is linked (e.g. "Watch: Why Japan Can't Raise Interest Rates, linked below").
 {_cta_rule(p)}
 Never stop mid-sentence, never promise something the long video does not contain, never repeat the same closing words in two Shorts.
 Same style as the long video: simple everyday words, warm storyteller, short sentences, numbers as digits, no emojis or symbols in voiceover.
