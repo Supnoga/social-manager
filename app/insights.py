@@ -45,6 +45,18 @@ def yt_blocked(acc=None):
     return b if acc is None else _cli(acc) in b
 
 
+def key_get(path, **params):
+    """Verejné čísla cez API kľúč Radaru (vlastný Google projekt s vlastnou kvótou, nahrávanie nebrzdí). None = nedá sa."""
+    try:
+        from . import radar
+        if not radar.yt_key():
+            return None
+        return radar._yt(path, **params)
+    except Exception as e:
+        print("Čísla cez API kľúč:", e)
+        return None
+
+
 def limit_today():
     """Je dnes niektorý Google projekt bez kvóty (vyčerpaná alebo minutá nahrávaním)?"""
     if yt_blocked():
@@ -89,17 +101,22 @@ def _snap(aid, followers, views_total=None, media=None):
 
 # ---------- YouTube ----------
 def _yt_channel(acc):
-    if not _read_ok(acc):  # dnes bez rezervy kvóty: ostáva posledný počet odberateľov, skúsi sa neskôr
-        return
-    tok = youtube.access_token(acc)
-    with client() as c:
-        r = c.get("https://www.googleapis.com/youtube/v3/channels", headers={"Authorization": f"Bearer {tok}"},
-                  params={"part": "statistics", "id": acc["external_id"]} if acc["external_id"] else {"part": "statistics", "mine": "true"})
-    if r.status_code != 200:
-        if "quota" in r.text.lower():
+    items = None
+    if _read_ok(acc):
+        tok = youtube.access_token(acc)
+        with client() as c:
+            r = c.get("https://www.googleapis.com/youtube/v3/channels", headers={"Authorization": f"Bearer {tok}"},
+                      params={"part": "statistics", "id": acc["external_id"]} if acc["external_id"] else {"part": "statistics", "mine": "true"})
+        if r.status_code == 200:
+            items = r.json().get("items") or []
+        elif "quota" in r.text.lower():
             block_today(acc)
-        raise RuntimeError(_gerr(r))
-    items = r.json().get("items") or []
+        else:
+            raise RuntimeError(_gerr(r))
+    if items is None and acc["external_id"]:  # kanál bez rezervy kvóty: cez API kľúč Radaru
+        items = (key_get("channels", part="statistics", id=acc["external_id"]) or {}).get("items")
+    if items is None:
+        raise RuntimeError("quota: dnes vyčerpaný limit YouTube, čísla prídu zajtra")
     if not items:
         raise RuntimeError("Kanál sa nenašiel")
     s = items[0].get("statistics", {})

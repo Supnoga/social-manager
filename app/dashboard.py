@@ -27,7 +27,7 @@ def _real(since):
                           a.lang acc_lang, v.lang vlang, v.title, v.project_id,
                           ps.views, ps.likes, ps.comments, ps.shares, ps.fetched_at, ps.watch_min, ps.avg_pct, ps.subs, v.duration
                    FROM posts p JOIN accounts a ON a.id=p.account_id JOIN videos v ON v.id=p.video_id
-                   LEFT JOIN post_stats ps ON ps.post_id=p.id AND ps.error=''
+                   LEFT JOIN post_stats ps ON ps.post_id=p.id AND ps.fetched_at!='' AND (ps.error='' OR ps.views>0 OR ps.likes>0)
                    WHERE p.status='done' AND p.scheduled_at>=? ORDER BY p.scheduled_at""", (since,))
     out = []
     for r in rows:
@@ -49,13 +49,19 @@ def dash(days: int = 365, pdays: int = 0):
     real = _real(since)
     measured = sum(1 for r in real if r["m"])
     rows = [r for r in real if r["m"]]  # len príspevky so skutočne stiahnutými číslami
-    last = db.one("SELECT MAX(t) t FROM (SELECT MAX(fetched_at) t FROM post_stats WHERE error='' UNION ALL SELECT MAX(stats_at) FROM acc_insight)")
+    last = db.one("SELECT MAX(t) t FROM (SELECT MAX(fetched_at) t FROM post_stats WHERE error='' UNION ALL SELECT MAX(fetched_at) FROM account_stats)")
     accs, daily, aoff = insights.accounts_data(since[:10])
+    pub = {}  # projekt: [zverejnené v období, z toho so stiahnutými číslami]
+    for r in real:
+        if r["d"] >= psince[:16]:
+            x = pub.setdefault(str(r["p"]), [0, 0])
+            x[0] += 1
+            x[1] += r["m"]
     return {"rows": rows, "real_posts": len(real), "real_measured": measured,
             "last": (last or {}).get("t"), "countries": languages.COUNTRY_NAMES,
             "langs": {k: v[0] for k, v in languages.LANGUAGES.items()},
             "accounts": accs, "daily": daily, "analytics_off": aoff, "prod": insights.production(psince),
-            "busy": insights._busy["on"], "ypp_deadline": insights.YPP_DEADLINE}
+            "busy": insights._busy["on"], "pub": pub, "yt_limit": insights.limit_today(), "ypp_deadline": insights.YPP_DEADLINE}
 
 
 @router.post("/api/dash/refresh")
