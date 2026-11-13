@@ -51,17 +51,14 @@ def _client_idx(account):
     return int(tokens(account).get("client", 0) or 0)
 
 
-def pick_client():
-    """Pre nový kanál vyber Google projekt s najmenej kanálmi (rozloží denný limit nahratí)."""
+def pick_client(project_id=None):
+    """Google projekt (prístup) pre nový kanál. Každá značka môže mať vlastný prístup (nastavenie yt_project_client,
+    napr. {"2": 1} = projekt Dupie cez druhý Google projekt); inak hlavný. Kanály jednej značky sa medzi viac
+    Google projektov nedelia, to by YouTube považoval za obchádzanie limitu."""
     n = len(clients())
-    if n <= 1:
-        return 0
-    cnt = [0] * n
-    for a in db.q("SELECT tokens FROM accounts WHERE platform='youtube'"):
-        i = int(json.loads(a["tokens"] or "{}").get("client", 0) or 0)
-        if i < n:
-            cnt[i] += 1
-    return cnt.index(min(cnt))
+    m = db.get_setting("yt_project_client", {}) or {}
+    idx = int(m.get(str(project_id), 0) or 0) if project_id else 0
+    return idx if 0 <= idx < max(n, 1) else 0
 
 
 def _uploads():

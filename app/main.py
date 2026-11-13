@@ -279,7 +279,7 @@ def api_settings(data: dict = Body(...)):
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
-               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce", "night", "ai_effort", "auto_approve_projects", "yt_captions"}
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce", "night", "ai_effort", "auto_approve_projects", "yt_captions", "yt_project_client"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -1662,7 +1662,7 @@ async def yt_client(file: UploadFile = File(...)):
 @app.get("/api/accounts/youtube/connect")
 def yt_connect(project_id: int = 0, lang: str = ""):
     st = "yt:" + secrets.token_urlsafe(12)
-    idx = youtube.pick_client()
+    idx = youtube.pick_client(project_id)
     _oauth_states[st] = {"project_id": project_id or None, "lang": lang, "client": idx}
     return RedirectResponse(youtube.auth_url(st, idx))
 
