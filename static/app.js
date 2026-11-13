@@ -141,6 +141,8 @@ function sidebar() {
       <div class="status"><i class="${ai.cli_found ? '' : 'w'}"></i>Claude ${ai.cli_found ? 'pripojený' : 'v ručnom režime'}</div>
       <div class="status"><i class="${S.meta.settings.paused ? 'w' : ''}"></i>Plánovač ${S.meta.settings.paused ? 'pozastavený' : 'beží'}</div>
       <a class="small dim" style="display:block;margin-top:8px;cursor:pointer" onclick="quitApp()">Vypnúť appku</a>
+      <div class="small dim" style="margin-top:10px;display:flex;align-items:center;gap:6px"><svg width="18" height="13" viewBox="0 0 18 13"><rect width="18" height="13" rx="3" fill="#FF0000"/><polygon points="7,3.5 12.5,6.5 7,9.5" fill="#fff"/></svg>Uses YouTube API Services</div>
+      <div class="small" style="margin-top:4px"><a href="https://github.com/Supnoga/social-manager/blob/main/PRIVACY.md" target="_blank" style="color:var(--muted)">Privacy Policy</a> · <a href="https://github.com/Supnoga/social-manager/blob/main/TERMS.md" target="_blank" style="color:var(--muted)">Terms of Service</a></div>
     </div>`;
 }
 // aktuálny projekt (ak je stránka otvorená v projekte) – pre filtre a nadpisy
