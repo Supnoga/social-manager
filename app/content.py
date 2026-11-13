@@ -525,9 +525,18 @@ def _register_late():
 _register_late()
 
 
+def _all_long(ids):
+    if not ids:
+        return False
+    rows = db.q(f"SELECT COALESCE(format,'short') f FROM ideas WHERE id IN ({','.join('?' * len(ids))})", tuple(ids))
+    return bool(rows) and all(r["f"] == "long" for r in rows)
+
+
 def run_task(name, params):
     prompt_fn, apply_fn, kind = TASKS[name]
     prompt = prompt_fn(params)
+    if name == "scripts" and _all_long(params.get("idea_ids") or []):
+        kind = "premium"  # dlhé video: lepší model, bežné Shorts a nápady ostávajú na lacnejšom
     try:
         data = ai.ask(prompt, name, kind)
     except ai.NeedManual as e:
