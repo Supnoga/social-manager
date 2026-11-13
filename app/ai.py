@@ -111,6 +111,8 @@ def ask(prompt, purpose, kind="creative", use_cache=True, timeout=600):
     # Dôležité: bez API kľúča -> Claude Code použije prihlásenie do Max plánu, nič sa neplatí navyše.
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    # Premýšľanie modelu sa ráta do limitu Max plánu a pri scenári tvorilo ~80 % spotreby: stačí stredné (lacné úlohy nízke).
+    env["CLAUDE_CODE_EFFORT_LEVEL"] = "low" if kind == "cheap" else (db.get_setting("ai_effort", "medium") or "medium")
     cmd = [path, "-p", "--model", model, "--system-prompt", SYSTEM, "--tools", "",
            "--strict-mcp-config", "--setting-sources", "", "--no-session-persistence",
            "--output-format", "json"]
