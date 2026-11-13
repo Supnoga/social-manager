@@ -347,19 +347,14 @@ def _light(html):
 
 
 def page(data, font=None, font_text=None, theme=""):
-    if theme == "light":
-        return _light(_page(data, font, font_text))
-    return _page(data, font, font_text)
-
-
-def _page(data, font=None, font_text=None):
+    tpl = _light(TEMPLATE) if theme == "light" else TEMPLATE  # farby sa menia len v šablóne, nie v textoch videa
     fcss = _font_face("BrandF", font)
     if fcss:
         fcss += ":root{--f:BrandF,var(--f0);--ft:BrandF,var(--f0)}"
         tcss = _font_face("BrandT", font_text)
         if tcss:
             fcss += tcss + ":root{--ft:BrandT,var(--f0)}"
-    return (TEMPLATE.replace("/*FONT*/", fcss)
+    return (tpl.replace("/*FONT*/", fcss)
             .replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/")))
 
 
