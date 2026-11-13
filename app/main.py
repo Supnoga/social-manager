@@ -70,6 +70,21 @@ async def _err(request, exc):
     return JSONResponse({"error": str(exc)}, status_code=400)
 
 
+@app.exception_handler(Exception)
+async def _crash(request, exc):
+    """Neočakávaná chyba: zapísať ju a vrátiť jej text, nech sa dá rýchlo nájsť príčina."""
+    import traceback as _tb
+    msg = f"{type(exc).__name__}: {exc}"
+    try:
+        log = (db.get_setting("crash_log", []) or [])[-19:]
+        log.append(time.strftime("%d.%m. %H:%M ") + request.url.path + " " + msg[:300])
+        db.set_setting("crash_log", log)
+    except Exception:
+        pass
+    _tb.print_exc()
+    return JSONResponse({"error": msg[:500]}, status_code=500)
+
+
 @app.exception_handler(ai.NeedManual)
 async def _manual(request, exc):
     return JSONResponse({"manual": True, "prompt": exc.prompt, "task": exc.purpose,
