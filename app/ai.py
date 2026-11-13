@@ -141,7 +141,8 @@ def ask(prompt, purpose, kind="creative", use_cache=True, timeout=600):
     it = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0))
     ot = u.get("output_tokens", 0)
     data = extract_json(meta.get("result", ""))
-    _log(purpose, model, it, ot)
+    # poznámka: koľko znakov má viditeľná odpoveď (rozdiel oproti výstupným tokenom = premýšľanie modelu) a použité úsilie
+    _log(purpose, model, it, ot, note=f"chars={len(str(meta.get('result', '')))} effort={env.get('CLAUDE_CODE_EFFORT_LEVEL', '')}")
     db.run("INSERT OR REPLACE INTO ai_cache(hash,response) VALUES(?,?)", (h, json.dumps(data, ensure_ascii=False)))
     return data
 
