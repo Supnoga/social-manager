@@ -3,7 +3,7 @@ a cesta k zárobku (YouTube Partner Program).
 
 Zdroje (len oficiálne API, ktoré appka už má pripojené, nič sa neplatí):
 - YouTube Data API: počet odberateľov, zobrazení a videí kanála (1 jednotka kvóty na kanál, max pár desiatok denne,
-  nahrávanie videí to nebrzdí: čítanie má vlastný strop READ_CAP a pri minutej kvóte sa len preskočí).
+  nahrávanie videí to nebrzdí: čítanie má malú pevnú rezervu READ_RESERVE a pri minutej kvóte sa len preskočí).
 - YouTube Analytics API: denné zobrazenia, čas sledovania, noví odberatelia, a pri videách čas sledovania a koľko
   z videa ľudia pozrú. Má vlastnú kvótu, s nahrávaním sa nedelí. Treba ho mať zapnuté v Google projekte.
 - Facebook / Instagram: počet sledovateľov stránky a účtu.
@@ -18,7 +18,6 @@ from .platforms import linkedin, meta, tiktok_business, youtube
 from .platforms.common import client, tokens
 
 YTA = "https://youtubeanalytics.googleapis.com/v2/reports"
-READ_CAP = 150  # max. jednotiek YouTube Data API denne na Google projekt pre štatistiky (nahratie ich má tisíce)
 YPP_DEADLINE = "2027-01-31"
 
 
@@ -59,15 +58,20 @@ def block_today(acc):
         db.set_setting("yt_read_block", {day: b + [_cli(acc)]})
 
 
-def _read_ok(acc, units=1):
-    """Čítanie štatistík z YouTube Data API len z rezervy: nie pri vyčerpanej kvóte a nie keď sa blíži limit nahratí."""
-    if yt_blocked(acc) or not youtube.quota_ok(acc):
+# Pevná denná rezerva na čítanie (na Google projekt). Appka zastaví nahrávanie pri 95 nahratiach, pod skutočným
+# limitom Googlu; z toho, čo ostane, si čítanie berie najviac tieto jednotky. Komentáre majú vlastnú časť,
+# aby sa načítali aj v deň, keď sa nahráva naplno. Čítanie sa zastaví hneď, keď Google povie, že kvóta je minutá.
+READ_RESERVE = {"comments": 180, "stats": 70}
+
+
+def _read_ok(acc, units=1, kind="stats"):
+    if yt_blocked(acc):
         return False
     day = _today()
     u = db.get_setting("yt_read_units") or {}
     u = {day: u.get(day, {})}
-    k = str(int(tokens(acc).get("client", 0) or 0))
-    if u[day].get(k, 0) + units > READ_CAP:
+    k = _cli(acc) + ":" + kind
+    if u[day].get(k, 0) + units > READ_RESERVE.get(kind, 70):
         return False
     u[day][k] = u[day].get(k, 0) + units
     db.set_setting("yt_read_units", u)
