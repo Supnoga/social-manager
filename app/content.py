@@ -83,9 +83,15 @@ def ideas_prompt(params):
     tpl = inspire.templates_prompt(p["id"], 6)
     qs = inspire.questions(p["id"], p["source_lang"], 5)
     qtxt = ("Real questions people ask (great topics): " + "; ".join(q["text"][:90] for q in qs)) if qs else ""
+    from . import radar
+    try:
+        prv = radar.proven_prompt(p["id"], fmt)
+    except Exception:
+        prv = ""
     return f"""{_ctx(p)}
 {tpl}
 {qtxt}
+{prv}
 Pillars: {pillars or 'choose yourself'}
 {('Focus for this batch: ' + focus) if focus else ''}
 {('Our real results so far (build on what worked, avoid what flopped): ' + p['learnings']) if p.get('learnings') else ''}
@@ -155,7 +161,7 @@ Write production-ready video scripts for these ideas:
 
 Rules: short = 110-150 spoken words (~45s). long = 1900-2200 words for a horizontal YouTube video (it MUST run longer than 8 minutes, so never fewer than 1900 words).
 STYLE (most important): tell it like a great popular-science storyteller, not like a datasheet. Talk to one curious person with no technical background. Describe what actually happens, step by step, in plain everyday words, so the viewer can picture it. Use comparisons from daily life (a fridge, a bicycle pump, a bathtub, a sponge). Explain every technical word the moment you first use it, or do not use it. Keep curiosity alive: open small questions and answer them a few sentences later ("So where does the heat come from? Here is the surprising part."). Prefer one memorable number over five; never list specs. Sound warm, calm and a little amazed by how things work.
-Long videos: open with the question and promise the answer, then tell a story in 4-5 chapters that flow into each other (what people believe, what really happens inside, what it means in real life, the mistakes, what to do), end with a one-sentence recap and a question for comments; take your time, never rush, never pad.
+{_long_rules(p, ideas)}Long videos: open with the question and promise the answer, then tell a story in 4-5 chapters that flow into each other (what people believe, what really happens inside, what it means in real life, the mistakes, what to do), end with a one-sentence recap and a question for comments; take your time, never rush, never pad.
 {_cta_rule(p)}
 Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
 at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts, end with a natural CTA (save/comment, and the channel call to action as stated above). Spoken text must sound natural for voice-over (TTS),
@@ -168,8 +174,38 @@ scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene get
 "caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
 "post":{{"body":"1-2 short sentences of concrete value, use the words people type into search","question":"one easy question that makes viewers comment (opinion or own experience)",
 "save":"short reason to save or send it to someone, max 60 chars","keywords":["2-4 search phrases people type, lowercase"]}},
-"hashtags":"#a #b #c (3-4 specific topic hashtags people really use, no brand, no #fyp/#viral)"}}]}}
+"hashtags":"#a #b #c (3-4 specific topic hashtags people really use, no brand, no #fyp/#viral)"{_thumb_field(ideas)}}}]}}
 Write in {languages.english(p['source_lang'])}."""
+
+
+def _thumb_field(ideas):
+    if not any(i.get("format") == "long" for i in ideas):
+        return ""
+    return (',\n"thumb":{{"text":"LONG VIDEOS ONLY: 2-4 words for the thumbnail, max 24 chars, does NOT repeat the title, adds tension or curiosity '
+            '(a surprising number, a verdict, a question), e.g. \'IT\'S FREE HEAT?\' or \'$1 = 30 YEARS\'","scene":"index (0-based) of the most striking, '
+            'most visual scene that shows the main object, not a number chart"}}').replace("{{", "{").replace("}}", "}")
+
+
+def _long_rules(p, ideas):
+    """Pravidlá pre dlhé videá: titul + náhľad + prvých 30 sekúnd rozhodujú o kliknutí a pozeraní (bez ďalšieho volania AI)."""
+    if not any(i.get("format") == "long" for i in ideas):
+        return ""
+    try:
+        from . import radar
+        tp = radar.title_patterns(p["id"], "long")
+        pat = ", ".join([radar.PATTERN_EN[x["key"]] for x in tp["patterns"] if x["lift"] >= 1.15][:3])
+    except Exception:
+        pat = ""
+    return ("LONG VIDEO PACKAGING (decides clicks and watch time, follow strictly):\n"
+            "- Title 40-60 chars, concrete and curious: one clear promise or open question a normal person would click "
+            "(e.g. 'Why Japan Can't Raise Interest Rates', 'What Happens to Your Money in a Bank Run'); main keyword early; no ALL CAPS, no lies."
+            + (f" Title styles that win in this niche: {pat}." if pat else "") + "\n"
+            "- The first spoken sentence confirms the title promise within 5 seconds (viewer must feel: I clicked the right video).\n"
+            "- 0-30 s: no intro, no channel name, no 'in this video'. 0-5 s: the most surprising fact or question with the strongest visual. "
+            "5-20 s: why it matters to the viewer (money, safety, daily life) + one concrete number. 20-30 s: promise what they will understand by the end "
+            "and plant one open question answered only near the end.\n"
+            "- Re-hook at the start of every chapter (every 60-90 s) with a new small question; never summarise what was already said.\n"
+            "- Every long video must be different in structure and story from the previous ones: own example, own characters, own numbers.\n")
 
 
 def scripts_apply(params, data):
@@ -186,6 +222,10 @@ def scripts_apply(params, data):
                (p["id"], idea["id"], p["source_lang"], 1, s.get("title", ""), s.get("voiceover", ""),
                 json.dumps(s.get("scenes", []), ensure_ascii=False), s.get("description", ""),
                 s.get("hashtags", ""), s.get("caption", ""), _post_json(s.get("post"))))
+        th = s.get("thumb")
+        if isinstance(th, dict) and str(th.get("text") or "").strip():
+            db.run("UPDATE scripts SET thumb=? WHERE idea_id=? AND lang=?",
+                   (json.dumps({"text": str(th["text"]).strip()[:40], "scene": th.get("scene")}, ensure_ascii=False), idea["id"], p["source_lang"]))
         db.run("UPDATE ideas SET status='scripted' WHERE id=?", (idea["id"],))
         n += 1
     return {"created": n}
@@ -447,7 +487,7 @@ def radar_quick(pid, ref):
                     "ref": {"swipe": w["id"], "label": (w["title"] or w["note"] or w["url"])[:80]}}]
     else:
         c = db.one("SELECT * FROM comp_posts WHERE id=?", (int(ref["comp_post"]),))
-        sig = [{"id": "K1", "mk": "all", "txt": f'competitor video "{c["title"]}" {c["ratio"]}x its normal, {c["views"]} views',
+        sig = [{"id": "K1", "mk": "all", "txt": f'competitor video "{c["title"]}" {max(c["ratio"] or 0, c["ratio_all"] or 0)}x its normal, {c["views"]} views',
                 "ref": {"comp_post": c["id"], "label": c["title"][:80]}}]
     return {"created": _radar_ideas(p, sig, 2, "radar_quick", "cheap", "Make both ideas about this signal.")}
 
