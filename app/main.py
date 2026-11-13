@@ -4,6 +4,7 @@ import os
 import random
 import secrets
 import shutil
+import time
 import webbrowser
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,7 +24,30 @@ VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
 
 app = FastAPI(title="Social Manager")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
-_oauth_states = {}
+class _States(dict):
+    """Rozpracované prihlásenia (OAuth). Ukladajú sa aj do databázy, aby prežili reštart/aktualizáciu appky."""
+    def _load(self):
+        if not self:
+            super().update(db.get_setting("oauth_states", {}) or {})
+
+    def _save(self):
+        now = time.time()
+        keep = {k: v for k, v in dict(self).items() if now - (v.get("t") or now) < 3 * 86400}
+        db.set_setting("oauth_states", keep)
+
+    def __setitem__(self, k, v):
+        self._load()
+        super().__setitem__(k, dict(v, t=time.time()))
+        self._save()
+
+    def pop(self, k, d=None):
+        self._load()
+        v = super().pop(k, d)
+        self._save()
+        return v
+
+
+_oauth_states = _States()
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
 
 
@@ -68,9 +92,12 @@ def index(code: str = "", state: str = "", error: str = ""):
     if error:
         return RedirectResponse(f"/#/ucty?err={error}")
     if code and state.startswith("yt:"):
-        info = _oauth_states.pop(state, {})
+        info = _oauth_states.pop(state, None)
         try:
-            youtube.callback(code, info.get("project_id"), info.get("lang", ""), info.get("client", 0))
+            if info is None:  # prihlásenie začaté pred reštartom appky: projekt podľa názvu kanála, Google projekt skúsi každý
+                youtube.callback(code, None, "", None)
+            else:
+                youtube.callback(code, info.get("project_id"), info.get("lang", ""), info.get("client", 0))
             return RedirectResponse("/#/ucty?ok=youtube")
         except Exception as e:
             return RedirectResponse(f"/#/ucty?err={str(e)[:200]}")

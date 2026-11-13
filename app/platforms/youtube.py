@@ -100,12 +100,28 @@ def auth_url(state, idx=0):
         "access_type": "offline", "prompt": "consent select_account", "state": state, "include_granted_scopes": "true"})
 
 
+def _project_by_title(title):
+    """Projekt s rovnakým názvom ako kanál (napr. kanál „Cash Xplained“ → projekt „Cash Xplained“)."""
+    t = (title or "").strip().lower()
+    for p in db.q("SELECT id, name FROM projects"):
+        if (p["name"] or "").strip().lower() == t:
+            return p["id"]
+    return None
+
+
 def callback(code, project_id=None, lang="", idx=0):
-    cid, sec = creds(idx)
+    guess = idx is None  # nevieme, z ktorého Google projektu prihlásenie prišlo: skús všetky
     with client() as c:
-        r = check(c.post("https://oauth2.googleapis.com/token", data={
-            "code": code, "client_id": cid, "client_secret": sec, "redirect_uri": REDIRECT,
-            "grant_type": "authorization_code"}), "Google token")
+        r = None
+        for i in (range(len(clients())) if guess else [idx]):
+            cid, sec = creds(i)
+            r = c.post("https://oauth2.googleapis.com/token", data={
+                "code": code, "client_id": cid, "client_secret": sec, "redirect_uri": REDIRECT,
+                "grant_type": "authorization_code"})
+            if r.status_code < 400:
+                idx = i
+                break
+        check(r, "Google token")
         t = r.json()
         t["expires_at"] = time.time() + t.get("expires_in", 3600) - 60
         t["client"] = idx
@@ -121,8 +137,11 @@ def callback(code, project_id=None, lang="", idx=0):
             save_tokens(ex["id"], t)
             created.append(ex["id"])
         else:
+            pid = project_id or (_project_by_title(item["snippet"]["title"]) if guess else None)
+            if guess and pid and not lang:
+                lang = (db.one("SELECT COALESCE(source_lang,'') l FROM projects WHERE id=?", (pid,)) or {"l": ""})["l"]
             created.append(db.run("INSERT INTO accounts(platform,name,external_id,project_id,lang,tokens) VALUES(?,?,?,?,?,?)",
-                                  ("youtube", item["snippet"]["title"], item["id"], project_id, lang, json.dumps(t))))
+                                  ("youtube", item["snippet"]["title"], item["id"], pid, lang, json.dumps(t))))
     if not created:
         raise PlatformError("Tento Google účet nemá YouTube kanál. Najprv si ho vytvor na youtube.com.")
     return created
