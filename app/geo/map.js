@@ -52,9 +52,10 @@ RT.forEach((r,i)=>{const rp=st(NST+1+i*.6,1.2);if(rp<=0)return;const g=d3.geoInt
 ctx.strokeStyle=D.acc;ctx.lineWidth=4.5;ctx.setLineDash([14,9]);ctx.lineDashOffset=-t*30;ctx.beginPath();path({type:'LineString',coordinates:L});ctx.stroke();ctx.setLineDash([]);
 const hd=proj(rp<1?L[L.length-1]:g((t*.35+i*.3)%1));if(hd){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(hd[0],hd[1],7,0,6.3);ctx.fill()}});
 // mestá
-PTS.forEach((pt,i)=>{const pp=st(NST+.4+i*.35,.5);const q=proj([pt.lon,pt.lat]);const on=q&&d3.geoDistance(cr,[pt.lon,pt.lat])<1.5;PL[i].e.style.opacity=on?pp:0;if(!on||pp<=0)return;
+const cb=[];PTS.forEach((pt,i)=>{const pp=st(NST+.4+i*.35,.5);const q=proj([pt.lon,pt.lat]);const on=q&&d3.geoDistance(cr,[pt.lon,pt.lat])<1.5;PL[i].e.style.opacity=on?pp:0;if(!on||pp<=0)return;
 ctx.globalAlpha=pp;if(pt.cap){ctx.strokeStyle=D.acc;ctx.lineWidth=3;ctx.beginPath();ctx.arc(q[0],q[1],13+3*Math.sin(t*3+i),0,6.3);ctx.stroke()}ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(q[0],q[1],7,0,6.3);ctx.fill();ctx.globalAlpha=1;
-const e=PL[i].e,w=e.offsetWidth;let x=q[0]+20;if(x+w>MW-6)x=q[0]-20-w;e.style.left=Math.max(4,x)+'px';e.style.top=(q[1]-16)+'px'});
+const e=PL[i].e,w=e.offsetWidth,h=e.offsetHeight||30;let x=q[0]+20;if(x+w>MW-6)x=q[0]-20-w;x=Math.max(4,x);let y=q[1]-16;
+for(let k=0;k<3;k++){const hit=cb.find(b=>x<b[0]+b[2]&&x+w>b[0]&&y<b[1]+b[3]&&y+h>b[1]);if(!hit)break;y=hit[1]+hit[3]+2}cb.push([x,y,w,h]);e.style.left=x+'px';e.style.top=y+'px'});
 // popisky krajín (vlajka + názov)
 const lp=st(NST+.3,.6);const boxes=PL.filter(o=>o.e.style.opacity>0).map(o=>[o.e.offsetLeft,o.e.offsetTop,o.e.offsetWidth,o.e.offsetHeight]);
 CL.forEach(o=>{const ll=d.lp&&d.lp[o.c];const q=ll&&proj(ll);const on=q&&d3.geoDistance(cr,ll)<1.4;o.e.style.opacity=on?lp:0;if(!on)return;const w=o.e.offsetWidth,h=o.e.offsetHeight;
