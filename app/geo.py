@@ -149,6 +149,8 @@ def _list(v):
 
 def resolve(d, lang="en"):
     """Diagram mapy -> údaje pre stránku (len overené miesta). None, keď sa nenašlo nič."""
+    if d.get("h") and d.get("y") is not None:
+        return resolve_hist(d)
     P = places()
     ccs = []
     for x in _list(d.get("c")):
@@ -208,6 +210,11 @@ def resolve(d, lang="en"):
            "flags": {c: flag_uri(c) for c in ccs[:4] if not group and flag_uri(c)}}
     if d.get("l"):
         out["l"] = str(d["l"])[:60]
+    t = country(d.get("t")) if isinstance(d.get("t"), str) else None
+    if t and ccs and t != ccs[0] and t in P["countries"]:  # skutočná veľkosť: hlavná krajina sa presunie na inú
+        out["onto"] = t
+        out["names"][t] = country_name(t, lang)
+        out["lp"][t] = [P["countries"][t]["x"], P["countries"][t]["y"]]
     return out
 
 
@@ -284,3 +291,67 @@ def guess_map(text):
     if f["v"]:
         d["v"] = f["v"][0]
     return d
+
+
+# ---------- historické mapy (historical-basemaps, GPL-3.0, hranice sú približné) ----------
+@lru_cache(maxsize=1)
+def hist_index():
+    return {int(k): v for k, v in json.loads((DIR / "hist" / "index.json").read_text(encoding="utf-8")).items()}
+
+
+@lru_cache(maxsize=6)
+def hist_json(year):
+    return (DIR / "hist" / f"{year}.json").read_text(encoding="utf-8")
+
+
+HIST_ALIAS = {"mongol empire": ["mongol empire", "golden horde", "ilkhanate", "chagatai khanate", "yuan empire", "great khanate"],
+              "roman empire": ["roman empire", "roman republic", "rome", "western roman empire", "eastern roman empire"],
+              "byzantium": ["byzantine empire"], "habsburg": ["austrian empire", "austro-hungarian empire", "habsburg dominions"],
+              "austria hungary": ["austro-hungarian empire"], "ussr": ["ussr", "soviet union"], "soviet union": ["ussr", "soviet union"],
+              "alexander the great": ["empire of alexander"], "macedonian empire": ["empire of alexander"], "ottomans": ["ottoman empire"],
+              "persian empire": ["achaemenid empire", "persian empire", "sasanian empire", "parthian empire"]}
+
+
+def _hist_match(names, year):
+    have = {norm(n): n for n in hist_index().get(year, [])}
+    out = []
+    for q in names:
+        k = norm(q)
+        cands = [k] + [norm(a) for a in HIST_ALIAS.get(k, [])]
+        hit = [have[c] for c in cands if c in have]
+        if not hit and len(k) >= 5:
+            hit = [v for kk, v in have.items() if k in kk or (len(kk) >= 5 and kk in k)][:3]
+        for h in hit:
+            if h not in out:
+                out.append(h)
+    return out
+
+
+def resolve_hist(d):
+    """Historická mapa: najbližší rok s dátami, v ktorom sa nájde aspoň jedna spomenutá ríša. Inak None."""
+    ys = d.get("y")
+    ys = [ys] if isinstance(ys, (int, float, str)) else list(ys or [])
+    names = [x for x in _list(d.get("h")) if isinstance(x, str)][:4]
+    idx = sorted(hist_index())
+    frames = []
+    for y in ys[:4]:
+        try:
+            y = int(float(y))
+        except (TypeError, ValueError):
+            continue
+        for cand in sorted(idx, key=lambda k: abs(k - y)):
+            if abs(cand - y) > max(60, abs(y) * 0.08 if y > 0 else 120):
+                break
+            hl = _hist_match(names, cand) if names else []
+            if hl or not names:
+                if not any(f["y"] == cand for f in frames):
+                    frames.append({"y": cand, "ask": y, "hl": hl})
+                break
+    if not frames:
+        return None
+    return {"k": "map", "hist": frames, "names": {}, "c": [], "pts": [], "r": [], "v": [], "lp": {}, "flags": {}, "group": False,
+            "l": str(d.get("l") or "")[:60], "approx": True}
+
+
+def hist_data(frames):
+    return {str(f["y"]): hist_json(f["y"]) for f in frames}
