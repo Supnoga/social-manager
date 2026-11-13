@@ -53,7 +53,7 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"k":"cycle","l":["outdoor air","evaporator","compressor","condenser","home"]} (how a heat pump works) |
 {"k":"bars","u":"unit","i":[["label",number,"optional ISO country code = flag"],...max 4]} | {"k":"calc","r":[["1 600 m³ × 10,5","16 800 kWh"],...max 4]} |
 {"k":"compare","a":["worse option","value"],"b":["better option","value"]} | {"k":"count","v":75,"pre":"","suf":" %","l":"label"} |
-{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons: %ICONS% |
+{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons (any simple English noun works, the app has 1000+ line icons; e.g.): %ICONS% |
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
 {"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"} |
 {"k":"hero","i":"icon","w":"2-4 words","s":"optional short second line"} (one big animated picture of the thing we talk about; use it for story, everyday comparisons and scenes without numbers)
@@ -110,6 +110,17 @@ for _m in BOARD_META.values():
     for _c, _ks in (_m.get("channels") or {}).items():
         CHANNEL_PACKS[_c] = tuple(CHANNEL_PACKS.get(_c, ())) + tuple(k for k in _ks if k not in CHANNEL_PACKS.get(_c, ()))
 _ALL_PACK = ("default",)
+
+
+def icon_ok(name):
+    """Nájde ikonu aj podľa synonyma, množného čísla alebo časti mena (rovnako ako IR v stránke)."""
+    def one(n):
+        for c in (n, re.sub(r"ies$", "y", n), re.sub(r"es$", "", n), re.sub(r"s$", "", n)):
+            if c in ICON_NAMES or ICON_ALIAS.get(c) in ICON_NAMES:
+                return True
+        return False
+    n = re.sub(r"[\s-]+", "_", str(name or "").lower().strip())
+    return one(n) or any(one(x) for x in n.split("_") if x)
 
 
 def _chan(project=None):
@@ -309,7 +320,7 @@ def board_of(scene):
             return guess(scene.get("onscreen", ""), scene.get("visual", ""))
         d = dict(d, e=els)
     if d.get("k") == "scene":
-        ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and (x[0] in ICON_NAMES or x[0] in ICON_ALIAS)]
+        ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and icon_ok(x[0])]
         if len(ok) < 2 or len(ok) != len(d.get("n") or []):
             d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
     return auto_map(scene, d)
@@ -590,7 +601,9 @@ fridge:'<rect x="26" y="8" width="48" height="84" rx="6"/><path d="M26 38 H74"/>
 fan:'<circle cx="50" cy="40" r="32"/><g class="spin"><circle cx="50" cy="40" r="4"/><path d="M50 36 C58 30 58 18 50 12 C46 20 46 30 50 36 Z"/><path d="M53.5 42 C63 44 72 52 74 58 C64 58 56 50 53.5 42 Z"/><path d="M46.5 42 C44 50 36 58 26 58 C28 50 37 44 46.5 42 Z"/></g><path d="M38 70 L32 90 H68 L62 70"/>',
 boiler:'<rect x="24" y="8" width="52" height="70" rx="6"/><path d="M50 60 C40 52 44 42 50 34 C56 42 60 52 50 60 Z"/><path d="M34 20 H66"/><path d="M36 78 V92 M64 78 V92"/>',
 city:'<path d="M8 88 H92"/><rect x="14" y="40" width="20" height="48"/><rect x="40" y="18" width="22" height="70"/><rect x="68" y="50" width="18" height="38"/><path d="M20 50 H28 M20 62 H28 M46 30 H56 M46 44 H56 M46 58 H56 M73 60 H81 M73 72 H81"/>'};
-function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[name]||ICONS[ICON_ALIAS[name]]||ICONS[String(name||'').toLowerCase().replace(/[ -]+/g,'_')]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
+function IR(name){const ok=n=>ICONS[n]?n:(ICON_ALIAS[n]&&ICONS[ICON_ALIAS[n]]?ICON_ALIAS[n]:null);const one=n=>ok(n)||ok(n.replace(/ies$/,'y'))||ok(n.replace(/es$/,''))||ok(n.replace(/s$/,''));
+let n=String(name||'').toLowerCase().trim().replace(/[\s-]+/g,'_');let r=one(n);if(r)return r;const p=n.split('_').filter(Boolean);for(let i=p.length-1;i>=0;i--){r=one(p[i]);if(r)return r}return 'check'}
+function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[IR(name)]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
 const SPIN=[];
 function draw(s,p){s.querySelectorAll('.d').forEach(d=>{d.style.strokeDasharray='1 1';d.style.strokeDashoffset=1-cl(p)})}
 function show(e,p,dy){e.style.opacity=cl(p);e.style.transform=`translateY(${(1-E(p))*(dy==null?24:dy)}px)`}
