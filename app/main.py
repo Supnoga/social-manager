@@ -298,7 +298,7 @@ def get_file(path: str):
 @app.post("/api/videos/{vid}/save-copy")
 def video_save_copy(vid: int, data: dict = Body(default={})):
     """Uloží kópiu videa do priečinka Stiahnuté (Downloads), aby sa dalo ľahko poslať alebo skontrolovať."""
-    import shutil
+    import re
     v = db.one("SELECT file_path, title FROM videos WHERE id=?", (vid,))
     if not v or not Path(v["file_path"]).exists():
         raise HTTPException(404)
