@@ -36,7 +36,7 @@ def process_one(post):
     if acc["platform"] == "youtube" and not youtube.quota_ok(acc):
         nxt = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=random.randint(0, 59), second=0)
         db.run("UPDATE posts SET scheduled_at=?, error=? WHERE id=?", (nxt.strftime("%Y-%m-%d %H:%M:%S"),
-               "Dnešný limit YouTube nahratí je vyčerpaný, presunuté na zajtra (pridaj ďalší Google projekt v Účtoch).", post["id"]))
+               "Dnešný limit YouTube je minutý. Nahrá sa samo zajtra ráno, netreba nič robiť.", post["id"]))
         return
     db.run("UPDATE posts SET status='uploading', attempts=attempts+1, updated_at=? WHERE id=?", (now_str(), post["id"]))
     state["current"] = f"{acc['platform']}: {vid['title'] or vid['original_name']}"
@@ -55,7 +55,7 @@ def process_one(post):
         if acc["platform"] == "youtube" and ("quotaExceeded" in msg or "uploadLimitExceeded" in msg or "quota" in msg.lower()):
             nxt = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=random.randint(0, 59), second=0)
             db.run("UPDATE posts SET status='queued', attempts=attempts-1, scheduled_at=?, error=?, updated_at=? WHERE id=?",
-                   (nxt.strftime("%Y-%m-%d %H:%M:%S"), "YouTube denný limit, presunuté na zajtra.", now_str(), post["id"]))
+                   (nxt.strftime("%Y-%m-%d %H:%M:%S"), "Dnešný limit YouTube je minutý. Nahrá sa samo zajtra ráno, netreba nič robiť.", now_str(), post["id"]))
             return
         attempts = post["attempts"] + 1
         if attempts < 3 and "vypršalo" not in msg and "Najprv" not in msg:
@@ -119,7 +119,10 @@ def stash_one(post):
             db.run("UPDATE posts SET status='queued' WHERE id=? AND status='review'", (post["id"],))
         return True
     except Exception as e:
-        db.run("UPDATE posts SET error=?, updated_at=? WHERE id=?", ("Súkromné nahratie: " + str(e)[:600], now_str(), post["id"]))
+        m = str(e)
+        if "quota" in m.lower() or "uploadLimitExceeded" in m:
+            m = "Dnešný limit YouTube je minutý. Nahrá sa samo zajtra ráno, netreba nič robiť."
+        db.run("UPDATE posts SET error=?, updated_at=? WHERE id=?", ("Súkromné nahratie: " + m[:600], now_str(), post["id"]))
         traceback.print_exc()
         return False
     finally:
@@ -144,7 +147,7 @@ def tick():
         rows = db.q("""SELECT p.* FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.status='review'
                        AND a.platform='youtube' AND COALESCE(p.stash_id,'')=''
                        AND NOT (COALESCE(p.error,'') LIKE 'Súkromné nahratie:%' AND p.updated_at > ?)
-                       ORDER BY p.video_id LIMIT 10""", ((datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"),))
+                       ORDER BY p.scheduled_at LIMIT 10""", ((datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"),))
         done = 0
         for p in rows:
             if done < 2 and stash_one(p):

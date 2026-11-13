@@ -90,7 +90,9 @@ def usage():
         i = int(json.loads(a["tokens"] or "{}").get("client", 0) or 0)
         if i < len(chans):
             chans[i] += 1
-    return [{"n": i + 1, "channels": chans[i], "today": up.get(str(i), 0), "limit": DAILY_UPLOADS} for i in range(len(cl))]
+    return [{"n": i + 1, "channels": chans[i], "today": up.get(str(i), 0), "limit": DAILY_UPLOADS,
+             "project": cl[i].get("project_id", ""), "number": (cl[i].get("client_id") or "").split("-")[0]}
+            for i in range(len(cl))]
 
 
 def auth_url(state, idx=0):
