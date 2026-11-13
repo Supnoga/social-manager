@@ -80,6 +80,7 @@ def release_one(post):
         ext_id, url = youtube.release(acc, post["stash_id"], _utc(when) if future else None)
         db.run("UPDATE posts SET status='done', external_id=?, url=?, error='', updated_at=? WHERE id=?",
                (ext_id, url, now_str(), post["id"]))
+        youtube.add_to_series(acc, db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],)) or {}, ext_id)
     except Exception as e:
         msg = str(e)[:800]
         if "notFound" in msg or "404" in msg:  # niekto video na YouTube zmazal: nahrá sa nanovo, ak je súbor

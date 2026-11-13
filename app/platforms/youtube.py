@@ -1,6 +1,7 @@
 """YouTube Data API v3 - prihlásenie cez Google (OAuth 'Desktop app') a nahrávanie videí."""
 import json
 import os
+import re
 import time
 import urllib.parse
 
@@ -165,6 +166,61 @@ def full_video_line(video, account):
     return f"{FULL.get(video.get('lang') or 'en', '▶')}: https://youtu.be/{r['external_id']}\n\n"
 
 
+def category(video):
+    """Kategória videa na YouTube. Vysvetľujúce videá patria do Vzdelávania (27), nie do predvolených Ľudí a blogov (22).
+    Dá sa zmeniť nastavením yt_category = {"<id projektu>": "28"}."""
+    m = db.get_setting("yt_category") or {}
+    return str(m.get(str(video.get("project_id") or 0)) or m.get("*") or "27")
+
+
+def _series(video):
+    """Séria (pillar) dlhého videa; Shorts a videá bez série vrátia ''."""
+    r = db.one("SELECT i.pillar, i.format FROM scripts s JOIN ideas i ON i.id=s.idea_id WHERE s.id=?", (video.get("script_id") or 0,))
+    if not r or (r["format"] or "") != "long":
+        return ""
+    return re.sub(r"[<>]", "", (r["pillar"] or "").strip())[:120]
+
+
+def add_to_series(account, video, yt_id):
+    """Dlhé video zaradí do playlistu svojej série (playlist sa pri prvom videu založí sám).
+    Diváci na televízore pozerajú sériu za sebou bez ďalšieho vyberania, čo pridáva hodiny pozerania.
+    Nikdy nezhodí zverejnenie: každá chyba sa len vypíše."""
+    try:
+        name = _series(video)
+        if not name or not yt_id:
+            return ""
+        key = name.lower()
+        allp = db.get_setting("yt_playlists") or {}
+        mine = allp.get(str(account["id"]), {})
+        done = db.get_setting("yt_playlist_items") or {}
+        if done.get(str(yt_id)):
+            return mine.get(key, "")
+        tok = access_token(account)
+        h = {"Authorization": f"Bearer {tok}"}
+        with client(timeout=60) as c:
+            pl = mine.get(key)
+            if not pl:
+                r = check(c.post("https://www.googleapis.com/youtube/v3/playlists", params={"part": "snippet,status"}, headers=h,
+                                 json={"snippet": {"title": name, "description": f"{name}: every episode from {account.get('name') or 'this channel'}.",
+                                                   "defaultLanguage": video.get("lang") or "en"},
+                                       "status": {"privacyStatus": "public"}}), "YouTube playlist")
+                pl = r.json()["id"]
+                mine[key] = pl
+                allp[str(account["id"])] = mine
+                db.set_setting("yt_playlists", allp)
+            check(c.post("https://www.googleapis.com/youtube/v3/playlistItems", params={"part": "snippet"}, headers=h,
+                         json={"snippet": {"playlistId": pl, "resourceId": {"kind": "youtube#video", "videoId": yt_id}}}),
+                  "YouTube zaradenie do playlistu")
+        done[str(yt_id)] = pl
+        if len(done) > 5000:
+            done = dict(list(done.items())[-4000:])
+        db.set_setting("yt_playlist_items", done)
+        return pl
+    except Exception as e:
+        print("YouTube séria:", str(e)[:300])
+        return ""
+
+
 def upload(account, video, privacy="public", publish_at=None):
     tok = access_token(account)
     title, desc = text_for(video, "youtube", account)
@@ -175,7 +231,7 @@ def upload(account, video, privacy="public", publish_at=None):
     if publish_at:
         status["privacyStatus"] = "private"
         status["publishAt"] = publish_at
-    body = {"snippet": {"title": title, "description": desc, "tags": tags, "categoryId": "22"}, "status": status}
+    body = {"snippet": {"title": title, "description": desc, "tags": tags, "categoryId": category(video)}, "status": status}
     if video.get("lang"):
         body["snippet"]["defaultLanguage"] = video["lang"]
         body["snippet"]["defaultAudioLanguage"] = video["lang"]
@@ -201,6 +257,8 @@ def upload(account, video, privacy="public", publish_at=None):
             except Exception as e:
                 print("YouTube náhľad:", e)
     count_upload(account)
+    if status["privacyStatus"] == "public" or publish_at:
+        add_to_series(account, video, vid)
     return vid, f"https://youtu.be/{vid}"
 
 
