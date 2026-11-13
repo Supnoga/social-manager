@@ -114,6 +114,9 @@ def stash_one(post):
     try:
         ext_id, _ = youtube.upload(acc, vid, "private")
         db.run("UPDATE posts SET stash_id=?, error='', updated_at=? WHERE id=?", (str(ext_id), now_str(), post["id"]))
+        # projekty, ktoré Oliver pustil bez Kontroly: po súkromnom nahratí rovno naplánovať (YouTube ich zverejní sám)
+        if vid["project_id"] in {int(x) for x in (db.get_setting("auto_approve_projects", []) or [])}:
+            db.run("UPDATE posts SET status='queued' WHERE id=? AND status='review'", (post["id"],))
         return True
     except Exception as e:
         db.run("UPDATE posts SET error=?, updated_at=? WHERE id=?", ("Súkromné nahratie: " + str(e)[:600], now_str(), post["id"]))
