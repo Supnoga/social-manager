@@ -478,6 +478,10 @@ def production(since):
     add("SELECT project_id p, COUNT(*) n FROM ideas WHERE status IN ('new','approved','inbox') GROUP BY project_id", "ideas")
     add("SELECT project_id p, COUNT(*) n FROM scripts WHERE is_source=1 AND created_at>=? GROUP BY project_id", "scripts", (since,))
     add("SELECT project_id p, COUNT(*) n FROM videos WHERE created_at>=? GROUP BY project_id", "made", (since,))
+    add("SELECT project_id p, COUNT(*) n FROM scripts WHERE is_source=1 GROUP BY project_id", "scripts_all")
+    add("""SELECT s.project_id p, COUNT(*) n FROM scripts s WHERE s.is_source=1 AND NOT EXISTS (
+             SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id
+             WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY s.project_id""", "ready")
     for st, key in (("review", "review"), ("queued", "queued"), ("uploading", "queued"), ("failed", "failed")):
         for r in db.q("""SELECT v.project_id p, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id WHERE p.status=? GROUP BY v.project_id""", (st,)):
             out.setdefault(r["p"], {})[key] = out.get(r["p"], {}).get(key, 0) + r["n"]

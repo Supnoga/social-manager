@@ -271,3 +271,4 @@ body.dropping::after{content:"Pusti súbory sem – pridajú sa do dizajnu proje
 .hbar{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-bottom:3px}.hbar i{display:block;height:100%;border-radius:4px}
 .hrank td.lead{color:var(--acc);font-weight:750}
 .hcm{padding:10px 0;border-top:1px solid var(--line)}.hcm:first-of-type{border-top:0}
+.dtab th.r,.dtab td.r{text-align:right}
