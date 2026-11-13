@@ -92,7 +92,7 @@ async function api(url, opts = {}, busyText) {
       d = await r.json().catch(() => ({}));
     }
     if (d.manual) { busy(false); return await manualAI(d); }
-    if (!r.ok) throw new Error(d.error || d.detail || 'Chyba ' + r.status);
+    if (!r.ok) throw new Error(d.error || (typeof d.detail === 'string' ? d.detail : '') || (r.status === 422 ? 'Appka nerozumela požiadavke, obnov stránku a skús znova.' : 'Chyba ' + r.status));
     return d;
   } catch (e) { if (e.message !== 'Zrušené') toast(/fetch|Load failed/i.test(e.message) ? 'Appka neodpovedá – skontroluj, či je otvorené čierne okno (Terminál), a skús znova.' : e.message, true); throw e; }
   finally { if (busyText) busy(false); }

@@ -18,7 +18,7 @@ from .platforms import linkedin, meta, tiktok_business, youtube
 from .platforms.common import client, tokens
 
 YTA = "https://youtubeanalytics.googleapis.com/v2/reports"
-READ_CAP = 400  # max. jednotiek YouTube Data API denne na Google projekt pre štatistiky (nahratie ich má tisíce)
+READ_CAP = 150  # max. jednotiek YouTube Data API denne na Google projekt pre štatistiky (nahratie ich má tisíce)
 YPP_DEADLINE = "2027-01-31"
 
 
@@ -35,7 +35,34 @@ def _today():
 
 
 # ---------- strop čítania z YouTube Data API ----------
+def _cli(acc):
+    return str(int(tokens(acc).get("client", 0) or 0))
+
+
+def yt_blocked(acc=None):
+    """Google projekty, ktoré dnes vyčerpali kvótu (čítanie sa už neskúša, nech nič neberie nahrávaniu)."""
+    b = (db.get_setting("yt_read_block") or {}).get(_today(), [])
+    return b if acc is None else _cli(acc) in b
+
+
+def limit_today():
+    """Je dnes niektorý Google projekt bez kvóty (vyčerpaná alebo minutá nahrávaním)?"""
+    if yt_blocked():
+        return True
+    return any(not youtube.quota_ok(a) for a in db.q("SELECT tokens FROM accounts WHERE platform='youtube'"))
+
+
+def block_today(acc):
+    day = _today()
+    b = (db.get_setting("yt_read_block") or {}).get(day, [])
+    if _cli(acc) not in b:
+        db.set_setting("yt_read_block", {day: b + [_cli(acc)]})
+
+
 def _read_ok(acc, units=1):
+    """Čítanie štatistík z YouTube Data API len z rezervy: nie pri vyčerpanej kvóte a nie keď sa blíži limit nahratí."""
+    if yt_blocked(acc) or not youtube.quota_ok(acc):
+        return False
     day = _today()
     u = db.get_setting("yt_read_units") or {}
     u = {day: u.get(day, {})}
@@ -62,13 +89,15 @@ def _snap(aid, followers, views_total=None, media=None):
 
 # ---------- YouTube ----------
 def _yt_channel(acc):
-    if not _read_ok(acc):
+    if not _read_ok(acc):  # dnes bez rezervy kvóty: ostáva posledný počet odberateľov, skúsi sa neskôr
         return
     tok = youtube.access_token(acc)
     with client() as c:
         r = c.get("https://www.googleapis.com/youtube/v3/channels", headers={"Authorization": f"Bearer {tok}"},
                   params={"part": "statistics", "id": acc["external_id"]} if acc["external_id"] else {"part": "statistics", "mine": "true"})
     if r.status_code != 200:
+        if "quota" in r.text.lower():
+            block_today(acc)
         raise RuntimeError(_gerr(r))
     items = r.json().get("items") or []
     if not items:

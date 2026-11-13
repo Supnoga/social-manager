@@ -60,4 +60,4 @@ def dash(days: int = 365, pdays: int = 0):
 
 @router.post("/api/dash/refresh")
 def dash_refresh(data: dict = Body(default={})):
-    return {"started": insights.refresh(force=True)}
+    return {"started": insights.refresh(force=True), "yt_limit": insights.limit_today()}
