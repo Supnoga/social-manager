@@ -18,7 +18,7 @@ from . import db, icons_extra
 
 W, H = 1080, 1920
 KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene",
-         "map", "timeline", "line")
+         "map", "timeline", "line", "growth", "pie", "stack", "dots", "size", "layers", "mech")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
               "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
@@ -40,10 +40,47 @@ Optional on every element: "c":1 (red highlight) or 2 (grey), "a":"spin" / "shak
 A drawing MUST be built from real objects (turbine, icons); lines, arrows, circles, rectangles and texts are only helpers (ground line, frame, highlight ring, pointer). Never let a bare circle, rectangle or line stand for a real thing: if there is no icon for the thing, use "scene", "hero" or a number diagram instead. Objects are big (icons 70-110 px, turbines 130-180 px high), 2-4 objects per drawing.
 Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Never put a text on top of a line, arrow or shape or on another text: place it beside with a clear gap (texts are centered on their x). Something must MOVE in every drawing (spin, shake, flow, pulse) and it must show the exact thing the voice is describing at that moment: the machine, the part, the before and after, what goes in and what comes out.
 {"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
-{"k":"map","c":["EG","SD"],"p":["Cairo"],"r":[["Cairo","Aswan"]],"v":"Nile","l":"optional 1-3 word tag"} = real animated map: the globe turns and zooms in, countries light up with their flags. c = ISO 2-letter codes (first = main) or a region (EU, Middle East, Africa, Balkans...), p = max 4 real cities, r = straight lines city to city (only for flights, distances or direct links, never for ship or road routes), v = river or canal. Only real places, all fields except c optional. Use "map" EVERY time the voice names a country, region, city, river, sea route or border: it beats all other rules.
+{"k":"map","c":["EG","SD"],"p":["Cairo"],"r":[["Cairo","Aswan"]],"v":"Nile","l":"optional 1-3 word tag"} = real animated map: the globe turns and zooms in, countries light up with their flags. c = ISO 2-letter codes (first = main) or a region (EU, Middle East, Africa, Balkans...), p = max 4 real cities, r = routes: ["Cairo","London"] is a straight flight line; a ship route lists sea waypoints between the ports, e.g. ["Shanghai","South China Sea","Singapore Strait","Sri Lanka South","Bab el Mandeb","Red Sea","Suez Canal","Crete South","Sicily Channel","Strait of Gibraltar","Cape Finisterre","English Channel","Rotterdam"] (other points: Strait of Malacca, Hormuz, Persian Gulf, Cape of Good Hope, Panama Canal, Caribbean, Atlantic, Pacific, Bosporus, Black Sea, Danish Straits, Baltic Sea, North Sea, Taiwan Strait), v = river or canal. Only real places, all fields except c optional. Use "map" EVERY time the voice names a country, region, city, river, sea route or border: it beats all other rules.
 {"k":"timeline","i":[["1869","Suez Canal opens"],...max 5]} (history, dates) | {"k":"line","u":"unit","i":[["2000",12],["2010",30],...max 10]} (change over time)
 "scene" and "draw" are the DEFAULT, together at least 3 of every 5 scenes: "scene" for things connected by flows, "draw" only to place the same kind of object side by side for comparison (like the turbines) or to point at one object with arrows. Use the number diagrams only when the voice says a number, and "hero"/"text" only for the hook or the closing line.
 Labels max 4 words, numbers as numbers."""
+
+
+
+# Vizuály na mieru téme kanála: do zadania pre AI idú len riadky, ktoré kanál potrebuje (šetrí tokeny)
+PACK = {
+    "growth": '{"k":"growth","p":1000,"r":7,"y":30,"m":0,"u":"€","l":"after 30 years","a":"paid in","b":"interest","x":"years"} = compound growth the app CALCULATES itself (p start sum, r % per year, y years, m monthly addition): savings, investing, loans and debt',
+    "pie": '{"k":"pie","u":"%","c":"centre text","i":[["Needs",50],["Wants",30],["Savings",20]]} = shares of a whole (budget, where the money goes, market share), max 5',
+    "stack": '{"k":"stack","u":"$","i":[["1 million",1000000],["1 billion",1000000000]]} = huge numbers shown as squares in true proportion, max 3',
+    "dots": '{"k":"dots","n":100,"h":23,"l":"of people ..."} = 100 dots, h of them light up (probability, percent of people, 1 in N)',
+    "size": '{"k":"size","u":"m","d":"v or h","i":[["Burj Khalifa",828,"skyscraper"],["Eiffel Tower",330],["Person",1.8,"user"]]} = real sizes side by side in true scale (heights v, lengths h), optional icon, max 4',
+    "layers": '{"k":"layers","u":"cm","z":0,"i":[["Plaster",2],["Brick",30],["Insulation",15,1]]} = cross-section layer by layer, top to bottom, real thickness (third value 1 = highlighted layer; "z":1 adds a depth ruler, for ground and underground)',
+    "mech": '{"k":"mech","m":"piston|gears|wing|wave|radar|orbit|pendulum","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine (l = the 4 strokes), gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
+}
+CHANNEL_PACKS = {
+    "cash": ("growth", "pie", "stack", "dots"), "wallet": ("growth", "pie", "stack", "dots"), "stocks": ("growth", "pie", "stack", "dots"),
+    "company": ("pie", "stack", "dots", "growth"), "brands": ("pie", "stack", "dots"),
+    "machines": ("mech", "size", "layers"), "engines": ("mech", "size", "pie"), "flight": ("mech", "size", "dots"),
+    "mega": ("size", "layers", "mech"), "house": ("layers", "size", "pie"), "underground": ("layers", "size", "mech"),
+    "industry": ("size", "stack", "layers", "mech"), "inventions": ("mech", "size"), "arsenal": ("mech", "size", "layers"),
+    "forces": ("mech", "dots", "size"), "digital": ("mech", "dots", "stack"), "logic": ("dots", "pie", "stack", "growth"),
+    "logistics": ("size", "stack"), "maps": ("dots", "size", "stack"), "nations": ("dots", "pie", "size", "stack"),
+    "energy": ("mech", "size", "pie", "stack"), "n2n": ("layers", "pie"),
+}
+
+
+def packs_for(project=None):
+    name = str((project or {}).get("name") or "").lower()
+    for key, kinds in CHANNEL_PACKS.items():
+        if key in name:
+            return kinds
+    return ("pie", "dots", "size")
+
+
+def spec(project=None):
+    """SPEC + vizuály na mieru kanálu (len tie, ktoré jeho témy potrebujú)."""
+    extra = " |\n".join(PACK[k] for k in packs_for(project))
+    return SPEC + "\nMore diagrams for this channel (use them whenever they fit the spoken point better than the defaults):\n" + extra
 
 
 # ---------- texty na preklad (rovnaké poradie pre texts/with_texts) ----------
@@ -68,13 +105,13 @@ def _slots(d):
         for i, x in enumerate(d.get(f) or []):
             if isinstance(x, list) and len(x) > j and isinstance(x[j], str) and re.search(r"[^\W\d_]{2,}", x[j]):
                 out.append((f, i, j))
-    for f in ("i", "r"):
+    for f in ("i", "r") if k != "map" else ():
         for i, x in enumerate(d.get(f) or []):
             if isinstance(x, str):
                 out.append((f, i))
             elif isinstance(x, list):
                 for j, y in enumerate(x):
-                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and (
+                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and not (k in ("bars", "size") and j == 2) and (
                             k == "calc" or re.search(r"[^\W\d_]{2,}", y)):
                         out.append((f, i, j))
     return out
@@ -274,7 +311,7 @@ def ensure_boards(script_id):
     try:
         items = {str(i): {"onscreen": scenes[i].get("onscreen", ""), "visual": (scenes[i].get("visual") or "")[:140]} for i in need}
         data = ai.ask(f"""Short explainer video "{s['title']}". Voiceover: {s['voiceover'][:1500]}
-For each scene choose an animated diagram. {SPEC}
+For each scene choose an animated diagram. {spec(db.one("SELECT name FROM projects WHERE id=?", (s["project_id"],)))}
 Write labels in {languages.english(s['lang'])}. Scenes: {json.dumps(items, ensure_ascii=False)}
 Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "boards", "cheap")
     except Exception as e:
@@ -721,6 +758,7 @@ window.READY=true;
 TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + ",", 1)
 _HERE = Path(__file__).parent
 TEMPLATE = TEMPLATE.replace("/*EXTRA_BOARDS*/", (_HERE / "boards_extra.js").read_text(encoding="utf-8") + "\n"
+                            + (_HERE / "boards_pack.js").read_text(encoding="utf-8") + "\n"
                             + (_HERE / "geo" / "map.js").read_text(encoding="utf-8"), 1)
 
 STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars": lambda d: len(d.get("i") or []) + 1,
@@ -730,7 +768,10 @@ STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars":
          "draw": lambda d: max([int(x.get("at") or 0) for x in (d.get("e") or []) if isinstance(x, dict)] or [0]) + 1.5,
          "product": lambda d: len(d.get("i") or []) + 1.5,
          "map": lambda d: 2.2 + .6 * len(d.get("r") or []) + .4 * len(d.get("pts") or []) + .5 * len(d.get("v") or []),
-         "timeline": lambda d: len(d.get("i") or []) * .8 + .8, "line": lambda d: 3}
+         "timeline": lambda d: len(d.get("i") or []) * .8 + .8, "line": lambda d: 3,
+         "growth": lambda d: 3.2, "pie": lambda d: len(d.get("i") or []) * .55 + .6, "stack": lambda d: len(d.get("i") or []) * .9 + .6,
+         "dots": lambda d: 2.4, "size": lambda d: len(d.get("i") or []) * .7 + .6, "layers": lambda d: len(d.get("i") or []) * .45 + .6,
+         "mech": lambda d: 2}
 
 _lock = threading.Lock()
 

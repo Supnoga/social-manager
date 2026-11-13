@@ -169,7 +169,7 @@ no emojis or symbols in voiceover. It will be machine-translated to many languag
 tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
 "scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 4-7 scenes, long: 32-42 scenes; scene 1 = hook; onscreen headlines in plain words, not jargon; SHOW, do not just tell: most scenes are a moving \"draw\" picture of the exact thing being described, number diagrams only when a number is spoken;
-scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.SPEC}),
+scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.spec(p)}),
 "description":"YouTube description: first sentence = what viewer learns incl. main search keyword, 2-4 sentences total",
 "caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
 "post":{{"body":"1-2 short sentences of concrete value, use the words people type into search","question":"one easy question that makes viewers comment (opinion or own experience)",
@@ -261,7 +261,7 @@ that only the long video answers (a natural open ending, for example "But there 
 Never stop mid-sentence, never promise something the long video does not contain, never repeat the same closing words in two Shorts.
 Same style as the long video: simple everyday words, warm storyteller, short sentences, numbers as digits, no emojis or symbols in voiceover.
 Return JSON: {{"scripts":[{{"title":"Shorts title max 60 chars, main search keyword first","hook":"first sentence","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","anim":{{}}}}] (4-6 scenes in voiceover order; last scene onscreen says to watch the full video; EVERY scene gets {explainer.SPEC}),
+"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","anim":{{}}}}] (4-6 scenes in voiceover order; last scene onscreen says to watch the full video; EVERY scene gets {explainer.spec(p)}),
 "description":"1-2 sentences incl. main search keyword","caption":"hook line max 90 chars, no hashtags",
 "post":{{"body":"1 sentence of value","question":"one easy question for comments","save":"reason to save, max 60 chars","keywords":["2-4 search phrases"]}},
 "hashtags":"#a #b #c"}}]}}
