@@ -135,6 +135,7 @@ def verify_file(fname: str):
 
 # ---------------- Dlhé úlohy na pozadí (prehliadač sa len pýta na stav, spojenie sa nepreruší) ----------------
 JOBS = {}
+nightly.BUSY = lambda: any(not j.get("done") for j in list(JOBS.values()))  # Mac nezaspí počas ručnej výroby
 
 
 @app.post("/api/job")
