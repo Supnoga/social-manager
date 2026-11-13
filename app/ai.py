@@ -150,4 +150,6 @@ def usage_summary():
     week = db.one("SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) inp, COALESCE(SUM(output_tokens),0) outp "
                   "FROM ai_log WHERE ts >= datetime('now','localtime','-7 day')")
     last = db.q("SELECT ts,purpose,model,input_tokens,output_tokens,cached,ok,note FROM ai_log ORDER BY id DESC LIMIT 30")
-    return {"day": tot, "week": week, "last": last}
+    by = db.q("SELECT purpose, model, COUNT(*) calls, COALESCE(SUM(input_tokens),0) inp, COALESCE(SUM(output_tokens),0) outp "
+              "FROM ai_log WHERE ok=1 AND cached=0 AND ts >= datetime('now','localtime','-7 day') GROUP BY purpose, model ORDER BY outp DESC")
+    return {"day": tot, "week": week, "last": last, "by": by}
