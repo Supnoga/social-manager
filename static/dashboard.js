@@ -380,7 +380,9 @@ async function homeProjects(el) {
   const fmtK = (x) => k === 'fg' ? (x.fg > 0 ? '+' : '') + nf(x.fg) : k === 'done' ? nf(x.done) : cf(x[k]);
   el.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px;margin-bottom:10px"><h2 style="margin:0;flex:1">${I('chart')}Ako sa darí projektom</h2>
     <div class="seg">${HPK.map(([kk, n]) => `<button class="${k === kk ? 'on' : ''}" onclick="S.hp.k='${kk}';homeProjects($('#hProj'))">${n}</button>`).join('')}</div>
-    <div class="seg">${[[7, '7 dní'], [30, '30 dní'], [90, '3 mesiace']].map(([d, n]) => `<button class="${f.days === d ? 'on' : ''}" onclick="S.hp.days=${d};homeProjects($('#hProj'))">${n}</button>`).join('')}</div></div>
+    <div class="seg">${[[7, '7 dní'], [30, '30 dní'], [90, '3 mesiace']].map(([d, n]) => `<button class="${f.days === d ? 'on' : ''}" onclick="S.hp.days=${d};homeProjects($('#hProj'))">${n}</button>`).join('')}</div>
+    <span class="small dim">${D.last ? 'stiahnuté ' + esc(D.last.slice(8, 10) + '.' + D.last.slice(5, 7) + '. ' + D.last.slice(11, 16)) : 'zatiaľ nestiahnuté'}</span>
+    <button class="btn sec sm" onclick="hRefresh(this)" ${D.busy || S.hp.busy ? 'disabled' : ''}>${I('refresh', 's')}${D.busy || S.hp.busy ? 'Sťahujem…' : 'Stiahnuť čísla teraz'}</button></div>
   ${!any ? empty('chart', 'Zatiaľ žiadne čísla. Objavia sa samé po prvých zverejnených videách (sťahujú sa každých 6 hodín).') : `
   <table class="dtab hrank"><tr><th>#</th><th>Projekt</th><th></th><th>Pozretia</th><th>oproti predtým</th><th>Lajky</th><th>Komentáre</th><th>Odberatelia</th><th>Rast</th><th>Hodiny</th><th>Zverejnené</th></tr>
   ${list.map((x, i) => `<tr class="cl" onclick="S.dash.all=0;location.hash='#/p/${x.p.id}/dashboard'">
@@ -390,5 +392,13 @@ async function homeProjects(el) {
     <td>${nf(x.v)}</td><td>${tr(x.v, x.vp)}</td><td>${nf(x.lk)}</td><td>${nf(x.cm)}</td>
     <td>${x.hasF ? nf(x.f) : '<span class="dim">–</span>'}</td><td class="${x.fg > 0 ? 'up' : x.fg < 0 ? 'down' : 'dim'}">${x.hasF ? (x.fg > 0 ? '+' : '') + nf(x.fg) : ''}</td>
     <td>${x.w ? nf(x.w) : '<span class="dim">–</span>'}</td><td>${nf(x.done)}</td></tr>`).join('')}</table>
-  <p class="small dim" style="margin:8px 0 0">Klikni na projekt pre celý dashboard. Len skutočné čísla zo sietí${D.last ? ', posledné stiahnutie ' + esc(D.last.slice(8, 10) + '.' + D.last.slice(5, 7) + '. ' + D.last.slice(11, 16)) : ''}.</p>`}`;
+  <p class="small dim" style="margin:8px 0 0">Klikni na projekt pre celý dashboard. Len skutočné čísla zo sietí, sťahujú sa samé každých 6 hodín.</p>`}`;
+  if (D.busy && !S.hp.t) { S.hp.t = setTimeout(() => { S.hp.t = 0; homeProjects($('#hProj')); }, 15000); }
+}
+async function hRefresh(b) {
+  b.disabled = true;
+  const r = await api('/api/dash/refresh', { method: 'POST', body: '{}' });
+  toast(r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.');
+  S.hp.busy = 1; b.innerHTML = I('refresh', 's') + 'Sťahujem…';
+  setTimeout(() => { S.hp.busy = 0; homeProjects($('#hProj')); }, 15000);
 }
