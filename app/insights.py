@@ -39,8 +39,9 @@ def _cli(acc):
 
 
 def yt_blocked(acc=None):
-    """Google projekty, ktoré dnes vyčerpali kvótu (čítanie sa už neskúša, nech nič neberie nahrávaniu)."""
-    b = (db.get_setting("yt_read_block") or {}).get(_today(), [])
+    """Google projekty, ktoré dnes vyčerpali kvótu (čítanie sa už neskúša, nech nič neberie nahrávaniu).
+    Deň je "Google deň" (kvóta sa obnovuje o 9:00 nášho času), nie náš kalendárny deň."""
+    b = (db.get_setting("yt_read_block") or {}).get(youtube.gday(), [])
     return b if acc is None else _cli(acc) in b
 
 
@@ -52,7 +53,7 @@ def limit_today():
 
 
 def block_today(acc):
-    day = _today()
+    day = youtube.gday()
     b = (db.get_setting("yt_read_block") or {}).get(day, [])
     if _cli(acc) not in b:
         db.set_setting("yt_read_block", {day: b + [_cli(acc)]})
@@ -67,7 +68,7 @@ READ_RESERVE = {"comments": 180, "stats": 80}
 def _read_ok(acc, units=1, kind="stats"):
     if yt_blocked(acc):
         return False
-    day = _today()
+    day = youtube.gday()
     u = db.get_setting("yt_read_units") or {}
     u = {day: u.get(day, {})}
     k = _cli(acc) + ":" + kind
@@ -183,7 +184,7 @@ def _merge(pid, views, likes, comments=None):
 
 def yt_subs_batch():
     """Odberatelia všetkých YouTube kanálov: 1 volanie (1 jednotka) na Google projekt pre až 50 kanálov naraz."""
-    groups = {}
+    groups, done = {}, set()
     for a in db.q("SELECT * FROM accounts WHERE platform='youtube' AND external_id LIKE 'UC%'"):
         groups.setdefault(_cli(a), []).append(a)
     for accs in groups.values():
@@ -217,8 +218,56 @@ def yt_subs_batch():
                     subs = None if st.get("hiddenSubscriberCount") else int(st.get("subscriberCount", 0) or 0)
                     _snap(a["id"], subs, int(st.get("viewCount", 0) or 0), int(st.get("videoCount", 0) or 0))
                     _ins(a["id"], stats_at=_now(), error="")
+                    done.add(a["id"])
             except Exception as e:
                 print("YouTube odberatelia:", e)
+    _subs_from_pages(done)
+
+
+def _num(t):
+    t = t.replace(",", "").strip()
+    m = {"K": 1e3, "M": 1e6, "B": 1e9}.get(t[-1:].upper())
+    return int(round(float(t[:-1]) * m)) if m else int(float(t))
+
+
+def page_subs(channel_id):
+    """Počet odberateľov z verejnej stránky kanála (bez kvóty Googlu). Do 1000 presne, potom zaokrúhlené ako na YouTube."""
+    import re
+    with client(timeout=30) as c:
+        r = c.get(f"https://www.youtube.com/channel/{channel_id}", params={"hl": "en", "gl": "US"},
+                  headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                                         "(KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+                           "Accept-Language": "en-US,en;q=0.9"},
+                  cookies={"SOCS": "CAI", "CONSENT": "YES+"}, follow_redirects=True)
+    if r.status_code != 200:
+        return None
+    h = r.text
+    if re.search(r'"(?:simpleText|content|label)":"No subscribers', h):
+        return 0
+    m = re.search(r'"(?:simpleText|content|label|accessibilityLabel)":"([\d.,]+)(?:\s|\\u00a0|\xa0)?([KMB]?)'
+                  r'(?:\s|\\u00a0|\xa0)(?:subscribers?|odberate\w*|odběratel\w*|Abonnent\w*)"', h)
+    return _num(m.group(1) + m.group(2)) if m else None
+
+
+def _subs_from_pages(done=()):
+    """Kanály, ktorým API dnes nedalo odberateľov (minutá kvóta): počet z verejnej stránky, najviac raz za 2 hodiny."""
+    for a in db.q("SELECT * FROM accounts WHERE platform='youtube' AND external_id LIKE 'UC%'"):
+        if a["id"] in done:
+            continue
+        last = db.one("SELECT fetched_at FROM account_stats WHERE account_id=? ORDER BY day DESC LIMIT 1", (a["id"],))
+        if last and (last["fetched_at"] or "") > _ago(2 / 24):
+            continue
+        try:
+            n = page_subs(a["external_id"])
+        except Exception as e:
+            print("YouTube odberatelia zo stránky:", e)
+            n = None
+        if n is None:
+            continue
+        prev = db.one("SELECT views_total, media_count FROM account_stats WHERE account_id=? ORDER BY day DESC LIMIT 1", (a["id"],))
+        _snap(a["id"], n, prev["views_total"] if prev else None, prev["media_count"] if prev else None)
+        _ins(a["id"], stats_at=_now(), error="")
+        time.sleep(1)
 
 
 def rss_job():
