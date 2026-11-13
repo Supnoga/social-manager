@@ -576,7 +576,8 @@ def _housekeeping():
 # ---------- plánovač Radaru (samostatné vlákno, nezasahuje do publikovania) ----------
 JOBS = {"gtrends": (2, job_gtrends), "news": (3, job_news), "wiki": (24, job_wiki), "yt_popular": (24, job_yt_popular),
         "comp_uploads": (6, job_comp_uploads), "comp_backlog": (12, job_comp_backlog), "comp_stats": (3, job_comp_stats), "own_stats": (6, _own_stats),
-        "acct_stats": (6, lambda: __import__("app.insights", fromlist=["job"]).job()),
+        "acct_stats": (3, lambda: __import__("app.insights", fromlist=["job"]).job()),
+        "yt_feed": (1, lambda: __import__("app.insights", fromlist=["rss_job"]).rss_job()),
         "weather": (24, lambda: __import__("app.weather", fromlist=["job"]).job()),
         "questions": (168, lambda: __import__("app.inspire", fromlist=["job_questions"]).job_questions())}
 
@@ -614,7 +615,7 @@ def loop():
                     last_hk = time.time()
                     _housekeeping()
                 for name in JOBS:
-                    if not on and name not in ("own_stats", "acct_stats"):
+                    if not on and name not in ("own_stats", "acct_stats", "yt_feed"):
                         continue
                     j = db.one("SELECT next_run FROM intel_jobs WHERE name=?", (name,))
                     if not j or j["next_run"] <= _now():

@@ -45,18 +45,6 @@ def yt_blocked(acc=None):
     return b if acc is None else _cli(acc) in b
 
 
-def key_get(path, **params):
-    """Verejné čísla cez API kľúč Radaru (vlastný Google projekt s vlastnou kvótou, nahrávanie nebrzdí). None = nedá sa."""
-    try:
-        from . import radar
-        if not radar.yt_key():
-            return None
-        return radar._yt(path, **params)
-    except Exception as e:
-        print("Čísla cez API kľúč:", e)
-        return None
-
-
 def limit_today():
     """Je dnes niektorý Google projekt bez kvóty (vyčerpaná alebo minutá nahrávaním)?"""
     if yt_blocked():
@@ -113,8 +101,6 @@ def _yt_channel(acc):
             block_today(acc)
         else:
             raise RuntimeError(_gerr(r))
-    if items is None and acc["external_id"]:  # kanál bez rezervy kvóty: cez API kľúč Radaru
-        items = (key_get("channels", part="statistics", id=acc["external_id"]) or {}).get("items")
     if items is None:
         raise RuntimeError("quota: dnes vyčerpaný limit YouTube, čísla prídu zajtra")
     if not items:
@@ -170,7 +156,7 @@ def _yt_analytics(acc):
                        shorts_views_90=None, all_views_365=sum(int(x.get("views") or 0) for x in y))
         # čísla videí (posledných 200 podľa zobrazení, za celý čas)
         vids = _report(c, tok, startDate="2015-01-01", endDate=today.isoformat(), dimensions="video", sort="-views", maxResults=200,
-                       metrics="views,estimatedMinutesWatched,averageViewPercentage,subscribersGained")
+                       metrics="views,estimatedMinutesWatched,averageViewPercentage,subscribersGained,likes,comments")
     posts = {p["external_id"]: p["id"] for p in db.q("SELECT id, external_id FROM posts WHERE account_id=? AND external_id!=''", (acc["id"],))}
     for x in vids:
         pid = posts.get(x.get("video"))
@@ -179,8 +165,41 @@ def _yt_analytics(acc):
             db.run("UPDATE post_stats SET watch_min=?, avg_pct=?, subs=? WHERE post_id=?",
                    (float(x.get("estimatedMinutesWatched") or 0), float(x.get("averageViewPercentage") or 0),
                     int(x.get("subscribersGained") or 0), pid))
+            _merge(pid, int(x.get("views") or 0), int(x.get("likes") or 0), int(x.get("comments") or 0))
     ypp["at"] = _now()
     _ins(acc["id"], ypp=json.dumps(ypp), analytics_at=_now(), analytics_error="")
+
+
+def _merge(pid, views, likes, comments=None):
+    """Zapíše čísla videa; berie vyššie z oboch zdrojov (feed je čerstvejší, Analytics má komentáre)."""
+    db.run("INSERT OR IGNORE INTO post_stats(post_id, fetched_at) VALUES(?, '')", (pid,))
+    db.run("""UPDATE post_stats SET views=MAX(views, ?), likes=MAX(likes, ?), comments=MAX(comments, COALESCE(?, comments)),
+              fetched_at=?, error='' WHERE post_id=?""", (views, likes, comments, _now(), pid))
+
+
+def rss_job():
+    """Každú hodinu, zadarmo a bez kvóty: verejný feed kanála (posledných 15 videí) s pozretiami a lajkami."""
+    import re
+    for acc in db.q("SELECT id, external_id FROM accounts WHERE platform='youtube' AND external_id LIKE 'UC%'"):
+        posts = {p["external_id"]: p["id"] for p in db.q("SELECT id, external_id FROM posts WHERE account_id=? AND status='done' AND external_id!=''",
+                                                         (acc["id"],))}
+        if not posts:
+            continue
+        try:
+            with client() as c:
+                r = c.get("https://www.youtube.com/feeds/videos.xml", params={"channel_id": acc["external_id"]})
+            if r.status_code != 200:
+                continue
+            for e in r.text.split("<entry>")[1:]:
+                vid = re.search(r"<yt:videoId>([^<]+)</yt:videoId>", e)
+                if not vid or vid.group(1) not in posts:
+                    continue
+                v = re.search(r'<media:statistics views="(\d+)"', e)
+                lk = re.search(r'<media:starRating count="(\d+)"', e)
+                _merge(posts[vid.group(1)], int(v.group(1)) if v else 0, int(lk.group(1)) if lk else 0)
+        except Exception as ex:
+            print("YouTube feed:", ex)
+        time.sleep(0.5)
 
 
 # ---------- ostatné siete: len počet sledovateľov ----------
@@ -250,6 +269,10 @@ def refresh(force=False):
         try:
             from . import stats
             try:
+                rss_job()
+            except Exception as e:
+                print("YouTube feed:", e)
+            try:
                 stats.job()
             except Exception as e:
                 print("Štatistiky príspevkov:", e)
@@ -275,7 +298,7 @@ def job():
             except Exception as e:
                 _ins(acc["id"], stats_at=_now(), error=str(e)[:300])
             time.sleep(0.3)
-        if acc["platform"] == "youtube" and (st.get("analytics_at") or "") < _ago(0.8):
+        if acc["platform"] == "youtube" and (st.get("analytics_at") or "") < _ago(0.125):  # každé 3 h (vlastná kvóta Analytics)
             try:
                 _yt_analytics(acc)
             except Exception as e:

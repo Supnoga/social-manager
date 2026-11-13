@@ -149,7 +149,7 @@ function dScope(v) { S.dash.all = v ? 1 : 0; S.dash.p = ''; pDash($('#main')); }
 async function dRefresh(b) {
   b.disabled = true;
   const r = await api('/api/dash/refresh', { method: 'POST', body: {} });
-  toast((r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.') + (r.yt_limit ? ' YouTube má dnes vyčerpaný denný limit, preto sa pozretia jednotlivých YouTube videí doplnia zajtra (odberatelia a čas sledovania idú normálne).' : ''));
+  toast((r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.') + (r.yt_limit ? ' YouTube má dnes minutý limit na nahrávanie, pozretia a lajky sa aj tak stiahnu (cesta, ktorá limit neberie). Počet odberateľov sa obnoví zajtra.' : ''));
   DD.busy = true; b.innerHTML = I('refresh', 's') + 'Sťahujem…';
   let n = 0; const t = setInterval(async () => {
     n++; if (!location.hash.includes('dashboard') || n > 20) return clearInterval(t);
@@ -384,7 +384,7 @@ async function homeProjects(el) {
   const tr = (a, b) => !b ? (a ? '<span class="dd up">nové</span>' : '<span class="dim">–</span>') : `<span class="dd ${a >= b ? 'up' : 'down'}">${a >= b ? '▲' : '▼'} ${Math.round(Math.abs(a - b) / b * 100)} %</span>`;
   const fmtK = x => k === 'fg' ? (x.fg > 0 ? '+' : '') + nf(x.fg) : k === 'done' ? nf(x.done) : cf(x[k]);
   const dd = t => t ? `${+t.slice(8, 10)}. ${+t.slice(5, 7)}. o ${t.slice(11, 16)}` : '';
-  const why = x => x.pubN || x.done ? (D.yt_limit ? 'Videá vyšli, čísla prídu zajtra ráno (YouTube má dnes vyčerpaný denný limit).' : 'Videá vyšli, čísla prídu pri najbližšom sťahovaní (do 6 hodín).')
+  const why = x => x.pubN || x.done ? 'Videá vyšli, prvé čísla prídu do hodiny (sťahujú sa samé každú hodinu).'
     : x.next ? `Zatiaľ nič nezverejnené, prvé video vyjde ${dd(x.next)}.` : 'Zatiaľ nič nezverejnené.';
   const name = x => `<span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${x.p.color};margin-right:6px"></span>${esc(x.p.name)}`;
   const row = (x, i) => `<tr class="cl" onclick="S.dash.all=0;location.hash='#/p/${x.p.id}/dashboard'">
@@ -402,16 +402,15 @@ async function homeProjects(el) {
     <div class="seg">${[[7, '7 dní'], [30, '30 dní'], [90, '3 mesiace']].map(([d, n]) => `<button class="${f.days === d ? 'on' : ''}" onclick="S.hp.days=${d};homeProjects($('#hProj'))">${n}</button>`).join('')}</div>
     <span class="small dim">${D.last ? 'stiahnuté ' + esc(D.last.slice(8, 10) + '.' + D.last.slice(5, 7) + '. ' + D.last.slice(11, 16)) : 'zatiaľ nestiahnuté'}</span>
     <button class="btn sec sm" onclick="hRefresh(this)" ${D.busy || S.hp.busy ? 'disabled' : ''}>${I('refresh', 's')}${D.busy || S.hp.busy ? 'Sťahujem…' : 'Stiahnuť čísla teraz'}</button></div>
-  ${D.yt_limit ? `<div class="small" style="color:var(--warn);margin:-2px 0 10px">${I('alert', 's')} YouTube má dnes vyčerpaný denný limit. Čísla, ktoré sa nedajú stiahnuť inou cestou, prídu zajtra ráno.</div>` : ''}
   <table class="dtab hrank"><tr><th>Poradie</th><th>Projekt</th><th>Porovnanie: ${esc(kName.toLowerCase())}</th><th>Pozretia za ${per}</th><th>Oproti predch. ${per}</th><th>Páči sa mi</th><th>Komentáre</th><th>Odberatelia spolu</th><th>Noví odberatelia</th><th>Hodiny sledovania</th><th>Zverejnené videá za ${per}</th></tr>
   ${withN.map(row).join('')}${noN.map(rowN).join('')}</table>
-  <p class="small dim" style="margin:8px 0 0">Klikni na projekt pre celý dashboard. Len skutočné čísla zo sietí, sťahujú sa samé každých 6 hodín.${ranked ? '' : ' Poradie sa ukáže, keď budú mať čísla aspoň dva projekty.'}</p>`;
+  <p class="small dim" style="margin:8px 0 0">Klikni na projekt pre celý dashboard. Len skutočné čísla zo sietí, pozretia a lajky z YouTube sa sťahujú samé každú hodinu.${ranked ? '' : ' Poradie sa ukáže, keď budú mať čísla aspoň dva projekty.'}</p>`;
   if (D.busy && !S.hp.t) { S.hp.t = setTimeout(() => { S.hp.t = 0; homeProjects($('#hProj')); }, 15000); }
 }
 async function hRefresh(b) {
   b.disabled = true;
   const r = await api('/api/dash/refresh', { method: 'POST', body: {} });
-  toast((r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.') + (r.yt_limit ? ' YouTube má dnes vyčerpaný denný limit, preto sa pozretia jednotlivých YouTube videí doplnia zajtra (odberatelia a čas sledovania idú normálne).' : ''));
+  toast((r.started ? 'Sťahujem čísla zo sietí, o pár minút sa doplnia samé.' : 'Čísla sa už práve sťahujú.') + (r.yt_limit ? ' YouTube má dnes minutý limit na nahrávanie, pozretia a lajky sa aj tak stiahnu (cesta, ktorá limit neberie). Počet odberateľov sa obnoví zajtra.' : ''));
   S.hp.busy = 1; b.innerHTML = I('refresh', 's') + 'Sťahujem…';
   setTimeout(() => { S.hp.busy = 0; homeProjects($('#hProj')); }, 15000);
 }

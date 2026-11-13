@@ -82,7 +82,7 @@ def fetch_all():
         days = settings()["days"]
         for acc in db.q("SELECT * FROM accounts"):
             posts = _posts_for(acc, days)
-            if not posts:
+            if not posts and acc["platform"] != "youtube":  # YouTube číta celý kanál naraz
                 continue
             try:
                 items = comments_api.list_comments(acc, posts)
@@ -254,7 +254,7 @@ def _loop():
                 fetch_all()
         except Exception:
             traceback.print_exc()
-        time.sleep(3 * 3600)
+        time.sleep(2 * 3600)
 
 
 _started = False
@@ -285,9 +285,12 @@ def api_list(status: str = "new", project_id: int = 0, platform: str = ""):
     if platform:
         where.append("c.platform=?")
         args.append(platform)
-    rows = db.q("SELECT c.*, a.name account_name, a.lang, a.project_id FROM comments c JOIN accounts a ON a.id=c.account_id "
-                + ("WHERE " + " AND ".join(where) if where else "") + " ORDER BY c.id DESC LIMIT 300", tuple(args))
-    counts = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) n FROM comments GROUP BY status")}
+    rows = db.q("SELECT c.*, a.name account_name, a.lang, a.project_id, pr.name project_name, pr.color project_color FROM comments c "
+                "JOIN accounts a ON a.id=c.account_id LEFT JOIN projects pr ON pr.id=a.project_id "
+                + ("WHERE " + " AND ".join(where) if where else "") + " ORDER BY COALESCE(NULLIF(c.created,''), c.fetched_at) DESC, c.id DESC LIMIT 300", tuple(args))
+    cw, ca = ("WHERE a.project_id=?", (project_id,)) if project_id else ("", ())
+    counts = {r["status"]: r["n"] for r in db.q("SELECT c.status, COUNT(*) n FROM comments c JOIN accounts a ON a.id=c.account_id "
+                                                + cw + " GROUP BY c.status", ca)}
     return {"items": rows, "counts": counts, "state": state, "settings": settings(),
             "errors": db.get_setting("comments_errors", {}) or {}}
 
@@ -296,6 +299,21 @@ def api_list(status: str = "new", project_id: int = 0, platform: str = ""):
 def api_count():
     _db()
     return {"n": db.one("SELECT COUNT(*) n FROM comments WHERE status IN ('new','draft')")["n"]}
+
+
+@router.get("/api/comments/summary")
+def api_summary():
+    """Pre hlavnú stránku: počet nezodpovedaných, nové za 24 h, po projektoch a 6 najnovších."""
+    _db()
+    since = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    by_p = db.q("""SELECT a.project_id p, COUNT(*) n FROM comments c JOIN accounts a ON a.id=c.account_id
+                   WHERE c.status IN ('new','draft','failed') GROUP BY a.project_id ORDER BY n DESC""")
+    latest = db.q("""SELECT c.id, c.platform, c.external_id, c.post_ext, c.post_url, c.post_title, c.author, c.text, c.text_sk, c.created,
+                            c.status, a.name account_name, a.project_id, pr.name project_name, pr.color project_color
+                     FROM comments c JOIN accounts a ON a.id=c.account_id LEFT JOIN projects pr ON pr.id=a.project_id
+                     WHERE c.status IN ('new','draft','failed') ORDER BY COALESCE(NULLIF(c.created,''), c.fetched_at) DESC LIMIT 6""")
+    return {"open": sum(r["n"] for r in by_p), "day": db.one("SELECT COUNT(*) n FROM comments WHERE created>=?", (since,))["n"],
+            "by_project": by_p, "latest": latest, "last": state["last_fetch"], "running": state["running"]}
 
 
 @router.post("/api/comments/fetch")
