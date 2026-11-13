@@ -374,7 +374,7 @@ body.wide,html.wide{width:1920px;height:1080px}
 .wide #lg{left:150px;top:72px;max-width:280px;max-height:64px}
 .wide .kick{left:150px;top:166px;font-size:22px}
 .wide .ttl{left:150px;top:200px;width:1620px}
-.wide .viz{left:528px;top:300px}
+.wide .viz{left:528px;top:322px}
 .wide #cap{left:260px;width:1400px;top:902px;font-size:44px}
 .wide #end .gl{left:310px;top:-110px}
 .wide #end .ln{top:760px}
@@ -639,7 +639,7 @@ s.fr.style.opacity=zo;if(i!=cur)return;
 const l2=i==0?lt:lt-.12;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
 const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=E((l2-.2)/.4);s.vz.style.transform=`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.12:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+s.vz.style.opacity=E((l2-.2)/.4);s.vz.style.transform=`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.28:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
 SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
