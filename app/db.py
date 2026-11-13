@@ -123,6 +123,13 @@ CREATE TABLE IF NOT EXISTS fetch_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts T
   key TEXT DEFAULT '', ok INTEGER DEFAULT 1, units INTEGER DEFAULT 0, note TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS post_stats (post_id INTEGER PRIMARY KEY, views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0,
   comments INTEGER DEFAULT 0, shares INTEGER DEFAULT 0, ratio REAL DEFAULT 0, error TEXT DEFAULT '', fetched_at TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS account_stats (account_id INTEGER, day TEXT, followers INTEGER, views_total INTEGER, media_count INTEGER,
+  fetched_at TEXT DEFAULT '', PRIMARY KEY(account_id, day));
+CREATE TABLE IF NOT EXISTS yt_daily (account_id INTEGER, day TEXT, views INTEGER DEFAULT 0, watch_min REAL DEFAULT 0,
+  subs_gained INTEGER DEFAULT 0, subs_lost INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, comments INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0, PRIMARY KEY(account_id, day));
+CREATE TABLE IF NOT EXISTS acc_insight (account_id INTEGER PRIMARY KEY, ypp TEXT DEFAULT '{}', analytics_at TEXT DEFAULT '',
+  stats_at TEXT DEFAULT '', error TEXT DEFAULT '', analytics_error TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS ai_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT DEFAULT (datetime('now','localtime')),
@@ -173,6 +180,9 @@ MIGRATIONS = [
     "ALTER TABLE posts ADD COLUMN stash_id TEXT DEFAULT ''",
     "ALTER TABLE videos ADD COLUMN removed INTEGER DEFAULT 0",
     "ALTER TABLE videos ADD COLUMN preview_path TEXT DEFAULT ''",
+    "ALTER TABLE post_stats ADD COLUMN watch_min REAL DEFAULT 0",
+    "ALTER TABLE post_stats ADD COLUMN avg_pct REAL DEFAULT 0",
+    "ALTER TABLE post_stats ADD COLUMN subs INTEGER DEFAULT 0",
 ]
 
 

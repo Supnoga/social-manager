@@ -30,10 +30,13 @@ def _ago(days):
 
 # ---------- sťahovanie čísel ----------
 def _yt(acc, posts):
+    from .insights import _read_ok
     tok = youtube.access_token(acc)
     out = {}
     with client() as c:
         for i in range(0, len(posts), 50):
+            if not _read_ok(acc):  # strop čítania: nahrávanie videí má prednosť
+                break
             ids = [p["external_id"] for p in posts[i:i + 50]]
             r = c.get("https://www.googleapis.com/youtube/v3/videos", headers={"Authorization": f"Bearer {tok}"},
                       params={"part": "statistics", "id": ",".join(ids)})
@@ -115,13 +118,13 @@ FETCHERS = {"youtube": _yt, "facebook": _fb, "instagram": _ig, "tiktok": _tt, "l
 
 
 def job():
-    """Raz za 6 h: čísla k videám zverejneným za posledných 30 dní (každé video max raz za 12 h)."""
+    """Raz za 6 h: čísla k videám zverejneným za posledných 90 dní (nové max raz za 12 h, staršie ako 14 dní raz za 2 dni)."""
     linkedin.refresh_all()
     rows = db.q("""SELECT p.*, ps.fetched_at FROM posts p LEFT JOIN post_stats ps ON ps.post_id=p.id
-                   WHERE p.status='done' AND p.external_id!='' AND p.updated_at>=?""", (_ago(30),))
+                   WHERE p.status='done' AND p.external_id!='' AND p.updated_at>=?""", (_ago(90),))
     by_acc = {}
     for r in rows:
-        if r["fetched_at"] and r["fetched_at"] > _ago(0.5):
+        if r["fetched_at"] and r["fetched_at"] > _ago(0.5 if r["updated_at"] > _ago(14) else 2):
             continue
         by_acc.setdefault(r["account_id"], []).append(r)
     for aid, posts in by_acc.items():
