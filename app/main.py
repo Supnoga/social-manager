@@ -4,6 +4,7 @@ import os
 import random
 import secrets
 import shutil
+import threading
 import time
 import webbrowser
 from datetime import datetime, timedelta
@@ -162,7 +163,7 @@ def verify_file(fname: str):
 
 # ---------------- Dlhé úlohy na pozadí (prehliadač sa len pýta na stav, spojenie sa nepreruší) ----------------
 JOBS = {}
-nightly.BUSY = lambda: any(not j.get("done") for j in list(JOBS.values()))  # Mac nezaspí počas ručnej výroby
+nightly.BUSY = lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"]  # Mac nezaspí počas ručnej výroby
 
 
 @app.post("/api/job")
@@ -1109,58 +1110,27 @@ def _produce_once():
     try:
         _prod_resume(cfg)
         cap = int(nightly.cfg().get("max_long_day") or 0)  # strop dlhých videí za deň (šetrí týždenný limit Claude Max)
-        for pid_s, c in cfg.items():
-            if cap and _long_today() >= cap:
-                PROD["step"] = f"Dnešný strop {cap} dlhých videí splnený"
-                break
-            pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
-            made = 0
-            from_long = bool(c.get("from_long")) and int(c.get("long") or 0) > 0
-            for fmt in (("long", "short") if from_long else ("short", "long")):
-                per = int(c.get(fmt) or 0)
-                if not per:
-                    continue
-                need = min(per, per * ahead - _prod_supply(pid, fmt))
-                if need <= 0:
-                    continue
-                ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
-                rk = f"{dt_now()[:6]}:{pid}"
-                if left < per * 3 and not c.get("no_ideas") and PROD.setdefault("refills", {}).get(rk, 0) < 6:  # zásoba nápadov dochádza: doplň ju jedným volaním (max 6x denne)
-                    PROD["refills"][rk] = PROD["refills"].get(rk, 0) + 1
-                    PROD["step"] = "Dopĺňam nápady"
-                    try:
-                        before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
-                        content.run_task("ideas", {"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt})
-                        for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
-                            if r["id"] not in before and (r["score"] or 0) >= max(7, int(c.get("min_score") or 0)):
-                                db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))
-                        ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
-                    except Exception as e:
-                        PROD["log"].append(f"nápady: {e}")
-                if ids and fmt == "short":
-                    PROD["step"] = "Píšem scenáre krátkych videí"
-                    make_scripts({"idea_ids": ids})
-                for i in ids:
-                    if fmt == "long":
-                        PROD["step"] = "Píšem scenár dlhého videa"
-                        make_scripts({"idea_ids": [i]})
-                    if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (i,)):
-                        continue
-                    PROD["step"] = f"Robím {'dlhé' if fmt == 'long' else 'krátke'} video"
-                    try:
-                        idea_produce_first(i, {})
-                        made += 1
-                        if fmt == "long" and from_long and int(c.get("short") or 0):
-                            PROD["step"] = "Robím Shorts z dlhého videa"
-                            k = max(1, round(int(c["short"]) / int(c["long"])))
-                            made += idea_teasers(i, {"count": k, "produce": True}).get("videos", 0)
-                    except Exception as e:
-                        PROD["log"].append(f"nápad {i}: {e}")
-                        db.run("UPDATE ideas SET status='new' WHERE id=?", (i,))  # nech sa na ňom výroba nezasekne
-            if made:
-                from . import planner
-                r = planner.plan_week([pid])
-                PROD["log"].append(f"{dt_now()} projekt {pid}: {made} nových videí, naplánovaných {r['created']}")
+        workers = max(1, min(4, int(nightly.cfg().get("workers") or 1)))  # koľko videí sa robí naraz
+        items = list(cfg.items())
+        groups = [items[k::workers] for k in range(workers)]
+        errs = []
+
+        def run_group(g):
+            try:
+                for pid_s, c in g:
+                    if cap and _long_today() >= cap:
+                        PROD["step"] = f"Dnešný strop {cap} dlhých videí splnený"
+                        return
+                    _prod_project(pid_s, c)
+            except Exception as e:
+                errs.append(e)
+        ths = [threading.Thread(target=run_group, args=(g,), daemon=True) for g in groups if g]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join()
+        if errs:
+            raise errs[0]
         PROD["step"] = ""
     except ai.NeedManual:
         PROD["step"] = "Denná výroba potrebuje Claude Code"
@@ -1175,6 +1145,58 @@ def _produce_once():
             nightly.awake_tick()
         except Exception:
             pass
+
+
+def _prod_project(pid_s, c):
+    """Jeden projekt v jednom kole dennej výroby."""
+    pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
+    made = 0
+    from_long = bool(c.get("from_long")) and int(c.get("long") or 0) > 0
+    for fmt in (("long", "short") if from_long else ("short", "long")):
+        per = int(c.get(fmt) or 0)
+        if not per:
+            continue
+        need = min(per, per * ahead - _prod_supply(pid, fmt))
+        if need <= 0:
+            continue
+        ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
+        rk = f"{dt_now()[:6]}:{pid}"
+        if left < per * 3 and not c.get("no_ideas") and PROD.setdefault("refills", {}).get(rk, 0) < 6:  # zásoba nápadov dochádza: doplň ju jedným volaním (max 6x denne)
+            PROD["refills"][rk] = PROD["refills"].get(rk, 0) + 1
+            PROD["step"] = "Dopĺňam nápady"
+            try:
+                before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
+                content.run_task("ideas", {"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt})
+                for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
+                    if r["id"] not in before and (r["score"] or 0) >= max(7, int(c.get("min_score") or 0)):
+                        db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))
+                ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
+            except Exception as e:
+                PROD["log"].append(f"nápady: {e}")
+        if ids and fmt == "short":
+            PROD["step"] = "Píšem scenáre krátkych videí"
+            make_scripts({"idea_ids": ids})
+        for i in ids:
+            if fmt == "long":
+                PROD["step"] = "Píšem scenár dlhého videa"
+                make_scripts({"idea_ids": [i]})
+            if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (i,)):
+                continue
+            PROD["step"] = f"Robím {'dlhé' if fmt == 'long' else 'krátke'} video"
+            try:
+                idea_produce_first(i, {})
+                made += 1
+                if fmt == "long" and from_long and int(c.get("short") or 0):
+                    PROD["step"] = "Robím Shorts z dlhého videa"
+                    k = max(1, round(int(c["short"]) / int(c["long"])))
+                    made += idea_teasers(i, {"count": k, "produce": True}).get("videos", 0)
+            except Exception as e:
+                PROD["log"].append(f"nápad {i}: {e}")
+                db.run("UPDATE ideas SET status='new' WHERE id=?", (i,))  # nech sa na ňom výroba nezasekne
+    if made:
+        from . import planner
+        r = planner.plan_week([pid])
+        PROD["log"].append(f"{dt_now()} projekt {pid}: {made} nových videí, naplánovaných {r['created']}")
 
 
 def _long_today():
@@ -1813,7 +1835,7 @@ def main():
         radar.start()  # trendy, konkurencia, čísla našich videí (na pozadí, bez AI)
     except Exception:
         pass
-    updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()) or bool(scheduler.state.get("current"))
+    updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()) or PROD["running"] or bool(scheduler.state.get("current"))
                                or AUTO.get("running") or PROD.get("running"))
     threading.Thread(target=_produce_loop, daemon=True).start()
     if os.environ.get("SM_NO_BROWSER") != "1":

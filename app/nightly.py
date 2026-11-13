@@ -91,7 +91,9 @@ def awake_tick(busy=False):
         busy = busy or BUSY()
     except Exception:
         pass
-    want = busy or (cfg().get("on") and _awake_hours() and has_work() and on_power())
+    c = cfg()
+    # nočný režim: drž hore 2 h pred oknom až do konca; výroba nonstop (nočný režim vypnutý): drž hore stále, keď je čo robiť
+    want = busy or ((not c.get("on") or _awake_hours()) and has_work() and on_power())
     keep_awake(bool(want))
 
 
