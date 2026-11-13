@@ -1096,7 +1096,9 @@ def _produce_once():
                 if need <= 0:
                     continue
                 ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
-                if left < per * 3 and not c.get("no_ideas"):  # zásoba nápadov dochádza: doplň ju jedným volaním
+                rk = f"{dt_now()[:6]}:{pid}"
+                if left < per * 3 and not c.get("no_ideas") and PROD.setdefault("refills", {}).get(rk, 0) < 6:  # zásoba nápadov dochádza: doplň ju jedným volaním (max 6x denne)
+                    PROD["refills"][rk] = PROD["refills"].get(rk, 0) + 1
                     PROD["step"] = "Dopĺňam nápady"
                     try:
                         before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
@@ -1211,7 +1213,7 @@ def storage_clean():
 
 @app.get("/api/produce")
 def produce_status():
-    return dict({k: v for k, v in PROD.items() if k != "resumed"}, config=db.get_setting("auto_produce", {}) or {},
+    return dict({k: v for k, v in PROD.items() if k not in ("resumed", "refills")}, config=db.get_setting("auto_produce", {}) or {},
                 night=nightly.status())
 
 
