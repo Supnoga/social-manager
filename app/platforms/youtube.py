@@ -240,6 +240,48 @@ def add_to_series(account, video, yt_id):
         return ""
 
 
+LOCALIZE_LANGS = ["de", "es", "pt", "fr", "it", "pl", "nl", "tr", "id", "hi"]
+
+
+def _localizations(account, video, title, desc):
+    """Preložené názvy (a pri dlhých videách prvý odsek popisu) cez bezplatný prekladač, bez AI a bez kvóty YouTube navyše:
+    pošlú sa priamo pri nahratí. Len pre anglické Xplained kanály (alebo podľa nastavenia yt_localize) a len kým má
+    prekladač voľné aspoň 40 % bezplatného limitu, aby zostalo na preklady iných projektov."""
+    cfg = db.get_setting("yt_localize")
+    name = account.get("name") or ""
+    if cfg is None:
+        on, langs = name.endswith("Xplained") and (video.get("lang") or "en") == "en", LOCALIZE_LANGS
+    else:
+        on = bool(cfg.get("on")) and (not cfg.get("projects") or video.get("project_id") in cfg["projects"])
+        langs = cfg.get("langs") or LOCALIZE_LANGS
+    if not on:
+        return {}
+    from .. import translate
+    left = sum(v["left"] for v in translate.usage().values() if v["enabled"])
+    free = sum(v["free"] for v in translate.usage().values() if v["enabled"])
+    if not free or left < free * 0.4:
+        return {}
+    src = (video.get("lang") or "en")[:2]
+    long_ = _series(video) != "" or bool(db.one("SELECT 1 FROM scripts s JOIN ideas i ON i.id=s.idea_id WHERE s.id=? AND i.format='long'",
+                                               (video.get("script_id") or 0,)))
+    first = (desc.split("\n\n")[0] if long_ else "").strip()[:300]
+    glossary = [name, "YouTube", "Shorts"]
+    out = {}
+    for lg in langs:
+        if lg == src:
+            continue
+        try:
+            tr, _ = translate.translate_texts([title, first] if first else [title], src, lg, glossary)
+        except Exception:
+            break  # prekladač nemá voľný limit: zvyšok preskoč
+        t = (tr[0] or "").strip()[:100]
+        if not t:
+            continue
+        d = ((tr[1] + "\n\n") if first and len(tr) > 1 and tr[1] else "") + desc
+        out[lg] = {"title": t, "description": d[:4900]}
+    return out
+
+
 def upload(account, video, privacy="public", publish_at=None):
     tok = access_token(account)
     title, desc = text_for(video, "youtube", account)
@@ -254,10 +296,20 @@ def upload(account, video, privacy="public", publish_at=None):
     if video.get("lang"):
         body["snippet"]["defaultLanguage"] = video["lang"]
         body["snippet"]["defaultAudioLanguage"] = video["lang"]
+    part = "snippet,status"
+    try:
+        loc = _localizations(account, video, title, desc)
+    except Exception as e:
+        print("YouTube preklady názvov:", e)
+        loc = {}
+    if loc:
+        body["snippet"].setdefault("defaultLanguage", video.get("lang") or "en")
+        body["localizations"] = loc
+        part += ",localizations"
     size = os.path.getsize(video["file_path"])
     with client(timeout=3600) as c:
         r = check(c.post("https://www.googleapis.com/upload/youtube/v3/videos",
-                         params={"uploadType": "resumable", "part": "snippet,status"},
+                         params={"uploadType": "resumable", "part": part},
                          headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json; charset=UTF-8",
                                   "X-Upload-Content-Length": str(size), "X-Upload-Content-Type": "video/*"},
                          json=body), "YouTube štart nahrávania")
