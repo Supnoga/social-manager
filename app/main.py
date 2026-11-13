@@ -1306,7 +1306,7 @@ def _script_ahead_loop():
 
     started = 0
     while True:
-        want = min(10, int(nightly.cfg().get("script_workers") or 0))
+        want = min(30, int(nightly.cfg().get("script_workers") or 0))
         while started < want:  # pracovníci sa len pridávajú (zníženie sa prejaví po reštarte)
             threading.Thread(target=worker, daemon=True).start()
             started += 1
