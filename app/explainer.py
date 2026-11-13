@@ -33,7 +33,7 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"k":"draw","e":[...max 14 elements]} = your own animated line drawing on a 432x280 canvas (x right, y down). Use it when the viewer should SEE the thing happen instead of reading about it (example: a 2-blade, a 3-blade and a 4-blade wind turbine side by side, the 2-blade one shaking). Elements:
 {"s":"turbine","p":[xCenter,yGround,height],"n":blades,"l":"label"} | {"s":"path","d":"SVG path data"} | {"s":"line","p":[x1,y1,x2,y2]} | {"s":"arrow","p":[x1,y1,x2,y2]} | {"s":"circle","p":[cx,cy,r]} | {"s":"rect","p":[x,y,w,h]} | {"s":"text","p":[x,y],"t":"1-3 words"} | {"s":"icon","i":"icon name","p":[xCenter,yCenter,size]}.
 Optional on every element: "c":1 (red highlight) or 2 (grey), "a":"spin" / "shake" / "pulse" / "float" / "flow" (moving dots along a line, arrow or path; may combine like "spin shake"; a turbine always spins), "at":0,1,2.. (step when it appears, so the drawing builds up while the voice explains), "l":"label under it".
-Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Something must MOVE in every drawing (spin, shake, flow, pulse) and it must show the exact thing the voice is describing at that moment: the machine, the part, the before and after, what goes in and what comes out.
+Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Never put a text on top of a line, arrow or shape or on another text: place it beside with a clear gap (texts are centered on their x). Something must MOVE in every drawing (spin, shake, flow, pulse) and it must show the exact thing the voice is describing at that moment: the machine, the part, the before and after, what goes in and what comes out.
 "draw" is the DEFAULT: use it for most scenes (at least 3 of every 5). Use the number diagrams only when the voice says a number, and "hero"/"text" only for the hook or the closing line.
 Labels max 4 words, numbers as numbers."""
 
@@ -525,13 +525,25 @@ else if(o.s=='line'||o.s=='arrow'){const e=mk('path',Object.assign({d:`M${p[0]} 
 if(o.s=='arrow'){const a=Math.atan2(p[3]-p[1],p[2]-p[0]),L=9;g.append(mk('path',Object.assign({d:`M${p[2]-L*Math.cos(a-.5)} ${p[3]-L*Math.sin(a-.5)} L${p[2]} ${p[3]} L${p[2]-L*Math.cos(a+.5)} ${p[3]-L*Math.sin(a+.5)}`},st)))}}
 else if(o.s=='circle'){g.append(mk('circle',Object.assign({cx:p[0],cy:p[1],r:Math.max(1,p[2]||10)},st)));cx=p[0];cy=p[1];ly=p[1]+(p[2]||10)+16}
 else if(o.s=='rect'){g.append(mk('rect',Object.assign({x:p[0],y:p[1],width:Math.max(1,p[2]),height:Math.max(1,p[3]),rx:4},st)));cx=p[0]+p[2]/2;cy=p[1]+p[3]/2;ly=p[1]+p[3]+16}
-else if(o.s=='text'){const e=mk('text',{x:p[0],y:p[1],fill:col,'font-size':Math.max(9,Math.min(26,n(o.z)||15)),'font-weight':800,'text-anchor':'middle','letter-spacing':.6});e.textContent=String(o.t||'').toUpperCase();g.append(e);cx=p[0];cy=p[1]}
+else if(o.s=='text'){const e=mk('text',{x:p[0],y:p[1],fill:col,'font-size':Math.max(9,Math.min(26,n(o.z)||15)),'font-weight':800,'text-anchor':'middle','letter-spacing':.6,stroke:'#000','stroke-width':3,'paint-order':'stroke'});e.textContent=String(o.t||'').toUpperCase();g.append(e);cx=p[0];cy=p[1]}
 else if(o.s=='icon'){const z=Math.max(20,p[2]||60),ic=icon(o.i,z,col,3);ic.setAttribute('x',p[0]-z/2);ic.setAttribute('y',p[1]-z/2);g.append(ic);cx=p[0];cy=p[1];ly=p[1]+z/2+16}
 else return null;
 if(o.s=='path'&&flow){try{const b=flow.getBBox();cx=b.x+b.width/2;cy=b.y+b.height/2;ly=b.y+b.height+16}catch(e){}}
 let lb=null;if(o.l&&o.s!='text'){lb=mk('text',{x:cx,y:Math.min(274,ly),fill:o.c==1?D.acc:'#bdbdbd','font-size':Math.max(7.5,Math.min(12,150/Math.max(1,String(o.l).length))),'font-weight':700,'text-anchor':'middle','letter-spacing':.8});lb.textContent=String(o.l).toUpperCase();s.append(lb)}
 s.append(g);const dots=/flow/.test(A)&&flow?[0,1,2].map(()=>{const c=mk('circle',{r:3.2,fill:D.acc,opacity:0});s.append(c);return c}):[];
-return {g,lb,rot,cx,cy,A,at:Math.max(0,n(o.at)),dots,flow,ph:cx*.05+cy*.03,spin:/spin/.test(A)&&!rot}}).filter(Boolean);
+const pts=[];if(o.s=='turbine'){const x=p[0]||216,y=p[1]||240,h=Math.max(60,p[2]||150),R=h*.42;for(let k=0;k<=10;k++)pts.push([x,y-h*k/10]);[1,.6,.25].forEach(f=>{for(let k=0;k<20;k++)pts.push([x+R*f*Math.cos(k*.314),y-h+R*f*Math.sin(k*.314)])})}
+else if(o.s=='icon'){const z=Math.max(20,p[2]||60);for(let a=0;a<=4;a++)for(let b=0;b<=4;b++)pts.push([p[0]-z/2+z*a/4,p[1]-z/2+z*b/4])}
+else if(o.s!='text')g.querySelectorAll('.d').forEach(e=>{try{const L=e.getTotalLength(),m=Math.max(8,Math.min(60,Math.round(L/5)));for(let k=0;k<=m;k++){const q=e.getPointAtLength(L*k/m);pts.push([q.x,q.y])}}catch(_){}});
+return {g,lb,rot,cx,cy,A,at:Math.max(0,n(o.at)),dots,flow,ph:cx*.05+cy*.03,spin:/spin/.test(A)&&!rot,pts,tx:o.s=='text'?g.firstChild:null}}).filter(Boolean);
+// texty a popisy nesmú ležať na čiarach ani na sebe: nájdi najbližšie voľné miesto
+const placed=[];const P=els.reduce((a,e)=>a.concat(e.pts),[]);
+const bb=e=>{try{const b=e.getBBox();return [b.x-3,b.y-2,b.x+b.width+3,b.y+b.height+2]}catch(_){return null}};
+const bad=(b)=>b[0]<4||b[2]>428||b[1]<2||b[3]>278||P.some(q=>q[0]>b[0]&&q[0]<b[2]&&q[1]>b[1]&&q[1]<b[3])||placed.some(c=>b[0]<c[2]&&b[2]>c[0]&&b[1]<c[3]&&b[3]>c[1]);
+const CAND=[[0,0]];for(let r=1;r<=9;r++){const d=r*9;[[0,d],[0,-d],[d,0],[-d,0],[d,d*.6],[-d,d*.6],[d,-d*.6],[-d,-d*.6]].forEach(c=>CAND.push(c))}
+const settle=e=>{if(!e||!e.textContent)return;const b=bb(e);if(!b)return;let best=null;for(const c of CAND){const t=[b[0]+c[0],b[1]+c[1],b[2]+c[0],b[3]+c[1]];if(!bad(t)){best=[c,t];break}}
+if(!best){const c=[Math.max(4-b[0],Math.min(428-b[2],0)),Math.max(2-b[1],Math.min(278-b[3],0))];best=[c,[b[0]+c[0],b[1]+c[1],b[2]+c[0],b[3]+c[1]]]}
+e.setAttribute('x',n(e.getAttribute('x'))+best[0][0]);e.setAttribute('y',n(e.getAttribute('y'))+best[0][1]);placed.push(best[1])};
+els.forEach(o=>settle(o.tx));els.forEach(o=>settle(o.lb));
 return (t,stf)=>els.forEach(o=>{const p=stf(o.at,.9);o.g.style.opacity=p>0?1:0;o.g.querySelectorAll('.d').forEach(e=>{e.style.strokeDasharray='1 1';e.style.strokeDashoffset=1-cl(p)});o.g.querySelectorAll('text').forEach(e=>e.style.opacity=cl(p));if(o.lb)o.lb.style.opacity=E(stf(o.at+.5,.5));
 let tr='';if(/shake/.test(o.A)){const k=cl(p)*2.6;tr+=`translate(${Math.sin(t*31+o.ph)*k} ${Math.cos(t*27+o.ph)*k*.5}) rotate(${Math.sin(t*23+o.ph)*1.6*cl(p)} ${o.cx} ${o.cy+60}) `}
 if(/float/.test(o.A))tr+=`translate(0 ${Math.sin(t*1.4+o.ph)*5}) `;if(/pulse/.test(o.A)){const k=1+.07*Math.sin(t*3.2+o.ph);tr+=`translate(${o.cx} ${o.cy}) scale(${k}) translate(${-o.cx} ${-o.cy}) `}

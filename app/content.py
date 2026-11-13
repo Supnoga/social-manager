@@ -111,6 +111,19 @@ def ideas_apply(params, data):
     return {"created": len(out)}
 
 
+def _cta_rule(p):
+    """Výzva na konci podľa sietí projektu: na YouTube sa odoberá (subscribe), inde sleduje (follow)."""
+    try:
+        pl = json.loads(p.get("platforms") or "[]")
+    except Exception:
+        pl = []
+    if pl == ["youtube"]:
+        return "This project is published only on YouTube: the call to action must say \"subscribe\" (never \"follow\")."
+    if "youtube" in pl:
+        return "Published on several networks: use a neutral call to action (save, comment, more videos on the channel), not \"follow\" or \"subscribe\"."
+    return ""
+
+
 def _tpl(k):
     from . import inspire
     k = str(k or "").strip().lower()
@@ -143,8 +156,9 @@ Write production-ready video scripts for these ideas:
 Rules: short = 110-150 spoken words (~45s). long = 1900-2200 words for a horizontal YouTube video (it MUST run longer than 8 minutes, so never fewer than 1900 words).
 STYLE (most important): tell it like a great popular-science storyteller, not like a datasheet. Talk to one curious person with no technical background. Describe what actually happens, step by step, in plain everyday words, so the viewer can picture it. Use comparisons from daily life (a fridge, a bicycle pump, a bathtub, a sponge). Explain every technical word the moment you first use it, or do not use it. Keep curiosity alive: open small questions and answer them a few sentences later ("So where does the heat come from? Here is the surprising part."). Prefer one memorable number over five; never list specs. Sound warm, calm and a little amazed by how things work.
 Long videos: open with the question and promise the answer, then tell a story in 4-5 chapters that flow into each other (what people believe, what really happens inside, what it means in real life, the mistakes, what to do), end with a one-sentence recap and a question for comments; take your time, never rush, never pad.
+{_cta_rule(p)}
 Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
-at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts, end with a natural CTA (follow/save/comment). Spoken text must sound natural for voice-over (TTS),
+at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts, end with a natural CTA (save/comment, and the channel call to action as stated above). Spoken text must sound natural for voice-over (TTS),
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
@@ -190,6 +204,7 @@ Each Short takes ONE different small part of the long video (one surprising fact
 Rules for each Short: 100-140 spoken words (~40s). First sentence = scroll-stopping hook, max 12 words, no greeting, different opening style in each Short.
 The Short must fully pay off its own small question, so the viewer feels they learned something real. Then the last 1-2 sentences open a bigger question
 that only the long video answers (a natural open ending, for example "But there is one case where this goes wrong. The full video shows it."), and say that the full video is linked.
+{_cta_rule(p)}
 Never stop mid-sentence, never promise something the long video does not contain, never repeat the same closing words in two Shorts.
 Same style as the long video: simple everyday words, warm storyteller, short sentences, numbers as digits, no emojis or symbols in voiceover.
 Return JSON: {{"scripts":[{{"title":"Shorts title max 60 chars, main search keyword first","hook":"first sentence","voiceover":"full spoken text",
