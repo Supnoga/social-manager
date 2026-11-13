@@ -122,7 +122,10 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
         accs = [a for a in accs if not a["project_id"] or a["project_id"] in project_ids]
     now = dt.datetime.now()
     created, per_acc, empty, short = 0, [], [], []
+    auto_ok = {int(x) for x in (db.get_setting("auto_approve_projects", []) or [])}  # projekty, ktoré Oliver pustil bez Kontroly
+    base_status = status
     for a in accs:
+        status = "queued" if a["project_id"] in auto_ok else base_status
         cand = _candidates(a, platforms_of)
         if project_ids:
             cand = [v for v in cand if v["project_id"] in project_ids]
@@ -180,7 +183,7 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
             empty.append(a["name"])
         elif n < per_day * days:
             short.append(a["name"])
-    return {"created": created, "accounts": per_acc, "empty": empty, "short": short, "review": status == "review",
+    return {"created": created, "accounts": per_acc, "empty": empty, "short": short, "review": base_status == "review",
             "per_day": base_per_day}
 
 
