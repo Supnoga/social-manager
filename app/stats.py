@@ -30,22 +30,28 @@ def _ago(days):
 
 # ---------- sťahovanie čísel ----------
 def _yt(acc, posts):
-    from .insights import _read_ok
-    tok = youtube.access_token(acc)
+    """Čísla videí: najprv z rezervy kvóty kanála, inak cez API kľúč Radaru (iný Google projekt, nahrávanie nebrzdí)."""
+    from .insights import _read_ok, block_today, key_get
     out = {}
+    todo = [p["external_id"] for p in posts]
+    tok = None
     with client() as c:
-        for i in range(0, len(posts), 50):
-            if not _read_ok(acc):  # strop čítania: nahrávanie videí má prednosť
-                break
-            ids = [p["external_id"] for p in posts[i:i + 50]]
-            r = c.get("https://www.googleapis.com/youtube/v3/videos", headers={"Authorization": f"Bearer {tok}"},
-                      params={"part": "statistics", "id": ",".join(ids)})
-            if r.status_code == 403 and "quota" in r.text.lower():
-                from .insights import block_today
-                block_today(acc)
-                break
-            r.raise_for_status()
-            for v in r.json().get("items", []):
+        for i in range(0, len(todo), 50):
+            ids = todo[i:i + 50]
+            items = None
+            if _read_ok(acc):
+                tok = tok or youtube.access_token(acc)
+                r = c.get("https://www.googleapis.com/youtube/v3/videos", headers={"Authorization": f"Bearer {tok}"},
+                          params={"part": "statistics", "id": ",".join(ids)})
+                if r.status_code == 200:
+                    items = r.json().get("items", [])
+                elif "quota" in r.text.lower():
+                    block_today(acc)
+            if items is None:
+                items = (key_get("videos", part="statistics", id=",".join(ids)) or {}).get("items")
+            if items is None:
+                continue
+            for v in items:
                 s = v.get("statistics", {})
                 out[v["id"]] = (int(s.get("viewCount", 0) or 0), int(s.get("likeCount", 0) or 0), int(s.get("commentCount", 0) or 0), 0)
     return out
@@ -147,10 +153,10 @@ def job():
                 db.run("""INSERT INTO post_stats(post_id, views, likes, comments, shares, fetched_at, error) VALUES(?,?,?,?,?,?,'')
                           ON CONFLICT(post_id) DO UPDATE SET views=excluded.views, likes=excluded.likes, comments=excluded.comments,
                           shares=excluded.shares, fetched_at=excluded.fetched_at, error=''""", (p["id"], *v, _now()))
-            else:
-                db.run("""INSERT INTO post_stats(post_id, fetched_at, error) VALUES(?,?,?)
-                          ON CONFLICT(post_id) DO UPDATE SET fetched_at=excluded.fetched_at, error=excluded.error""",
-                       (p["id"], _now(), err or "bez čísel"))
+            elif not db.one("SELECT 1 x FROM post_stats WHERE post_id=? AND error='' AND fetched_at!=''", (p["id"],)):
+                # bez čísel (napr. vyčerpaný limit): nič sa nezapíše ako stiahnuté, skúsi sa pri ďalšom behu
+                db.run("""INSERT INTO post_stats(post_id, fetched_at, error) VALUES(?,'',?)
+                          ON CONFLICT(post_id) DO UPDATE SET error=excluded.error""", (p["id"], err or "bez čísel"))
         _rescore(aid)
     for p in db.q("SELECT id FROM projects"):
         db.run("UPDATE projects SET learnings=? WHERE id=?", (learnings(p["id"]), p["id"]))

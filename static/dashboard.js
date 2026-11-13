@@ -374,25 +374,38 @@ async function homeProjects(el) {
     return { p, v: cur.v, vp: prev.v, lk: cur.lk, lkp: prev.lk, cm: cur.cm, n: cur.n, fg, fgp, f: fl.reduce((s, a) => s + a.f, 0), hasF: fl.length,
       w: dl.filter(x => x.d >= cutD).reduce((t, x) => t + x.w, 0) / 60, done: ((D.prod || {})[p.id] || {}).done || 0, nacc: ac.length };
   });
-  const k = f.k; list.sort((a, b) => b[k] - a[k] || b.v - a.v || b.f - a.f);
-  const top = Math.max(...list.map(x => x[k]), 1e-9), any = list.some(x => x.v || x.f || x.done);
+  const k = f.k, per = { 7: '7 dní', 30: '30 dní', 90: '3 mesiace' }[f.days] || f.days + ' dní';
+  list.forEach(x => { const pb = (D.pub || {})[x.p.id] || [0, 0]; x.pubN = pb[0]; x.meas = pb[1]; x.has = x.meas > 0 || x.hasF > 0 || x.w > 0;
+    x.next = ((D.prod || {})[x.p.id] || {}).next; });
+  const withN = list.filter(x => x.has).sort((a, b) => b[k] - a[k] || b.v - a.v || b.f - a.f);
+  const noN = list.filter(x => !x.has).sort((a, b) => b.pubN - a.pubN || b.done - a.done);
+  const ranked = withN.filter(x => x[k] > 0).length >= 2;  // poradie a „vedie/zaostáva“ len keď je z čoho rátať
+  const top = Math.max(...withN.map(x => x[k]), 1e-9);
   const tr = (a, b) => !b ? (a ? '<span class="dd up">nové</span>' : '<span class="dim">–</span>') : `<span class="dd ${a >= b ? 'up' : 'down'}">${a >= b ? '▲' : '▼'} ${Math.round(Math.abs(a - b) / b * 100)} %</span>`;
-  const fmtK = (x) => k === 'fg' ? (x.fg > 0 ? '+' : '') + nf(x.fg) : k === 'done' ? nf(x.done) : cf(x[k]);
+  const fmtK = x => k === 'fg' ? (x.fg > 0 ? '+' : '') + nf(x.fg) : k === 'done' ? nf(x.done) : cf(x[k]);
+  const dd = t => t ? `${+t.slice(8, 10)}. ${+t.slice(5, 7)}. o ${t.slice(11, 16)}` : '';
+  const why = x => x.pubN || x.done ? (D.yt_limit ? 'Videá vyšli, čísla prídu zajtra ráno (YouTube má dnes vyčerpaný denný limit).' : 'Videá vyšli, čísla prídu pri najbližšom sťahovaní (do 6 hodín).')
+    : x.next ? `Zatiaľ nič nezverejnené, prvé video vyjde ${dd(x.next)}.` : 'Zatiaľ nič nezverejnené.';
+  const name = x => `<span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${x.p.color};margin-right:6px"></span>${esc(x.p.name)}`;
+  const row = (x, i) => `<tr class="cl" onclick="S.dash.all=0;location.hash='#/p/${x.p.id}/dashboard'">
+    <td class="${ranked && i === 0 ? 'lead' : 'dim'}">${ranked ? i + 1 : ''}</td>
+    <td>${name(x)}${ranked && i === 0 ? ' <span class="chip acc">vedie</span>' : ''}${ranked && i === withN.length - 1 && withN.length > 2 && x[k] < top * 0.2 ? ' <span class="chip">zaostáva</span>' : ''}</td>
+    <td style="width:18%"><div class="hbar"><i style="width:${Math.max(1, x[k] / top * 100)}%;background:${x.p.color || 'var(--acc)'}"></i></div><span class="small dim">${fmtK(x)}</span></td>
+    <td>${x.meas ? nf(x.v) : '<span class="dim">–</span>'}</td><td>${x.meas ? tr(x.v, x.vp) : '<span class="dim">–</span>'}</td><td>${x.meas ? nf(x.lk) : '<span class="dim">–</span>'}</td><td>${x.meas ? nf(x.cm) : '<span class="dim">–</span>'}</td>
+    <td>${x.hasF ? nf(x.f) : '<span class="dim">–</span>'}</td><td class="${x.fg > 0 ? 'up' : x.fg < 0 ? 'down' : 'dim'}">${x.hasF ? (x.fg > 0 ? '+' : '') + nf(x.fg) : '–'}</td>
+    <td>${x.w ? nf(x.w) : '<span class="dim">–</span>'}</td><td>${nf(x.done)}</td></tr>`;
+  const rowN = x => `<tr class="cl" onclick="S.dash.all=0;location.hash='#/p/${x.p.id}/dashboard'"><td></td><td>${name(x)}</td>
+    <td colspan="8" class="small dim">${why(x)}</td><td>${nf(x.done)}</td></tr>`;
+  const kName = HPK.find(h => h[0] === k)[1];
   el.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px;margin-bottom:10px"><h2 style="margin:0;flex:1">${I('chart')}Ako sa darí projektom</h2>
     <div class="seg">${HPK.map(([kk, n]) => `<button class="${k === kk ? 'on' : ''}" onclick="S.hp.k='${kk}';homeProjects($('#hProj'))">${n}</button>`).join('')}</div>
     <div class="seg">${[[7, '7 dní'], [30, '30 dní'], [90, '3 mesiace']].map(([d, n]) => `<button class="${f.days === d ? 'on' : ''}" onclick="S.hp.days=${d};homeProjects($('#hProj'))">${n}</button>`).join('')}</div>
     <span class="small dim">${D.last ? 'stiahnuté ' + esc(D.last.slice(8, 10) + '.' + D.last.slice(5, 7) + '. ' + D.last.slice(11, 16)) : 'zatiaľ nestiahnuté'}</span>
     <button class="btn sec sm" onclick="hRefresh(this)" ${D.busy || S.hp.busy ? 'disabled' : ''}>${I('refresh', 's')}${D.busy || S.hp.busy ? 'Sťahujem…' : 'Stiahnuť čísla teraz'}</button></div>
-  ${!any ? empty('chart', 'Zatiaľ žiadne čísla. Objavia sa samé po prvých zverejnených videách (sťahujú sa každých 6 hodín).') : `
-  <table class="dtab hrank"><tr><th>#</th><th>Projekt</th><th></th><th>Pozretia</th><th>oproti predtým</th><th>Lajky</th><th>Komentáre</th><th>Odberatelia</th><th>Rast</th><th>Hodiny</th><th>Zverejnené</th></tr>
-  ${list.map((x, i) => `<tr class="cl" onclick="S.dash.all=0;location.hash='#/p/${x.p.id}/dashboard'">
-    <td class="${i === 0 && x[k] > 0 ? 'lead' : 'dim'}">${i + 1}</td>
-    <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${x.p.color};margin-right:6px"></span>${esc(x.p.name)}${i === 0 && x[k] > 0 ? ' <span class="chip acc">vedie</span>' : ''}${i === list.length - 1 && list.length > 2 && x[k] < top * 0.2 ? ' <span class="chip">zaostáva</span>' : ''}</td>
-    <td style="width:22%"><div class="hbar"><i style="width:${Math.max(1, x[k] / top * 100)}%;background:${x.p.color || 'var(--acc)'}"></i></div><span class="small dim">${fmtK(x)}</span></td>
-    <td>${nf(x.v)}</td><td>${tr(x.v, x.vp)}</td><td>${nf(x.lk)}</td><td>${nf(x.cm)}</td>
-    <td>${x.hasF ? nf(x.f) : '<span class="dim">–</span>'}</td><td class="${x.fg > 0 ? 'up' : x.fg < 0 ? 'down' : 'dim'}">${x.hasF ? (x.fg > 0 ? '+' : '') + nf(x.fg) : ''}</td>
-    <td>${x.w ? nf(x.w) : '<span class="dim">–</span>'}</td><td>${nf(x.done)}</td></tr>`).join('')}</table>
-  <p class="small dim" style="margin:8px 0 0">Klikni na projekt pre celý dashboard. Len skutočné čísla zo sietí, sťahujú sa samé každých 6 hodín.</p>`}`;
+  ${D.yt_limit ? `<div class="small" style="color:var(--warn);margin:-2px 0 10px">${I('alert', 's')} YouTube má dnes vyčerpaný denný limit. Čísla, ktoré sa nedajú stiahnuť inou cestou, prídu zajtra ráno.</div>` : ''}
+  <table class="dtab hrank"><tr><th>Poradie</th><th>Projekt</th><th>Porovnanie: ${esc(kName.toLowerCase())}</th><th>Pozretia za ${per}</th><th>Oproti predch. ${per}</th><th>Páči sa mi</th><th>Komentáre</th><th>Odberatelia spolu</th><th>Noví odberatelia</th><th>Hodiny sledovania</th><th>Zverejnené videá za ${per}</th></tr>
+  ${withN.map(row).join('')}${noN.map(rowN).join('')}</table>
+  <p class="small dim" style="margin:8px 0 0">Klikni na projekt pre celý dashboard. Len skutočné čísla zo sietí, sťahujú sa samé každých 6 hodín.${ranked ? '' : ' Poradie sa ukáže, keď budú mať čísla aspoň dva projekty.'}</p>`;
   if (D.busy && !S.hp.t) { S.hp.t = setTimeout(() => { S.hp.t = 0; homeProjects($('#hProj')); }, 15000); }
 }
 async function hRefresh(b) {
