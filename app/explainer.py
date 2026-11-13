@@ -15,10 +15,10 @@ import threading
 from . import db
 
 W, H = 1080, 1920
-KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw")
+KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
-              "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city")
+              "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
 
 # Stručný popis pre AI (pridá sa do promptu scenára, cca 200 tokenov)
 SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: black, thin line schematics drawn step by step). Pick ONE that explains the point visually:
@@ -34,7 +34,8 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"s":"turbine","p":[xCenter,yGround,height],"n":blades,"l":"label"} | {"s":"path","d":"SVG path data"} | {"s":"line","p":[x1,y1,x2,y2]} | {"s":"arrow","p":[x1,y1,x2,y2]} | {"s":"circle","p":[cx,cy,r]} | {"s":"rect","p":[x,y,w,h]} | {"s":"text","p":[x,y],"t":"1-3 words"} | {"s":"icon","i":"icon name","p":[xCenter,yCenter,size]}.
 Optional on every element: "c":1 (red highlight) or 2 (grey), "a":"spin" / "shake" / "pulse" / "float" / "flow" (moving dots along a line, arrow or path; may combine like "spin shake"; a turbine always spins), "at":0,1,2.. (step when it appears, so the drawing builds up while the voice explains), "l":"label under it".
 Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Never put a text on top of a line, arrow or shape or on another text: place it beside with a clear gap (texts are centered on their x). Something must MOVE in every drawing (spin, shake, flow, pulse) and it must show the exact thing the voice is describing at that moment: the machine, the part, the before and after, what goes in and what comes out.
-"draw" is the DEFAULT: use it for most scenes (at least 3 of every 5). Use the number diagrams only when the voice says a number, and "hero"/"text" only for the hook or the closing line.
+{"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
+"scene" and "draw" are the DEFAULT, together at least 3 of every 5 scenes: "scene" for things connected by flows, "draw" only when you need a custom shape (comparing forms, a curve, a cross-section). Use the number diagrams only when the voice says a number, and "hero"/"text" only for the hook or the closing line.
 Labels max 4 words, numbers as numbers."""
 
 
@@ -56,6 +57,10 @@ def _slots(d):
         for f in ("t", "l"):
             if isinstance(x, dict) and isinstance(x.get(f), str) and re.search(r"[^\W\d_]{2,}", x[f]):
                 out.append(("e", i, f))
+    for f, j in (("n", 1), ("l", 2)) if k == "scene" else ():
+        for i, x in enumerate(d.get(f) or []):
+            if isinstance(x, list) and len(x) > j and isinstance(x[j], str) and re.search(r"[^\W\d_]{2,}", x[j]):
+                out.append((f, i, j))
     for f in ("i", "r"):
         for i, x in enumerate(d.get(f) or []):
             if isinstance(x, str):
@@ -412,6 +417,10 @@ globe:'<circle cx="50" cy="50" r="36"/><path d="M14 50 H86"/><path d="M50 14 C34
 window:'<rect x="20" y="14" width="60" height="72" rx="3"/><path d="M50 14 V86 M20 50 H80"/><path d="M28 24 L38 34 M60 60 L70 70"/>',
 factory:'<path d="M10 88 V48 L34 60 V48 L58 60 V48 L70 54 V18 H84 V88 Z"/><path d="M22 74 H30 M44 74 H52 M64 74 H72"/><path d="M72 10 C76 6 82 8 84 4"/>',
 cloud:'<path d="M28 70 A16 16 0 0 1 30 38 A22 22 0 0 1 72 42 A14 14 0 0 1 72 70 Z"/><path d="M36 80 L32 90 M52 80 L48 90 M68 80 L64 90"/>',
+compressor:'<circle cx="50" cy="50" r="34"/><path d="M26 26 L82 40 M26 74 L82 60"/><path d="M4 50 H16 M84 50 H96"/>',
+fridge:'<rect x="26" y="8" width="48" height="84" rx="6"/><path d="M26 38 H74"/><path d="M36 18 V28 M36 48 V64"/>',
+fan:'<circle cx="50" cy="40" r="32"/><g class="spin"><circle cx="50" cy="40" r="4"/><path d="M50 36 C58 30 58 18 50 12 C46 20 46 30 50 36 Z"/><path d="M53.5 42 C63 44 72 52 74 58 C64 58 56 50 53.5 42 Z"/><path d="M46.5 42 C44 50 36 58 26 58 C28 50 37 44 46.5 42 Z"/></g><path d="M38 70 L32 90 H68 L62 70"/>',
+boiler:'<rect x="24" y="8" width="52" height="70" rx="6"/><path d="M50 60 C40 52 44 42 50 34 C56 42 60 52 50 60 Z"/><path d="M34 20 H66"/><path d="M36 78 V92 M64 78 V92"/>',
 city:'<path d="M8 88 H92"/><rect x="14" y="40" width="20" height="48"/><rect x="40" y="18" width="22" height="70"/><rect x="68" y="50" width="18" height="38"/><path d="M20 50 H28 M20 62 H28 M46 30 H56 M46 44 H56 M46 58 H56 M73 60 H81 M73 72 H81"/>'};
 function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[name]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
 const SPIN=[];
@@ -438,7 +447,7 @@ const s=svg(864,560,`<path class="d loopc" pathLength="1" d="M210 300 V170 Q210 
 <path class="d looph" pathLength="1" d="M432 110 H594 Q654 110 654 170 V430 Q654 490 594 490 H432" stroke="var(--acc)" stroke-width="5"/>
 <path class="d loopc2" pathLength="1" d="M432 490 H270 Q210 490 210 430 V300" stroke="#a9a9a9" stroke-width="5"/>
 <g class="n1"><rect x="180" y="240" width="60" height="120" rx="8" fill="#000" stroke="#a9a9a9" stroke-width="4"/><path d="M190 256 H230 M190 276 H230 M190 296 H230 M190 316 H230 M190 336 H230" stroke="#a9a9a9" stroke-width="3"/></g>
-<g class="n2"><circle cx="432" cy="110" r="40" fill="#000" stroke="#fff" stroke-width="4"/><path d="M412 124 L452 96 M420 100 L444 100 L444 122" stroke="#fff" stroke-width="4" fill="none"/></g>
+<g class="n2"><circle cx="432" cy="110" r="40" fill="#000" stroke="#fff" stroke-width="4"/><path d="M404 82 L470 98 M404 138 L470 122" stroke="#fff" stroke-width="4" fill="none"/></g>
 <g class="n3"><rect x="624" y="240" width="60" height="120" rx="8" fill="#000" stroke="var(--acc)" stroke-width="4"/><path d="M634 256 H674 M634 276 H674 M634 296 H674 M634 316 H674 M634 336 H674" stroke="var(--acc)" stroke-width="3"/></g>
 <g class="n4"><path d="M402 470 L462 510 V470 L402 510 Z" fill="#000" stroke="#fff" stroke-width="4"/></g>
 <g class="air"><path d="M10 250 H150 M10 300 H170 M10 350 H150" stroke="#a9a9a9" stroke-width="3" stroke-dasharray="14 12" class="aird"/><path d="M156 286 L172 300 L156 314" stroke="#a9a9a9" stroke-width="3" fill="none"/></g>
@@ -511,6 +520,29 @@ const ic=icon(d.i||'bolt',sz,'#fff',2.2);ic.style.left=(cx-sz/2)+'px';ic.style.t
 const w=el('div','big',`left:0;top:${cy+sz/2+26}px;width:864px;text-align:center;font-size:70px;text-transform:uppercase`,esc(d.w||'')),s2=el('div','lab a',`left:82px;top:${cy+sz/2+112}px;width:700px;text-align:center;font-size:30px`,esc(d.s||''));v.append(w,s2);fit(w,70,34,84,840);fit(s2,30,18,70,700);
 return (t,st)=>{const p=st(0,1.4);draw(ic,p);ic.style.opacity=p>0?1:0;ic.style.transform=`translateY(${Math.sin(t*1.1)*8}px) scale(${.9+.1*E(p)})`;halo.style.opacity=.22*E(st(.3,1.2))*(1+.12*Math.sin(t*1.6));
 rings.forEach((r,i)=>{const q=((t*.32+i/3)%1);const on=cl(st(.8,.6));r.style.transform=`scale(${.72+q*.9})`;r.style.opacity=on*(1-q)*.55});show(w,st(1,.6),30);show(s2,st(1.5,.6),20)}};
+// zložená scéna: hotové obrázky + šípky s pohybom, rozloženie robí appka (AI nedáva súradnice)
+V.scene=(v,d)=>{const NN=(Array.isArray(d.n)?d.n:[]).filter(x=>Array.isArray(x)).slice(0,6),n=NN.length;if(!n)return;
+const LL=(Array.isArray(d.l)?d.l:[]).filter(x=>Array.isArray(x)&&x[0]!=x[1]&&NN[x[0]]&&NN[x[1]]).slice(0,8);
+const lay=NN.map(()=>0);if(LL.length){for(let k=0;k<n;k++)LL.forEach(e=>{if(lay[e[1]]<lay[e[0]]+1&&lay[e[0]]+1<n)lay[e[1]]=lay[e[0]]+1})}else NN.forEach((x,i)=>lay[i]=i);
+const used=[...new Set(lay)].sort((a,b)=>a-b);lay.forEach((x,i)=>lay[i]=used.indexOf(x));const C=used.length,cols=Array.from({length:C},()=>[]);lay.forEach((c,i)=>cols[c].push(i));
+const R=Math.max(...cols.map(c=>c.length)),cw=864/C,rh=Math.min(250,500/R),sz=Math.round(Math.max(84,Math.min(180,cw*.5,rh*.58)));
+const pos=NN.map(()=>[0,0]);cols.forEach((c,ci)=>c.forEach((i,ri)=>{pos[i]=[cw*ci+cw/2,250+(ri-(c.length-1)/2)*rh-18]}));
+const s=svg(864,560,'');s.style.position='absolute';s.style.left='0';s.style.top='0';v.append(s);
+const nodes=NN.map((x,i)=>{const hot=LL.some(e=>e[1]==i&&e[3])&&!LL.some(e=>e[0]==i);const ic=icon(x[0],sz,hot?D.acc:'#fff',2.8);ic.style.left=(pos[i][0]-sz/2)+'px';ic.style.top=(pos[i][1]-sz/2)+'px';v.append(ic);
+const lb=el('div','lab',`left:${pos[i][0]-cw/2+8}px;width:${cw-16}px;top:${pos[i][1]+sz/2+10}px;text-align:center;font-size:22px;letter-spacing:2px;${hot?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,22,14,58);
+return {ic,lb,a:String(x[2]||''),at:lay[i],ph:i*1.7}});
+const mk=(tag,at)=>{const e=document.createElementNS(SVGNS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
+const links=LL.map((e,k)=>{const a=pos[e[0]],b=pos[e[1]],col=e[3]?D.acc:'#9a9a9a',g=sz/2+16;let dstr;
+if(lay[e[1]]>lay[e[0]]){const x1=a[0]+g,x2=b[0]-g;dstr=a[1]==b[1]?`M${x1} ${a[1]} H${x2}`:`M${x1} ${a[1]} C${(x1+x2)/2} ${a[1]} ${(x1+x2)/2} ${b[1]} ${x2} ${b[1]}`}
+else{const yb=Math.max(a[1],b[1])+sz/2+92;dstr=`M${a[0]} ${a[1]+sz/2+70} V${yb-20} Q${a[0]} ${yb} ${a[0]-20} ${yb} H${b[0]+20} Q${b[0]} ${yb} ${b[0]} ${yb-20} V${b[1]+sz/2+70}`}
+const pa=mk('path',{d:dstr,stroke:col,'stroke-width':3.2,class:'d',pathLength:1});s.append(pa);const L=pa.getTotalLength(),q=pa.getPointAtLength(L),q0=pa.getPointAtLength(Math.max(0,L-6)),an=Math.atan2(q.y-q0.y,q.x-q0.x),H=15;
+const hd=mk('path',{d:`M${q.x-H*Math.cos(an-.5)} ${q.y-H*Math.sin(an-.5)} L${q.x} ${q.y} L${q.x-H*Math.cos(an+.5)} ${q.y-H*Math.sin(an+.5)}`,stroke:col,'stroke-width':3.2,fill:'none','stroke-linecap':'round','stroke-linejoin':'round',opacity:0});s.append(hd);
+const dots=[0,1].map(()=>{const c=mk('circle',{r:5.5,fill:e[3]?D.acc:'#fff',opacity:0});s.append(c);return c});
+const flat=a[1]==b[1]||lay[e[1]]<=lay[e[0]],skip=lay[e[1]]-lay[e[0]]>1;const m=pa.getPointAtLength(L*(flat&&skip?.2:.5));const lb=el('div','lab',flat?`left:${m.x-120}px;width:240px;top:${m.y-(skip?-12:44)}px;text-align:center;`:`left:${m.x+16}px;width:200px;top:${m.y-13}px;text-align:left;`);lb.style.cssText+=`font-size:20px;letter-spacing:1.5px;color:${e[3]?'var(--acc)':'#d0d0d0'};text-shadow:0 0 10px #000,0 0 10px #000`;lb.innerHTML=esc(e[2]||'');v.append(lb);fit(lb,20,13,30,flat?Math.max(90,(skip?.4:1)*(Math.abs(b[0]-a[0])-sz-20)):Math.max(70,(b[0]-a[0])/2-sz/2));
+return {pa,hd,dots,lb,L,at:Math.max(lay[e[0]],lay[e[1]]-1)+.6}});
+return (t,st)=>{nodes.forEach(o=>{const p=st(o.at*1.2,.9);draw(o.ic,p);o.ic.style.opacity=p>0?1:0;let tr=`scale(${.9+.1*E(p)})`;if(/shake/.test(o.a))tr+=` translate(${Math.sin(t*31+o.ph)*4}px,${Math.cos(t*27+o.ph)*2}px)`;if(/float/.test(o.a))tr+=` translateY(${Math.sin(t*1.4+o.ph)*7}px)`;if(/pulse/.test(o.a))tr+=` scale(${1+.06*Math.sin(t*3.2+o.ph)})`;if(/spin/.test(o.a))tr+=` rotate(${(t*80)%360}deg)`;o.ic.style.transform=tr;show(o.lb,st(o.at*1.2+.4,.5),0)});
+links.forEach((o,k)=>{const p=st(o.at*1.2,.8);o.pa.style.strokeDasharray='1 1';o.pa.style.strokeDashoffset=1-cl(p);o.hd.setAttribute('opacity',p>=1?1:0);show(o.lb,st(o.at*1.2+.5,.5),0);
+o.dots.forEach((c,i)=>{const q=((t*.5+i/2+k*.17)%1);if(p<1){c.setAttribute('opacity',0);return}const pt=o.pa.getPointAtLength(q*o.L);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);c.setAttribute('opacity',Math.sin(q*Math.PI))})})}};
 // vlastná kresba: AI opíše jednoduché tvary, appka ich nakreslí a rozhýbe (ukázať, nie len povedať)
 V.draw=(v,d)=>{const s=svg(864,560,'');s.setAttribute('viewBox','0 0 432 280');s.style.position='absolute';s.style.left='0';s.style.top='0';s.style.overflow='visible';v.append(s);
 const COL=c=>c==1?D.acc:c==2?'#8f8f8f':'#fff',n=x=>{const y=parseFloat(x);return isFinite(y)?y:0},okd=x=>/^[MmLlHhVvCcSsQqTtAaZz0-9\s,.\-eE]+$/.test(String(x||''))?String(x):'';
@@ -614,7 +646,7 @@ window.READY=true;
 STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars": lambda d: len(d.get("i") or []) + 1,
          "calc": lambda d: len(d.get("r") or []) + .5, "compare": lambda d: 2.5, "count": lambda d: 2, "list": lambda d: len(d.get("i") or []),
          "icons": lambda d: len(d.get("i") or []) + .5, "temp": lambda d: 3.5, "house": lambda d: len(d.get("i") or []) + 1.5,
-         "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5, "hero": lambda d: 2.5,
+         "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5, "hero": lambda d: 2.5, "scene": lambda d: len(d.get("n") or []) + 1.5,
          "draw": lambda d: max([int(x.get("at") or 0) for x in (d.get("e") or []) if isinstance(x, dict)] or [0]) + 1.5,
          "product": lambda d: len(d.get("i") or []) + 1.5}
 
