@@ -2024,3 +2024,78 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ---------- mapy dodatočne do hotových, ešte nenahratých videí (bez AI, bez nového hlasu) ----------
+_remap_busy = threading.Lock()
+_remap_state = {"running": False, "done": 0, "left": 0, "last": ""}
+
+
+def _remap_pending(pid):
+    done = set(db.get_setting(f"remap_done_{pid}", []) or [])
+    rows = db.q("""SELECT v.* FROM videos v WHERE v.project_id=? AND v.script_id IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND (COALESCE(p.stash_id,'')!=''
+                        OR COALESCE(p.external_id,'')!='' OR p.status IN ('done','uploading')))""", (pid,))
+    out = []
+    for v in rows:
+        if v["id"] in done or not v["file_path"] or not Path(v["file_path"]).exists():
+            continue
+        s = db.one("SELECT * FROM scripts WHERE id=?", (v["script_id"],))
+        if not s or not s.get("voice_path") or not Path(s["voice_path"]).exists():
+            continue
+        try:
+            scenes = json.loads(s["scenes"] or "[]")
+            if any(explainer.board_of(sc).get("k") == "map" for sc in scenes):
+                out.append(v)
+        except Exception:
+            pass
+    return out
+
+
+def remap(pids):
+    """Na pozadí, po jednom: video sa zloží znova s mapami (rovnaký hlas a scenár), staré sa nahradí."""
+    def run():
+        if not _remap_busy.acquire(blocking=False):
+            return
+        _remap_state["running"] = True
+        try:
+            for pid in pids:
+                for v in _remap_pending(pid):
+                    if db.one("SELECT 1 FROM posts WHERE video_id=? AND (status='uploading' OR COALESCE(stash_id,'')!='')", (v["id"],)):
+                        continue
+                    try:
+                        r = script_to_video(v["script_id"], {})
+                        nv = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
+                        old = Path(v["file_path"])
+                        # nové video prevezme miesto starého (príspevky a plán ostanú)
+                        db.run("UPDATE videos SET file_path=?, size=?, duration=? WHERE id=?", (nv["file_path"], nv["size"], nv["duration"], v["id"]))
+                        db.run("DELETE FROM videos WHERE id=?", (nv["id"],))
+                        for f in (old, old.with_suffix(".jpg")):
+                            if f.exists() and str(f) != nv["file_path"]:
+                                f.unlink()
+                        _remap_state["done"] += 1
+                        _remap_state["last"] = v.get("title") or ""
+                    except Exception as e:
+                        print("mapy do videa:", e)
+                    db.set_setting(f"remap_done_{pid}", (db.get_setting(f"remap_done_{pid}", []) or []) + [v["id"]])
+        finally:
+            _remap_state["running"] = False
+            _remap_busy.release()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@app.post("/api/maps/remap")
+def remap_api(data: dict = Body(default={})):
+    """{"project_ids":[12,13], "dry": true} = len spočíta, koľko videí by dostalo mapy."""
+    pids = [int(p) for p in data.get("project_ids", [])]
+    left = {p: len(_remap_pending(p)) for p in pids}
+    if not data.get("dry"):
+        _remap_state["left"] = sum(left.values())
+        remap(pids)
+    return {"pending": left, "state": _remap_state}
+
+
+@app.get("/api/maps/remap")
+def remap_status():
+    return _remap_state

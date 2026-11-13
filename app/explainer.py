@@ -12,10 +12,13 @@ import re
 import subprocess
 import threading
 
+from pathlib import Path
+
 from . import db, icons_extra
 
 W, H = 1080, 1920
-KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene")
+KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene",
+         "map", "timeline", "line")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
               "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
@@ -25,7 +28,7 @@ ICON_NAMES += tuple(n for n in icons_extra.NAMES if n not in ICON_NAMES)
 SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: black, thin line schematics drawn step by step). Pick ONE that explains the point visually:
 {"t":"board","d":{"k":"flow","a":"input e.g. Electricity 1 kW","b":"device","c":"output e.g. Heat 4 kW","x":"optional extra input e.g. Air 3 kW"}} |
 {"k":"cycle","l":["outdoor air","evaporator","compressor","condenser","home"]} (how a heat pump works) |
-{"k":"bars","u":"unit","i":[["label",number],...max 4]} | {"k":"calc","r":[["1 600 m³ × 10,5","16 800 kWh"],...max 4]} |
+{"k":"bars","u":"unit","i":[["label",number,"optional ISO country code = flag"],...max 4]} | {"k":"calc","r":[["1 600 m³ × 10,5","16 800 kWh"],...max 4]} |
 {"k":"compare","a":["worse option","value"],"b":["better option","value"]} | {"k":"count","v":75,"pre":"","suf":" %","l":"label"} |
 {"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons: """ + ",".join(ICON_NAMES) + """ |
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
@@ -37,6 +40,8 @@ Optional on every element: "c":1 (red highlight) or 2 (grey), "a":"spin" / "shak
 A drawing MUST be built from real objects (turbine, icons); lines, arrows, circles, rectangles and texts are only helpers (ground line, frame, highlight ring, pointer). Never let a bare circle, rectangle or line stand for a real thing: if there is no icon for the thing, use "scene", "hero" or a number diagram instead. Objects are big (icons 70-110 px, turbines 130-180 px high), 2-4 objects per drawing.
 Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Never put a text on top of a line, arrow or shape or on another text: place it beside with a clear gap (texts are centered on their x). Something must MOVE in every drawing (spin, shake, flow, pulse) and it must show the exact thing the voice is describing at that moment: the machine, the part, the before and after, what goes in and what comes out.
 {"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
+{"k":"map","c":["EG","SD"],"p":["Cairo"],"r":[["Cairo","Aswan"]],"v":"Nile","l":"optional 1-3 word tag"} = real animated map: the globe turns and zooms in, countries light up with their flags. c = ISO 2-letter codes (first = main) or a region (EU, Middle East, Africa, Balkans...), p = max 4 real cities, r = straight lines city to city (only for flights, distances or direct links, never for ship or road routes), v = river or canal. Only real places, all fields except c optional. Use "map" EVERY time the voice names a country, region, city, river, sea route or border: it beats all other rules.
+{"k":"timeline","i":[["1869","Suez Canal opens"],...max 5]} (history, dates) | {"k":"line","u":"unit","i":[["2000",12],["2010",30],...max 10]} (change over time)
 "scene" and "draw" are the DEFAULT, together at least 3 of every 5 scenes: "scene" for things connected by flows, "draw" only to place the same kind of object side by side for comparison (like the turbines) or to point at one object with arrows. Use the number diagrams only when the voice says a number, and "hero"/"text" only for the hook or the closing line.
 Labels max 4 words, numbers as numbers."""
 
@@ -208,8 +213,47 @@ def board_of(scene):
     if d.get("k") == "scene":
         ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and x[0] in ICON_NAMES]
         if len(ok) < 2 or len(ok) != len(d.get("n") or []):
-            return guess(scene.get("onscreen", ""), scene.get("visual", ""))
-    return d
+            d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
+    return auto_map(scene, d)
+
+
+_MAP_WORD = re.compile(r"(?i)\b(map|maps|mapa|mapy|mape|karte|carte|mappa|kaart|mapie|térkép|harta|border|borders|route|routes)\b")
+
+
+def auto_map(scene, d):
+    """Bez AI: keď scéna hovorí o krajine, meste alebo rieke a obraz ju neukazuje, dá tam mapu.
+    Číselné grafy (stĺpce, výpočty, porovnania) nechá tak, mapa nahradí len všeobecný obrázok alebo text."""
+    if d.get("k") == "map":
+        return d
+    vis, ons = str(scene.get("visual") or ""), str(scene.get("onscreen") or "")
+    weak = d.get("k") in ("hero", "text", "icons", "list", "scene", "draw")
+    if not (weak or _MAP_WORD.search(vis)):
+        return d
+    try:
+        from . import geo
+        m = geo.guess_map(ons + " . " + vis) if (_MAP_WORD.search(vis) or d.get("k") in ("hero", "text")) else geo.guess_map(ons)
+    except Exception as e:
+        print("mapa:", e)
+        return d
+    return m or d
+
+
+def prepare(v, lang="en"):
+    """Pred renderom: mapa dostane overené súradnice a vlajky, stĺpce vlajky krajín. Čo sa nenájde, ostane bez mapy."""
+    if v.get("k") == "map":
+        from . import geo
+        r = geo.resolve(v, lang)
+        return r or {"k": "text", "w": str(v.get("l") or "")}
+    if v.get("k") == "bars" and any(isinstance(x, list) and len(x) > 2 for x in v.get("i") or []):
+        from . import geo
+        fl = {}
+        for i, x in enumerate((v.get("i") or [])[:4]):
+            c = geo.country(x[2]) if isinstance(x, list) and len(x) > 2 and isinstance(x[2], str) else None
+            if c and geo.flag_uri(c):
+                fl[i] = geo.flag_uri(c)
+        if fl:
+            return dict(v, fl=fl)
+    return v
 
 
 def needs_boards(scenes):
@@ -334,7 +378,11 @@ def page(data, font=None, font_text=None):
         tcss = _font_face("BrandT", font_text)
         if tcss:
             fcss += tcss + ":root{--ft:BrandT,var(--f0)}"
-    return (TEMPLATE.replace("/*FONT*/", fcss)
+    geo_js = ""
+    if any((sc.get("v") or {}).get("k") == "map" for sc in data.get("scenes", [])):
+        from . import geo
+        geo_js = (geo.libs_js() + "\nwindow.TOPO=" + geo.world_json() + ";").replace("</", "<\\/")
+    return (TEMPLATE.replace("/*FONT*/", fcss).replace("/*GEOLIBS*/", geo_js, 1)
             .replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/")))
 
 
@@ -384,6 +432,7 @@ body.wide,html.wide{width:1920px;height:1080px}
 .wide #end .ln{top:760px}
 .wide #bar{top:1068px;height:12px}
 </style></head><body><canvas id="bg"></canvas><div id="glow"></div><div id="stage"><div id="root"></div><img id="lg"><div id="cap"></div></div><div id="end"><div class="gl"></div><img><div class="ln"></div></div><div id="bar"></div>
+<script>/*GEOLIBS*/</script>
 <script>
 const D=__DATA__;
 document.documentElement.style.setProperty('--acc',D.acc);document.documentElement.lang=D.lang||'en';
@@ -485,6 +534,7 @@ V.bars=(v,d)=>{const I=(d.i||[]).slice(0,4);const n=I.length||1,max=Math.max(...
 const base=440,mh=360;const s=svg(864,560,`<path class="d ax" pathLength="1" d="M0 ${base} H864" stroke="#fff" stroke-width="3"/>`);v.append(s);
 const it=I.map((x,i)=>{const L=gap+i*(bw+gap),last=i==n-1;const r=el('div','',`position:absolute;left:${L}px;width:${bw}px;bottom:${560-base}px;height:0;background:${last?'var(--acc)':i%2?'#e9e9e9':'#3b3b3b'}`);
 const val=el('div','big',`left:${L-40}px;width:${bw+80}px;text-align:center;font-size:40px;${last?'color:var(--acc)':''}`);const lb=el('div','lab',`left:${L-30}px;width:${bw+60}px;top:${base+18}px;text-align:center`,esc(x[0]));
+const fu=d.fl&&d.fl[i];if(fu){const f=el('img','',`position:absolute;left:${L+bw/2-33}px;top:${base+16}px;width:66px;height:49px;border-radius:4px;object-fit:cover;box-shadow:0 2px 10px rgba(0,0,0,.6)`);f.src=fu;v.append(f);lb.style.top=(base+76)+'px'}
 v.append(r,val,lb);fit(lb,28,16,70);return {r,val,lb,v:N(x[1]),h:N(x[1])/max*mh,dec:decs(x[1])}});
 return (t,st)=>{const ax=s.querySelector('.ax');ax.style.strokeDasharray='1 1';ax.style.strokeDashoffset=1-st(0,.6);
 it.forEach((o,i)=>{const p=st(.4+i*.9,.9);o.r.style.height=(E(p)*o.h)+'px';o.val.style.top=(base-E(p)*o.h-52)+'px';o.val.textContent=NF(o.v*E(p),o.dec)+(d.u?' '+d.u:'');o.val.style.opacity=cl(p*3);show(o.lb,st(.4+i*.9,.5),0)})}};
@@ -597,6 +647,7 @@ if(/float/.test(o.A))tr+=`translate(0 ${Math.sin(t*1.4+o.ph)*5}) `;if(/pulse/.te
 if(o.spin)tr+=`rotate(${(t*80)%360} ${o.cx} ${o.cy}) `;o.g.setAttribute('transform',tr);
 if(o.rot)o.rot.setAttribute('transform',`rotate(${(t*o.rot._v*cl(p*1.5))%360} ${o.rot._c[0]} ${o.rot._c[1]})`);
 if(o.dots.length){let L=0;try{L=o.flow.getTotalLength()}catch(e){}o.dots.forEach((c,i)=>{const q=((t*.45+i/3)%1);if(!L||p<1){c.setAttribute('opacity',0);return}const pt=o.flow.getPointAtLength(q*L);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);c.setAttribute('opacity',Math.sin(q*Math.PI))})}})};
+/*EXTRA_BOARDS*/
 V.text=(v,d)=>{const ws=String(d.w||'').split(/\s+/).filter(Boolean).slice(0,6);const box=el('div','',`position:absolute;left:0;top:40px;width:864px;height:480px;display:flex;flex-wrap:wrap;align-content:center;gap:0 22px;font-weight:900;text-transform:uppercase;line-height:1.02;font-size:118px;letter-spacing:-2px`);
 const sp=ws.map((w,i)=>{const e=el('span','',i==ws.length-1?'color:var(--acc)':'',esc(w));box.append(e);return e});v.append(box);fit(box,118,48,480,864);
 return (t,st)=>sp.forEach((e,i)=>{const p=st(i*.25,.45);e.style.opacity=p;e.style.display='inline-block';e.style.transform=`translateY(${(1-E(p))*50}px)`})};
@@ -668,13 +719,18 @@ window.READY=true;
 </script></body></html>"""
 
 TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + ",", 1)
+_HERE = Path(__file__).parent
+TEMPLATE = TEMPLATE.replace("/*EXTRA_BOARDS*/", (_HERE / "boards_extra.js").read_text(encoding="utf-8") + "\n"
+                            + (_HERE / "geo" / "map.js").read_text(encoding="utf-8"), 1)
 
 STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars": lambda d: len(d.get("i") or []) + 1,
          "calc": lambda d: len(d.get("r") or []) + .5, "compare": lambda d: 2.5, "count": lambda d: 2, "list": lambda d: len(d.get("i") or []),
          "icons": lambda d: len(d.get("i") or []) + .5, "temp": lambda d: 3.5, "house": lambda d: len(d.get("i") or []) + 1.5,
          "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5, "hero": lambda d: 2.5, "scene": lambda d: len(d.get("n") or []) + 1.5,
          "draw": lambda d: max([int(x.get("at") or 0) for x in (d.get("e") or []) if isinstance(x, dict)] or [0]) + 1.5,
-         "product": lambda d: len(d.get("i") or []) + 1.5}
+         "product": lambda d: len(d.get("i") or []) + 1.5,
+         "map": lambda d: 2.2 + .6 * len(d.get("r") or []) + .4 * len(d.get("pts") or []) + .5 * len(d.get("v") or []),
+         "timeline": lambda d: len(d.get("i") or []) * .8 + .8, "line": lambda d: 3}
 
 _lock = threading.Lock()
 
@@ -744,7 +800,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     times = timeline(scenes, words, total)
     sc_data, pcache = [], {}
     for sc, (t0, t1) in zip(scenes, times):
-        v = board_of(sc)
+        v = prepare(board_of(sc), lang)
         h = (sc.get("onscreen") or "").strip()
         v = with_product(h, v, products, pcache)
         if v.get("k") == "text" and re.sub(r"\W", "", str(v.get("w", "")).lower()) == re.sub(r"\W", "", h.lower()):
@@ -833,6 +889,7 @@ def _all_black(path, length):
 
 def preview(d, out_png, accent="#FF6B00", lang="sk", title="Ukážka", at=6.0):
     """Jeden obrázok diagramu (na test/náhľad)."""
+    d = prepare(d, lang)
     data = {"acc": accent, "lang": lang, "kicker": "", "total": 10, "caps": [],
             "scenes": [{"h": title, "v": d, "t0": 0, "t1": 10, "steps": STEPS.get(d.get("k"), lambda x: 2)(d)}]}
     import os
