@@ -9,7 +9,7 @@ const dash=(p,x)=>{p.style.strokeDasharray='1 1';p.style.strokeDashoffset=1-cl(x
 const SIG=(x,n)=>{try{return new Intl.NumberFormat(D.lang||'en',{maximumSignificantDigits:n||3}).format(x)}catch(e){return String(+x.toPrecision(n||3))}};
 const UNIT=(x,u)=>{try{return new Intl.NumberFormat(D.lang||'en',{style:'unit',unit:u,unitDisplay:'long',maximumFractionDigits:0}).format(x)}catch(e){return NF(x,0)+' '+u}};
 const niceStep=r=>{const e=Math.pow(10,Math.floor(Math.log10(r)));const f=r/e;return (f<1.5?1:f<3?2:f<3.5?2.5:f<7.5?5:10)*e};
-const hasIcon=n=>!!(n&&(ICONS[n]||ICONS[ICON_ALIAS[n]]||ICONS[String(n).toLowerCase().replace(/[ -]+/g,'_')]));
+const hasIcon=n=>!!(n&&(IR(n)!=='check'||n==='check'));
 const unitTxt=u=>u?(u=='%'&&!/^(en|zh|ja|ko|he|hi)/.test(D.lang||'en')?'\u202f%':/^[%°]/.test(u)?u:' '+u):'';
 
 // ===== GAUGE: ručičkový merák so zónami =====

@@ -39,6 +39,7 @@ for _f in sorted((_EXT / "icons").glob("*.json")):
     for _c, _names in (_j.get("channels") or {}).items():
         ICON_CHANNELS.setdefault(_c, []).extend(_names)
 ICON_NAMES += tuple(ICON_PACKS)
+_ICON_SET = set(ICON_NAMES)
 ICON_ALIAS = {k: v for k, v in ICON_ALIAS.items() if v in ICON_NAMES and k not in ICON_NAMES}
 BOARD_META = {}
 for _f in sorted((_EXT / "boards").glob("*.json")):
@@ -112,15 +113,53 @@ for _m in BOARD_META.values():
 _ALL_PACK = ("default",)
 
 
-def icon_ok(name):
-    """Nájde ikonu aj podľa synonyma, množného čísla alebo časti mena (rovnako ako IR v stránke)."""
+def icon_name(name):
+    """Kanonické meno ikony aj zo synonyma, množného čísla alebo časti mena (rovnako ako IR v stránke); None = nič."""
     def one(n):
         for c in (n, re.sub(r"ies$", "y", n), re.sub(r"es$", "", n), re.sub(r"s$", "", n)):
-            if c in ICON_NAMES or ICON_ALIAS.get(c) in ICON_NAMES:
-                return True
-        return False
-    n = re.sub(r"[\s-]+", "_", str(name or "").lower().strip())
-    return one(n) or any(one(x) for x in n.split("_") if x)
+            if c in _ICON_SET:
+                return c
+            if ICON_ALIAS.get(c) in _ICON_SET:
+                return ICON_ALIAS[c]
+        return None
+    if not isinstance(name, str) or len(name) > 40:
+        return None
+    n = re.sub(r"[\s-]+", "_", name.lower().strip())
+    r = one(n)
+    if r:
+        return r
+    for x in reversed([x for x in n.split("_") if x]):
+        r = one(x)
+        if r:
+            return r
+    return None
+
+
+def icon_ok(name):
+    return icon_name(name) is not None
+
+
+def _icons_js(data):
+    """Do stránky len ikony z balíkov, ktoré video naozaj používa (stránka ostane malá aj pri tisícoch ikon)."""
+    seen, alias = set(), {}
+
+    def walk(x):
+        if isinstance(x, dict):
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+        elif isinstance(x, str):
+            c = icon_name(x)
+            if c:
+                seen.add(c)
+                k = re.sub(r"[\s-]+", "_", x.lower().strip())
+                if k != c:
+                    alias[k] = c
+    walk(data)
+    body = "".join(json.dumps(k) + ":" + json.dumps(ICON_PACKS[k]) + "," for k in sorted(seen) if k in ICON_PACKS)
+    return body, json.dumps(alias)
 
 
 def _chan(project=None):
@@ -497,7 +536,9 @@ def page(data, font=None, font_text=None):
                 hist[str(f["y"])] = geo.hist_json(f["y"])
         geo_js = (geo.libs_js() + "\nwindow.TOPO=" + geo.world_json() + ";\nwindow.HIST={"
                   + ",".join(json.dumps(k) + ":" + v for k, v in hist.items()) + "};").replace("</", "<\\/")
+    ic, al = _icons_js(data)
     return (TEMPLATE.replace("/*FONT*/", fcss).replace("/*GEOLIBS*/", geo_js, 1)
+            .replace("/*PACK_ICONS*/", ic.replace("</", "<\\/"), 1).replace("/*ICON_ALIAS*/{}", al.replace("</", "<\\/"), 1)
             .replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/")))
 
 
@@ -835,8 +876,8 @@ fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(9
 window.READY=true;
 </script></body></html>"""
 
-TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + "," + ",".join(json.dumps(k) + ":" + json.dumps(v) for k, v in ICON_PACKS.items()) + ("," if ICON_PACKS else ""), 1)
-TEMPLATE = TEMPLATE.replace("const ICONS={", "const ICON_ALIAS=" + json.dumps(ICON_ALIAS) + ";const ICONS={", 1)
+TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + ",/*PACK_ICONS*/", 1)
+TEMPLATE = TEMPLATE.replace("const ICONS={", "const ICON_ALIAS=/*ICON_ALIAS*/{};const ICONS={", 1)
 _HERE = Path(__file__).parent
 TEMPLATE = TEMPLATE.replace("/*EXTRA_BOARDS*/", (_HERE / "boards_extra.js").read_text(encoding="utf-8") + "\n"
                             + (_HERE / "boards_pack.js").read_text(encoding="utf-8") + "\n"

@@ -1,6 +1,6 @@
 // ---------- general_a: rebríček, súboj, postup, strom, sieť, matica 2x2 ----------
 (()=>{
-const GA_isI=n=>typeof n=='string'&&n.length>0&&!!(ICONS[n]||ICON_ALIAS[n]||ICONS[n.toLowerCase().replace(/[ -]+/g,'_')]);
+const GA_isI=n=>typeof n=='string'&&n.length>0&&(IR(n)!=='check'||n==='check');
 const GA_ic=(n,sz,col,x,y,sw)=>{const s=icon(n,sz,col,sw);s.style.left=x+'px';s.style.top=y+'px';return s};
 const GA_dash=(p,x)=>{if(!p)return;p.style.strokeDasharray='1 1';p.style.strokeDashoffset=1-cl(x)};
 const GA_pop=(e,p)=>{e.style.opacity=cl(p*1.6);e.style.transform=`scale(${.6+.4*E(p)+.06*Math.sin(Math.PI*cl(p))})`};
