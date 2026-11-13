@@ -2022,9 +2022,6 @@ def main():
         raise
 
 
-if __name__ == "__main__":
-    main()
-
 
 # ---------- mapy dodatočne do hotových, ešte nenahratých videí (bez AI, bez nového hlasu) ----------
 _remap_busy = threading.Lock()
@@ -2099,3 +2096,7 @@ def remap_api(data: dict = Body(default={})):
 @app.get("/api/maps/remap")
 def remap_status():
     return _remap_state
+
+
+if __name__ == "__main__":
+    main()
