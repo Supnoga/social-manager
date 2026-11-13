@@ -70,7 +70,8 @@ def weekly(pid: int):
 def competitors(pid: int):
     return {"competitors": db.q("""SELECT c.*, (SELECT COUNT(*) FROM comp_posts cp WHERE cp.competitor_id=c.id) posts
                                    FROM competitors c WHERE project_id=? ORDER BY id""", (pid,)),
-            "outliers": radar.outliers(pid)[:30], "yt_key": bool(radar.yt_key())}
+            "outliers": radar.outliers(pid)[:30], "yt_key": bool(radar.yt_key()),
+            "proven": radar.proven(pid, "long", 25), "patterns": radar.title_patterns(pid, "long")}
 
 
 @router.post("/api/radar/{pid}/competitors")

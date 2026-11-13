@@ -332,6 +332,8 @@ def mark_used(ref):
         db.run("UPDATE questions SET status='used' WHERE id=?", (ref["question"],))
     if ref.get("swipe"):
         db.run("UPDATE swipes SET status='used' WHERE id=?", (ref["swipe"],))
+    if ref.get("comp_post"):
+        db.run("UPDATE comp_posts SET status='used' WHERE id=?", (ref["comp_post"],))
 
 
 # ---------- zásobník ----------

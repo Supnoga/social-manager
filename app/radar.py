@@ -239,7 +239,7 @@ def resolve_competitor(pid, url):
             ch["contentDetails"]["relatedPlaylists"]["uploads"], ch["snippet"]["title"],
             int(ch["statistics"].get("subscriberCount", 0) or 0), (ch["snippet"].get("defaultLanguage") or "")[:2]))
     c = db.one("SELECT id FROM competitors WHERE project_id=? AND platform='youtube' AND external_id=?", (pid, ch["id"]))
-    comp_uploads(c["id"], 25)
+    comp_backlog(c["id"])
     return ch["snippet"]["title"]
 
 
@@ -292,6 +292,53 @@ def _rescore(cid):
             expected = max(1.0, base * min(1.0, (h / 168) ** 0.6))
             ratio = p["views"] / expected if base else 0
             db.run("UPDATE comp_posts SET ratio=? WHERE id=?", (round(ratio, 2), p["id"]))
+        # overené témy: staršie video oproti 30 susedným videám toho istého kanála (rovnaký formát)
+        ps = sorted([p for p in posts if p["is_short"] == short], key=lambda x: x["published_at"] or "")
+        vals = [p["views"] for p in ps]
+        for k, p in enumerate(ps):
+            nb = vals[max(0, k - 15):k] + vals[k + 1:k + 16]
+            ra = 0.0
+            if len(nb) >= 6 and _hours_since(p["published_at"]) >= 14 * 24:
+                ra = round(p["views"] / max(1.0, statistics.median(nb)), 2)
+            if ra != (p["ratio_all"] if "ratio_all" in p.keys() else 0):
+                db.run("UPDATE comp_posts SET ratio_all=? WHERE id=?", (ra, p["id"]))
+
+
+def comp_backlog(cid, max_n=200):
+    """Celá história kanála (do 200 videí) – z nej sa počítajú overené témy. ~8 jednotiek kvóty na kanál."""
+    c = db.one("SELECT * FROM competitors WHERE id=?", (cid,))
+    if not c or c["platform"] != "youtube" or not c["uploads_playlist"]:
+        return
+    ids, tok = [], None
+    while len(ids) < max_n:
+        prm = {"part": "contentDetails", "playlistId": c["uploads_playlist"], "maxResults": 50}
+        if tok:
+            prm["pageToken"] = tok
+        d = _yt("playlistItems", **prm)
+        ids += [x["contentDetails"]["videoId"] for x in d.get("items", [])]
+        tok = d.get("nextPageToken")
+        if not tok:
+            break
+    _update_videos(c, ids[:max_n])  # obnoví aj čísla starších videí
+    db.run("UPDATE competitors SET backlog_at=?, last_checked=?, last_error='' WHERE id=?", (_now(), _now(), cid))
+
+
+def job_comp_backlog():
+    """Raz za mesiac prejde celú históriu každého sledovaného kanála (najviac 25 kanálov za beh)."""
+    old = (dt.datetime.now() - dt.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    done = 0
+    for c in db.q("SELECT id, backlog_at FROM competitors WHERE platform='youtube' AND active=1 ORDER BY backlog_at"):
+        if c["backlog_at"] and c["backlog_at"] > old:
+            continue
+        try:
+            comp_backlog(c["id"])
+            done += 1
+        except Exception as e:
+            db.run("UPDATE competitors SET last_error=? WHERE id=?", (str(e)[:200], c["id"]))
+            if "kvóta" in str(e) or "Chýba" in str(e):
+                break
+        if done >= 25:
+            break
 
 
 def job_comp_uploads():
@@ -414,6 +461,84 @@ def outliers(pid, min_ratio=3.0, days=14):
     return [r for r in rows if _hours_since(r["published_at"]) <= days * 24]
 
 
+# ---------- overené témy a vzory názvov (0 tokenov) ----------
+TITLE_PATTERNS = [
+    ("why", "Why …?", r"^why\b"),
+    ("how", "How …", r"^how\b"),
+    ("what_if", "What happens if / when …", r"\bwhat (happens|if|would|really)\b"),
+    ("question", "Otázka (…?)", r"\?\s*$"),
+    ("number", "Konkrétne číslo", r"\d"),
+    ("money", "Peniaze / veľké sumy", r"[$€£]|\b(billion|million|trillion|cost|price|cheap|expensive|money)\b"),
+    ("superlative", "Najväčší / jediný / najhorší", r"\b(biggest|largest|most|worst|best|fastest|deadliest|richest|smallest|longest|only|strongest|first|last)\b"),
+    ("secret", "Skryté / skutočný dôvod", r"\b(secret|hidden|nobody|no one|real reason|truth|actually|really|insane|genius|strange|weird)\b"),
+    ("problem", "Problém / zlyhanie / kríza", r"\b(problem|fail|failed|failure|mistake|collapse|crisis|disaster|dying|dead|broke|bankrupt|wrong|ruin)"),
+    ("versus", "Porovnanie (vs)", r"\b(vs\.?|versus)\b"),
+    ("the_x", "The … (príbeh)", r"^the\b"),
+    ("explained", "Explained / in X minutes", r"\b(explained|in \d+ minutes?)\b"),
+]
+
+
+PATTERN_EN = {"why": "'Why ...'", "how": "'How ...'", "what_if": "'What happens if/when ...'", "question": "question title",
+              "number": "concrete number", "money": "money/big sums", "superlative": "superlative (biggest/only/worst)",
+              "secret": "hidden truth/real reason", "problem": "problem/failure/crisis", "versus": "X vs Y",
+              "the_x": "'The ...' story", "explained": "'... Explained'"}
+
+
+def proven(pid, fmt="long", limit=30, min_ratio=2.5):
+    """Overené témy: staršie videá konkurencie s min. 2,5× viac pozretiami než je na ich kanáli bežné."""
+    short = 1 if fmt == "short" else 0
+    rows = db.q("""SELECT cp.*, c.name channel FROM comp_posts cp JOIN competitors c ON c.id=cp.competitor_id
+                   WHERE c.project_id=? AND c.active=1 AND cp.is_short=? AND cp.ratio_all>=? AND cp.status NOT IN ('hidden','used')
+                   AND (cp.is_short=1 OR cp.duration>=240) AND cp.views>=? ORDER BY cp.ratio_all DESC LIMIT 300""",
+                (pid, short, min_ratio, 50000 if short else 20000))
+    rows.sort(key=lambda r: -(min(r["ratio_all"], 30) * math.log10(r["views"] + 10)))
+    out, seen = [], []
+    for r in rows:
+        st = stems(r["title"])
+        if any(jaccard(st, x) > 0.5 for x in seen):
+            continue
+        seen.append(st)
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def title_patterns(pid, fmt="long"):
+    """Ktoré typy názvov majú medzi hitmi konkurencie výrazne väčšie zastúpenie než bežne (bez AI)."""
+    short = 1 if fmt == "short" else 0
+    rows = db.q("""SELECT cp.title, cp.ratio_all FROM comp_posts cp JOIN competitors c ON c.id=cp.competitor_id
+                   WHERE c.project_id=? AND c.active=1 AND cp.is_short=? AND cp.ratio_all>0 AND (cp.is_short=1 OR cp.duration>=240)""", (pid, short))
+    hits = [r for r in rows if r["ratio_all"] >= 2.5]
+    if len(rows) < 40 or len(hits) < 8:
+        return {"patterns": [], "n": len(rows), "hits": len(hits), "len_hits": 0}
+    out = []
+    for key, label, rx in TITLE_PATTERNS:
+        f = lambda t: bool(re.search(rx, t or "", re.I))
+        a = sum(f(r["title"]) for r in hits) / len(hits)
+        b = sum(f(r["title"]) for r in rows) / len(rows)
+        if a >= 0.08 and b > 0:
+            out.append({"key": key, "label": label, "share": round(a * 100), "lift": round(a / b, 2)})
+    out.sort(key=lambda x: -x["lift"])
+    return {"patterns": out, "n": len(rows), "hits": len(hits),
+            "len_hits": round(statistics.median([len(r["title"]) for r in hits]))}
+
+
+def proven_prompt(pid, fmt="long", n=6):
+    """Krátky výťah pre Claude (~150 tokenov): overené témy + typy názvov, ktoré v nike fungujú."""
+    import random
+    top = proven(pid, fmt, 14)
+    if not top:
+        return ""
+    pick = top[:3] + random.sample(top[3:], min(max(0, n - 3), len(top) - 3))
+    lines = "; ".join(f'"{r["title"][:80]}" ({r["ratio_all"]:.0f}x)' for r in pick)
+    tp = title_patterns(pid, fmt)
+    pat = ", ".join([f'{PATTERN_EN[p["key"]]} {p["lift"]}x' for p in tp["patterns"] if p["lift"] >= 1.15][:4])
+    return ("PROVEN IN THIS NICHE (competitor videos with 2.5x+ the views of their neighbouring uploads = topics viewers demonstrably want): "
+            + lines + ". Prefer ideas that hit the SAME viewer desire with our own angle and our own story; never copy a title."
+            + (f" Title styles that over-perform here: {pat}; typical hit title {tp['len_hits']} chars." if pat else ""))
+
+
 def _own_stats():
     from . import stats
     stats.job()
@@ -450,7 +575,7 @@ def _housekeeping():
 
 # ---------- plánovač Radaru (samostatné vlákno, nezasahuje do publikovania) ----------
 JOBS = {"gtrends": (2, job_gtrends), "news": (3, job_news), "wiki": (24, job_wiki), "yt_popular": (24, job_yt_popular),
-        "comp_uploads": (6, job_comp_uploads), "comp_stats": (3, job_comp_stats), "own_stats": (6, _own_stats),
+        "comp_uploads": (6, job_comp_uploads), "comp_backlog": (12, job_comp_backlog), "comp_stats": (3, job_comp_stats), "own_stats": (6, _own_stats),
         "weather": (24, lambda: __import__("app.weather", fromlist=["job"]).job()),
         "questions": (168, lambda: __import__("app.inspire", fromlist=["job_questions"]).job_questions())}
 
@@ -534,6 +659,9 @@ def signals(pid, n_trends=6, n_comp=4):
         out += inspire.signals(pid)
     except Exception:
         pass
+    for i, o in enumerate(proven(pid, "long", 3)):
+        out.append({"id": f"P{i + 1}", "mk": "all", "txt": f'proven competitor long video "{o["title"][:90]}" {o["ratio_all"]}x its channel normal, {o["views"]} views',
+                    "ref": {"comp_post": o["id"], "label": o["title"][:80]}})
     for i, o in enumerate(outliers(pid)[:n_comp]):
         out.append({"id": f"K{i + 1}", "mk": "all", "txt": f'competitor {"short" if o["is_short"] else "video"} "{o["title"][:90]}" {o["ratio"]}x channel normal, {o["views"]} views',
                     "ref": {"comp_post": o["id"], "label": o["title"][:80]}})

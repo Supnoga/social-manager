@@ -651,6 +651,15 @@ let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e)
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
 const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,30,112,1400);else fit(CAP,60,38,150,864);lastCap=ci}}
+// náhľadový obrázok dlhého videa: veľký text vľavo, hlavný obraz vpravo, bez titulkov a lišty
+window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(Math.max(s.t0+.1,s.t1-.2));
+CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;
+const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';
+s.vz.style.opacity=1;s.vz.style.left=(WIDE?930:108)+'px';s.vz.style.top=(WIDE?250:980)+'px';s.vz.style.transform=`scale(${WIDE?1.42:1.25})`;
+GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';
+const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?820:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
+T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length-1?'var(--acc)':'#fff'}">${esc(w)}</span>`).join(' ');s.w.append(T);
+fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}};
 window.READY=true;
 </script></body></html>"""
 
@@ -696,8 +705,27 @@ def with_product(h, v, products, cache):
     return {"k": "product", "img": cache[hit], "i": [str(x) for x in items][:3]}
 
 
+VISUAL_KINDS = ("scene", "draw", "product", "hero", "house", "cycle", "flow", "icons", "compare")
+
+
+def thumb_index(scenes, sc_data, want=None):
+    """Scéna pre náhľad: tú, ktorú vybral scenár, inak prvú výraznú obrázkovú (nie poslednú, tá je oddialená)."""
+    last = max(0, len(sc_data) - 2)
+    try:
+        i = int(want)
+        if 0 <= i <= last:
+            return i
+    except (TypeError, ValueError):
+        pass
+    for k in VISUAL_KINDS:
+        for i, d in enumerate(sc_data[:last + 1]):
+            if (d.get("v") or {}).get("k") == k:
+                return i
+    return 0
+
+
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -746,11 +774,16 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             pg = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)
-            if thumb:  # náhľadový obrázok: úvodná scéna s názvom, bez titulkov
+            if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
                 try:
-                    pg.evaluate("renderAt(%.2f);document.getElementById('cap').innerHTML='';document.getElementById('bar').style.width=0"
-                                % min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6))
+                    if (thumb_text or "").strip() and sc_data:
+                        pg.evaluate("([i,t])=>thumbMode(i,t)", [thumb_index(scenes, sc_data, thumb_scene), thumb_text.strip()])
+                    else:
+                        pg.evaluate("renderAt(%.2f);document.getElementById('cap').innerHTML='';document.getElementById('bar').style.width=0"
+                                    % min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6))
                     pg.screenshot(path=str(thumb), type="jpeg", quality=92)
+                    pg.set_content(html)  # čistá stránka pre samotné video
+                    pg.wait_for_function("window.READY===true", timeout=20000)
                 except Exception as e:
                     print("náhľad:", e)
             for i in range(n):

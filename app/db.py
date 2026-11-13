@@ -166,6 +166,9 @@ MIGRATIONS = [
     "ALTER TABLE projects ADD COLUMN hashtag_bank TEXT DEFAULT '{}'",
     "ALTER TABLE projects ADD COLUMN brand_tags TEXT DEFAULT ''",
     "ALTER TABLE ideas ADD COLUMN parent_id INTEGER DEFAULT 0",
+    "ALTER TABLE comp_posts ADD COLUMN ratio_all REAL DEFAULT 0",
+    "ALTER TABLE competitors ADD COLUMN backlog_at TEXT DEFAULT ''",
+    "ALTER TABLE scripts ADD COLUMN thumb TEXT DEFAULT ''",
 ]
 
 

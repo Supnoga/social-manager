@@ -734,6 +734,15 @@ def _scene_cuts(s, scenes, style):
     return []
 
 
+def _thumb_opts(s):
+    """Text a scéna náhľadového obrázka dlhého videa zo scenára (pole thumb)."""
+    try:
+        t = json.loads(s["thumb"] or "{}") if "thumb" in s.keys() else {}
+    except Exception:
+        t = {}
+    return {"thumb_text": str(t.get("text") or ""), "thumb_scene": t.get("scene")}
+
+
 def _broll_ready():
     st = footage.status()
     return st["pexels"] or st["pixabay"] or st["own"] > 0 or st["ai"]
@@ -776,7 +785,7 @@ def script_to_video(sid: int, data: dict = Body(default={})):
                            logo=brand.logo_data_uri(lg, 680, 176) if lg and bo["logo_corner"] else None,
                            logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
                            products=brand.product_images(s["project_id"]), wide=wide,
-                           thumb=out.with_suffix(".jpg") if wide else None)
+                           thumb=out.with_suffix(".jpg") if wide else None, **_thumb_opts(s))
             done = logo_in = True
         except Exception as e:
             print("animované video:", e)
