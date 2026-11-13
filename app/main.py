@@ -1047,11 +1047,11 @@ def _prod_supply(pid, fmt):
                                      AND (p.status='done' OR p.scheduled_at<=datetime('now','localtime')))""", (pid, fmt))["n"]
 
 
-def _prod_pick(pid, fmt, n):
-    """Najlepšie schválené nápady bez scenára; každý z inej série, kým sa dá."""
+def _prod_pick(pid, fmt, n, min_score=0):
+    """Najlepšie schválené nápady bez scenára (s hodnotením aspoň min_score); každý z inej série, kým sa dá."""
     rows = db.q("""SELECT i.id, COALESCE(i.pillar,'') pillar FROM ideas i WHERE i.project_id=? AND i.status='approved'
-                   AND COALESCE(i.format,'short')=? AND (i.due_date IS NULL OR i.due_date='')
-                   AND NOT EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id) ORDER BY i.score DESC, i.id""", (pid, fmt))
+                   AND COALESCE(i.format,'short')=? AND (i.due_date IS NULL OR i.due_date='') AND COALESCE(i.score,0)>=?
+                   AND NOT EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id) ORDER BY i.score DESC, i.id""", (pid, fmt, min_score))
     last = [r["pillar"] for r in db.q("""SELECT COALESCE(i.pillar,'') pillar FROM videos v JOIN scripts s ON s.id=v.script_id
                    JOIN ideas i ON i.id=s.idea_id WHERE v.project_id=? ORDER BY v.id DESC LIMIT 2""", (pid,))]
     out, used = [], set(x for x in last if x)
@@ -1080,7 +1080,11 @@ def _produce_once():
     nightly.keep_awake(True)
     try:
         _prod_resume(cfg)
+        cap = int(nightly.cfg().get("max_long_day") or 0)  # strop dlhých videí za deň (šetrí týždenný limit Claude Max)
         for pid_s, c in cfg.items():
+            if cap and _long_today() >= cap:
+                PROD["step"] = f"Dnešný strop {cap} dlhých videí splnený"
+                break
             pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
             made = 0
             from_long = bool(c.get("from_long")) and int(c.get("long") or 0) > 0
@@ -1091,16 +1095,16 @@ def _produce_once():
                 need = min(per, per * ahead - _prod_supply(pid, fmt))
                 if need <= 0:
                     continue
-                ids, left = _prod_pick(pid, fmt, need)
+                ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
                 if left < per * 3 and not c.get("no_ideas"):  # zásoba nápadov dochádza: doplň ju jedným volaním
                     PROD["step"] = "Dopĺňam nápady"
                     try:
                         before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
                         content.run_task("ideas", {"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt})
                         for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
-                            if r["id"] not in before and (r["score"] or 0) >= 7:
+                            if r["id"] not in before and (r["score"] or 0) >= max(7, int(c.get("min_score") or 0)):
                                 db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))
-                        ids, left = _prod_pick(pid, fmt, need)
+                        ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
                     except Exception as e:
                         PROD["log"].append(f"nápady: {e}")
                 if ids and fmt == "short":
@@ -1141,6 +1145,11 @@ def _produce_once():
             nightly.awake_tick()
         except Exception:
             pass
+
+
+def _long_today():
+    return db.one("""SELECT COUNT(*) n FROM scripts s JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1
+                     AND i.format='long' AND s.created_at >= date('now','localtime')""")["n"]
 
 
 def _prod_resume(cfg):
