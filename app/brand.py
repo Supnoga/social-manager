@@ -731,3 +731,60 @@ def asset_file(aid: int, preview: int = 0):
             im.save(pv, "PNG")
         return FileResponse(pv)
     return FileResponse(a["path"])
+
+
+# ---------- dodatočné logo do hotových, ešte nenahratých videí ----------
+_relogo_busy = threading.Lock()
+
+
+def _relogo_pending(pid):
+    """Videá projektu bez loga: vznikli pred nahratím loga a ešte nie sú na YouTube (ani súkromne)."""
+    lg = video_logo(pid, dark_bg=True)
+    if not lg:
+        return []
+    since = (db.one("SELECT created_at FROM brand_assets WHERE id=?", (lg["id"],)) or {}).get("created_at") or ""
+    done = set(db.get_setting(f"relogo_done_{pid}", []) or [])
+    rows = db.q("""SELECT v.* FROM videos v WHERE v.project_id=? AND v.created_at < ?
+                   AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND (COALESCE(p.stash_id,'')!=''
+                        OR COALESCE(p.external_id,'')!='' OR p.status IN ('done','uploading')))""", (pid, since))
+    return [r for r in rows if r["id"] not in done and r["file_path"] and Path(r["file_path"]).exists()]
+
+
+def relogo(pids):
+    """Bez AI: dá logo do rohu (a záverečnú kartu) videám, ktoré vznikli pred nahratím loga. Po jednom, na pozadí."""
+    import os
+
+    def run():
+        if not _relogo_busy.acquire(blocking=False):
+            return
+        try:
+            for pid in pids:
+                for v in _relogo_pending(pid):
+                    busy = db.one("SELECT 1 FROM posts WHERE video_id=? AND (status='uploading' OR COALESCE(stash_id,'')!='')", (v["id"],))
+                    if busy:
+                        continue
+                    src = Path(v["file_path"])
+                    tmp = src.with_name(src.stem + ".logo" + src.suffix)
+                    try:
+                        shutil.copyfile(src, tmp)
+                        if decorate(pid, tmp):
+                            os.replace(tmp, src)
+                    except Exception as e:
+                        print("dodatočné logo:", e)
+                    finally:
+                        if tmp.exists():
+                            tmp.unlink()
+                    done = db.get_setting(f"relogo_done_{pid}", []) or []
+                    db.set_setting(f"relogo_done_{pid}", done + [v["id"]])
+        finally:
+            _relogo_busy.release()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@router.post("/api/brand/relogo")
+def relogo_api(data: dict = Body(default={})):
+    pids = [int(p) for p in data.get("project_ids", [])]
+    left = {p: len(_relogo_pending(p)) for p in pids}
+    relogo(pids)
+    return {"pending": left}
