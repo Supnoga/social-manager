@@ -24,6 +24,28 @@ ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
               "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
 ICON_NAMES += tuple(n for n in icons_extra.NAMES if n not in ICON_NAMES)
+BASE_ICONS = ICON_NAMES[:40]  # tieto vidí AI vždy, ďalšie len podľa kanála (app/icons/*.json channels)
+
+# ---------- rozšírenia knižnice: app/icons/*.json a app/boards/*.js + *.json (nahrávajú sa samy) ----------
+_EXT = Path(__file__).parent
+ICON_PACKS, ICON_ALIAS, ICON_CHANNELS = {}, {}, {}
+for _f in sorted((_EXT / "icons").glob("*.json")):
+    try:
+        _j = json.loads(_f.read_text(encoding="utf-8"))
+    except Exception:
+        continue
+    ICON_PACKS.update({k: v for k, v in (_j.get("icons") or {}).items() if k not in ICON_NAMES})
+    ICON_ALIAS.update(_j.get("aliases") or {})
+    for _c, _names in (_j.get("channels") or {}).items():
+        ICON_CHANNELS.setdefault(_c, []).extend(_names)
+ICON_NAMES += tuple(ICON_PACKS)
+ICON_ALIAS = {k: v for k, v in ICON_ALIAS.items() if v in ICON_NAMES and k not in ICON_NAMES}
+BOARD_META = {}
+for _f in sorted((_EXT / "boards").glob("*.json")):
+    try:
+        BOARD_META[_f.stem] = json.loads(_f.read_text(encoding="utf-8"))
+    except Exception:
+        pass
 
 # Stručný popis pre AI (pridá sa do promptu scenára, cca 200 tokenov)
 SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: black, thin line schematics drawn step by step). Pick ONE that explains the point visually:
@@ -31,7 +53,7 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"k":"cycle","l":["outdoor air","evaporator","compressor","condenser","home"]} (how a heat pump works) |
 {"k":"bars","u":"unit","i":[["label",number,"optional ISO country code = flag"],...max 4]} | {"k":"calc","r":[["1 600 m³ × 10,5","16 800 kWh"],...max 4]} |
 {"k":"compare","a":["worse option","value"],"b":["better option","value"]} | {"k":"count","v":75,"pre":"","suf":" %","l":"label"} |
-{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons: """ + ",".join(ICON_NAMES) + """ |
+{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons: %ICONS% |
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
 {"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"} |
 {"k":"hero","i":"icon","w":"2-4 words","s":"optional short second line"} (one big animated picture of the thing we talk about; use it for story, everyday comparisons and scenes without numbers)
@@ -82,6 +104,26 @@ CHANNEL_PACKS = {
 
 
 
+for _m in BOARD_META.values():
+    KINDS += tuple(k for k in (_m.get("kinds") or {}) if k not in KINDS)
+    PACK.update(_m.get("pack") or {})
+    for _c, _ks in (_m.get("channels") or {}).items():
+        CHANNEL_PACKS[_c] = tuple(CHANNEL_PACKS.get(_c, ())) + tuple(k for k in _ks if k not in CHANNEL_PACKS.get(_c, ()))
+_ALL_PACK = ("default",)
+
+
+def _chan(project=None):
+    name = str((project or {}).get("name") or "").lower()
+    return next((key for key in CHANNEL_PACKS if key in name), None)
+
+
+def icons_for(project=None):
+    """Ikony, ktoré AI uvidí: základné + tie, ktoré sa hodia kanálu (šetrí tokeny)."""
+    c = _chan(project)
+    extra = [n for n in ICON_CHANNELS.get(c or "default", ICON_CHANNELS.get("default", [])) if n in ICON_NAMES and n not in BASE_ICONS]
+    return ",".join(dict.fromkeys(list(BASE_ICONS) + extra))
+
+
 def packs_for(project=None):
     name = str((project or {}).get("name") or "").lower()
     for key, kinds in CHANNEL_PACKS.items():
@@ -92,8 +134,14 @@ def packs_for(project=None):
 
 def spec(project=None):
     """SPEC + vizuály na mieru kanálu (len tie, ktoré jeho témy potrebujú)."""
-    extra = " |\n".join(PACK[k] for k in packs_for(project))
-    return SPEC + "\nMore diagrams for this channel (use them whenever they fit the spoken point better than the defaults):\n" + extra
+    extra = " |\n".join(PACK[k] for k in packs_for(project) if k in PACK)
+    return SPEC.replace("%ICONS%", icons_for(project)) + "\nMore diagrams for this channel (use them whenever they fit the spoken point better than the defaults):\n" + extra
+
+
+_SKIP = {}
+for _m in BOARD_META.values():
+    for _k, _v in (_m.get("kinds") or {}).items():
+        _SKIP[_k] = {f: tuple(c) for f, c in (_v.get("skip") or {}).items()}
 
 
 # ---------- texty na preklad (rovnaké poradie pre texts/with_texts) ----------
@@ -124,7 +172,7 @@ def _slots(d):
                 out.append((f, i))
             elif isinstance(x, list):
                 for j, y in enumerate(x):
-                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and not (k in ("bars", "size") and j == 2) and not (k == "forces" and j == 1) and (
+                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and j not in _SKIP.get(k, {}).get(f, ()) and not (k in ("bars", "size") and j == 2) and not (k == "forces" and j == 1) and (
                             k == "calc" or re.search(r"[^\W\d_]{2,}", y)):
                         out.append((f, i, j))
     return out
@@ -261,7 +309,7 @@ def board_of(scene):
             return guess(scene.get("onscreen", ""), scene.get("visual", ""))
         d = dict(d, e=els)
     if d.get("k") == "scene":
-        ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and x[0] in ICON_NAMES]
+        ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and (x[0] in ICON_NAMES or x[0] in ICON_ALIAS)]
         if len(ok) < 2 or len(ok) != len(d.get("n") or []):
             d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
     return auto_map(scene, d)
@@ -294,11 +342,12 @@ def prepare(v, lang="en"):
         from . import geo
         r = geo.resolve(v, lang)
         return r or {"k": "text", "w": str(v.get("l") or "")}
-    if v.get("k") == "bars" and any(isinstance(x, list) and len(x) > 2 for x in v.get("i") or []):
+    if v.get("k") in ("bars", "rank") and any(isinstance(x, list) and len(x) > 2 for x in v.get("i") or []):
         from . import geo
         fl = {}
-        for i, x in enumerate((v.get("i") or [])[:4]):
-            c = geo.country(x[2]) if isinstance(x, list) and len(x) > 2 and isinstance(x[2], str) else None
+        for i, x in enumerate((v.get("i") or [])[:6]):
+            c = geo.country(x[2]) if isinstance(x, list) and len(x) > 2 and isinstance(x[2], str) and (
+                v["k"] == "bars" or re.fullmatch(r"[A-Za-z]{2}", x[2].strip())) else None
             if c and geo.flag_uri(c):
                 fl[i] = geo.flag_uri(c)
         if fl:
@@ -541,7 +590,7 @@ fridge:'<rect x="26" y="8" width="48" height="84" rx="6"/><path d="M26 38 H74"/>
 fan:'<circle cx="50" cy="40" r="32"/><g class="spin"><circle cx="50" cy="40" r="4"/><path d="M50 36 C58 30 58 18 50 12 C46 20 46 30 50 36 Z"/><path d="M53.5 42 C63 44 72 52 74 58 C64 58 56 50 53.5 42 Z"/><path d="M46.5 42 C44 50 36 58 26 58 C28 50 37 44 46.5 42 Z"/></g><path d="M38 70 L32 90 H68 L62 70"/>',
 boiler:'<rect x="24" y="8" width="52" height="70" rx="6"/><path d="M50 60 C40 52 44 42 50 34 C56 42 60 52 50 60 Z"/><path d="M34 20 H66"/><path d="M36 78 V92 M64 78 V92"/>',
 city:'<path d="M8 88 H92"/><rect x="14" y="40" width="20" height="48"/><rect x="40" y="18" width="22" height="70"/><rect x="68" y="50" width="18" height="38"/><path d="M20 50 H28 M20 62 H28 M46 30 H56 M46 44 H56 M46 58 H56 M73 60 H81 M73 72 H81"/>'};
-function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[name]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
+function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[name]||ICONS[ICON_ALIAS[name]]||ICONS[String(name||'').toLowerCase().replace(/[ -]+/g,'_')]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
 const SPIN=[];
 function draw(s,p){s.querySelectorAll('.d').forEach(d=>{d.style.strokeDasharray='1 1';d.style.strokeDashoffset=1-cl(p)})}
 function show(e,p,dy){e.style.opacity=cl(p);e.style.transform=`translateY(${(1-E(p))*(dy==null?24:dy)}px)`}
@@ -612,7 +661,7 @@ r.innerHTML=`<div style="flex:none;color:var(--acc);font-weight:800;font-size:54
 return (t,st)=>rows.forEach((r,i)=>{const p=st(i*1,.6);r.style.opacity=p;r.style.transform=`translateX(${(1-E(p))*-50}px)`})};
 V.icons=(v,d)=>{const I=(d.i||[]).slice(0,4);const n=I.length||1;const sz=n>3?150:190,step=864/n;const s=svg(864,560,'');v.append(s);
 const items=I.map((x,i)=>{const cx=step*i+step/2;const ic=icon(x[0],sz,i==n-1?D.acc:'#fff',3);ic.style.left=(cx-sz/2)+'px';ic.style.top=(240-sz/2)+'px';v.append(ic);
-const lb=el('div','lab',`left:${cx-step/2+6}px;width:${step-12}px;top:${250+sz/2+24}px;text-align:center;${i==n-1?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,26,16,92);
+const lb=el('div','lab',`left:${cx-step/2+6}px;width:${step-12}px;top:${250+sz/2+24}px;text-align:center;${i==n-1?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,26,14,92,step-44);
 let ar=null;if(i<n-1){ar=document.createElementNS(SVGNS,'path');ar.setAttribute('d',`M${cx+sz/2+10} 240 H${cx+step-sz/2-10}`);ar.setAttribute('stroke','#777');ar.setAttribute('stroke-width','3');ar.setAttribute('stroke-dasharray','10 9');s.append(ar)}return {ic,lb,ar}});
 return (t,st)=>items.forEach((o,i)=>{const p=st(i*1.1,1);draw(o.ic,p);o.ic.style.opacity=p>0?1:0;show(o.lb,st(i*1.1+.4,.5),0);if(o.ar){o.ar.style.opacity=st(i*1.1+.8,.4);o.ar.style.strokeDashoffset=-t*40}})};
 V.temp=(v,d)=>{const A=d.a||['',0],B=d.b||['',0],u=d.u||'°C';const va=N(A[1]),vb=N(B[1]);const lo=Math.min(va,vb,0)-5,hi=Math.max(va,vb)+5;const Y=v=>440-(v-lo)/(hi-lo)*380;
@@ -649,7 +698,7 @@ const R=Math.max(...cols.map(c=>c.length)),cw=864/C,rh=Math.min(250,500/R),sz=Ma
 const pos=NN.map(()=>[0,0]);cols.forEach((c,ci)=>c.forEach((i,ri)=>{pos[i]=[cw*ci+cw/2,250+(ri-(c.length-1)/2)*rh-18]}));
 const s=svg(864,560,'');s.style.position='absolute';s.style.left='0';s.style.top='0';v.append(s);
 const nodes=NN.map((x,i)=>{const hot=LL.some(e=>e[1]==i&&e[3])&&!LL.some(e=>e[0]==i);const ic=icon(x[0],sz,hot?D.acc:'#fff',2.8);ic.style.left=(pos[i][0]-sz/2)+'px';ic.style.top=(pos[i][1]-sz/2)+'px';v.append(ic);
-const lb=el('div','lab',`left:${pos[i][0]-cw/2+8}px;width:${cw-16}px;top:${pos[i][1]+sz/2+10}px;text-align:center;font-size:22px;letter-spacing:2px;${hot?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,22,14,58);
+const lb=el('div','lab',`left:${pos[i][0]-cw/2+8}px;width:${cw-16}px;top:${pos[i][1]+sz/2+10}px;text-align:center;font-size:22px;letter-spacing:2px;${hot?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,22,13,58,cw-40);
 return {ic,lb,a:String(x[2]||''),at:lay[i],ph:i*1.7}});
 const mk=(tag,at)=>{const e=document.createElementNS(SVGNS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
 const links=LL.map((e,k)=>{const a=pos[e[0]],b=pos[e[1]],col=e[3]?D.acc:'#9a9a9a',g=sz/2+16;let dstr;
@@ -773,11 +822,13 @@ fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(9
 window.READY=true;
 </script></body></html>"""
 
-TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + ",", 1)
+TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + "," + ",".join(json.dumps(k) + ":" + json.dumps(v) for k, v in ICON_PACKS.items()) + ("," if ICON_PACKS else ""), 1)
+TEMPLATE = TEMPLATE.replace("const ICONS={", "const ICON_ALIAS=" + json.dumps(ICON_ALIAS) + ";const ICONS={", 1)
 _HERE = Path(__file__).parent
 TEMPLATE = TEMPLATE.replace("/*EXTRA_BOARDS*/", (_HERE / "boards_extra.js").read_text(encoding="utf-8") + "\n"
                             + (_HERE / "boards_pack.js").read_text(encoding="utf-8") + "\n"
-                            + (_HERE / "geo" / "map.js").read_text(encoding="utf-8"), 1)
+                            + (_HERE / "geo" / "map.js").read_text(encoding="utf-8") + "\n"
+                            + "\n".join(f.read_text(encoding="utf-8") for f in sorted((_HERE / "boards").glob("*.js"))), 1)
 
 STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars": lambda d: len(d.get("i") or []) + 1,
          "calc": lambda d: len(d.get("r") or []) + .5, "compare": lambda d: 2.5, "count": lambda d: 2, "list": lambda d: len(d.get("i") or []),
@@ -793,6 +844,11 @@ STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars":
          "mech": lambda d: 2, "forces": lambda d: len(d.get("f") or []) * .5 + 1, "waterfall": lambda d: len(d.get("i") or []) * .5 + .8,
          "funnel": lambda d: len(d.get("i") or []) * .55 + .4, "loan": lambda d: 2.7, "inflation": lambda d: 2.2,
          "crack": lambda d: len(d.get("l") or [1] * 5) * .45 + .5, "sim": lambda d: 3.2, "lines": lambda d: 2.6}
+
+for _m in BOARD_META.values():
+    for _k, _v in (_m.get("kinds") or {}).items():
+        _st = _v.get("steps") or [2]
+        STEPS.setdefault(_k, lambda d, _st=_st: float(_st[0]) + (float(_st[1]) * len(d.get(_st[2]) or []) if len(_st) > 2 else 0))
 
 _lock = threading.Lock()
 

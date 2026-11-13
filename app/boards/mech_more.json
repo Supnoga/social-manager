@@ -1,0 +1,50 @@
+{
+ "kinds": {},
+ "pack": {
+  "mech2": "{\"k\":\"mech\",\"m\":\"lever\",\"n\":[3,1],\"l\":[\"a\",\"b\"]} m: gearbox n=teeth|hydraulic n=areas|lever n=arms effort,load|pulley n=ropes|transformer n=[N1,N2,V1]|trajectory n=[m/s,°]|circuit n=[V,Ω]|submarine n=depth|elevator n=kg|generator motor rocket fission rotor conveyor solar; l=parts"
+ },
+ "channels": {
+  "machines": [
+   "mech2"
+  ],
+  "engines": [
+   "mech2"
+  ],
+  "flight": [
+   "mech2"
+  ],
+  "mega": [
+   "mech2"
+  ],
+  "industry": [
+   "mech2"
+  ],
+  "inventions": [
+   "mech2"
+  ],
+  "arsenal": [
+   "mech2"
+  ],
+  "forces": [
+   "mech2"
+  ],
+  "energy": [
+   "mech2"
+  ],
+  "digital": [
+   "mech2"
+  ],
+  "underground": [
+   "mech2"
+  ],
+  "logistics": [
+   "mech2"
+  ],
+  "house": [
+   "mech2"
+  ],
+  "n2n": [
+   "mech2"
+  ]
+ }
+}
