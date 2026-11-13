@@ -1152,10 +1152,140 @@ def _produce_once():
             pass
 
 
+def _prescripted(pid):
+    """Dlhé nápady s hotovým scenárom (napísaným vopred), ktoré ešte nemajú video."""
+    return db.q("""SELECT i.id FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
+                   WHERE i.project_id=? AND i.format='long' AND COALESCE(i.ahead,0)=1
+                   AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)
+                   ORDER BY i.id""", (pid,))
+
+
+def _render_prescripted(pid):
+    """Zloží jedno dlhé video z vopred napísaného scenára a Shorts z jeho vopred napísaných scenárov. Bez nového scenára."""
+    rows = _prescripted(pid)
+    if not rows:
+        return 0
+    iid = rows[0]["id"]
+    db.run("UPDATE ideas SET ahead=2 WHERE id=?", (iid,))  # už sa skladá (nech ho nevezme iný pracovník)
+    made = 0
+    PROD["step"] = "Skladám dlhé video z hotového scenára"
+    try:
+        idea_produce_first(iid, {})
+        made += 1
+    except Exception as e:
+        PROD["log"].append(f"nápad {iid}: {e}")
+        return 0
+    for t in db.q("""SELECT i.id FROM ideas i WHERE i.parent_id=? AND EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id AND s.is_source=1)
+                     AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)""", (iid,)):
+        PROD["step"] = "Skladám Shorts z hotových scenárov"
+        try:
+            idea_produce_first(t["id"], {})
+            made += 1
+        except Exception as e:
+            PROD["log"].append(f"nápad {t['id']}: {e}")
+    return made
+
+
+def _prod_plan(pid, made):
+    from . import planner
+    r = planner.plan_week([pid])
+    PROD["log"].append(f"{dt_now()} projekt {pid}: {made} nových videí, naplánovaných {r['created']}")
+
+
+SCRIPTS = {"running": False, "written": 0, "step": "", "pause_until": 0, "log": []}
+
+
+def _script_need(pid, c):
+    per, ahead = int(c.get("long") or 0), max(1, int(c.get("days_ahead") or 2))
+    return per * ahead - _prod_supply(pid, "long") - len(_prescripted(pid))
+
+
+def _script_one(pid, c):
+    """Napíše vopred jeden scenár dlhého videa + scenáre jeho Shorts (bez skladania videa). Vráti True, ak niečo napísal."""
+    ids, _ = _prod_pick(pid, "long", 1, int(c.get("min_score") or 0))
+    if not ids:
+        return False
+    iid = ids[0]
+    db.run("UPDATE ideas SET ahead=1 WHERE id=?", (iid,))
+    make_scripts({"idea_ids": [iid]})
+    if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
+        db.run("UPDATE ideas SET ahead=0 WHERE id=?", (iid,))
+        return False
+    if c.get("from_long") and int(c.get("short") or 0):
+        k = max(1, round(int(c["short"]) / max(1, int(c.get("long") or 1))))
+        idea_teasers(iid, {"count": k, "produce": False})
+    SCRIPTS["written"] += 1
+    return True
+
+
+def _script_ahead_loop():
+    """Píše scenáre do zásoby súbežne (night.script_workers), kým má každý projekt scenáre na days_ahead dní.
+    Spotrebúva len limit Claude; skladanie videí ide zvlášť v dennej výrobe."""
+    import time as _t
+    _t.sleep(120)
+    lock = threading.Lock()
+    busy = set()
+
+    def worker():
+        while True:
+            try:
+                n = int(nightly.cfg().get("script_workers") or 0)
+                cfg = db.get_setting("auto_produce", {}) or {}
+                if not n or db.get_setting("paused", False) or _t.time() < SCRIPTS["pause_until"]:
+                    _t.sleep(60)
+                    continue
+                pick = None
+                with lock:
+                    best = None
+                    for pid_s, c in cfg.items():
+                        pid = int(pid_s)
+                        if pid in busy or not int(c.get("long") or 0):
+                            continue
+                        need = _script_need(pid, c)
+                        if need > 0 and (best is None or need > best[0]):
+                            best = (need, pid, c)
+                    if best:
+                        pick = best
+                        busy.add(best[1])
+                if not pick:
+                    SCRIPTS["step"] = "Zásoba scenárov je plná"
+                    _t.sleep(300)
+                    continue
+                try:
+                    SCRIPTS["running"] = True
+                    SCRIPTS["step"] = f"Píšem scenáre (projekt {pick[1]})"
+                    _script_one(pick[1], pick[2])
+                except ai.NeedManual:
+                    SCRIPTS["pause_until"] = _t.time() + 3600
+                except Exception as e:
+                    msg = str(e)
+                    SCRIPTS["log"] = (SCRIPTS["log"] + [f"{dt_now()} projekt {pick[1]}: {msg[:200]}"])[-20:]
+                    if any(w in msg.lower() for w in ("limit", "rate", "429", "overloaded", "usage")):
+                        SCRIPTS["pause_until"] = _t.time() + 900  # limit Claude: chvíľu počkaj
+                finally:
+                    with lock:
+                        busy.discard(pick[1])
+            except Exception as e:
+                print("scenáre do zásoby:", e)
+                _t.sleep(60)
+
+    started = 0
+    while True:
+        want = min(10, int(nightly.cfg().get("script_workers") or 0))
+        while started < want:  # pracovníci sa len pridávajú (zníženie sa prejaví po reštarte)
+            threading.Thread(target=worker, daemon=True).start()
+            started += 1
+            _t.sleep(5)
+        _t.sleep(60)
+
+
 def _prod_project(pid_s, c):
     """Jeden projekt v jednom kole dennej výroby."""
     pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
-    made = 0
+    made = _render_prescripted(pid)
+    if made:
+        _prod_plan(pid, made)
+        return
     from_long = bool(c.get("from_long")) and int(c.get("long") or 0) > 0
     for fmt in (("long", "short") if from_long else ("short", "long")):
         per = int(c.get(fmt) or 0)
@@ -1216,6 +1346,7 @@ def _prod_resume(cfg):
             return
         for r in db.q("""SELECT i.id, COALESCE(i.format,'short') fmt FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
                          WHERE i.project_id=? AND s.created_at > datetime('now','localtime','-3 days')
+                         AND COALESCE(i.ahead,0)=0 AND NOT EXISTS (SELECT 1 FROM ideas pa WHERE pa.id=i.parent_id AND COALESCE(pa.ahead,0)>0)
                          AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)
                          ORDER BY i.id""", (int(pid_s),)):
             if r["id"] in PROD["resumed"]:
@@ -1271,7 +1402,8 @@ def storage_clean():
 @app.get("/api/produce")
 def produce_status():
     return dict({k: v for k, v in PROD.items() if k not in ("resumed", "refills")}, config=db.get_setting("auto_produce", {}) or {},
-                night=nightly.status())
+                night=nightly.status(), scripts=dict(SCRIPTS, waiting=db.one(
+                    """SELECT COUNT(*) n FROM ideas WHERE COALESCE(ahead,0)=1""")["n"]))
 
 
 @app.post("/api/autopilot")
@@ -1845,6 +1977,7 @@ def main():
     updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()) or PROD["running"] or bool(scheduler.state.get("current"))
                                or AUTO.get("running") or PROD.get("running"))
     threading.Thread(target=_produce_loop, daemon=True).start()
+    threading.Thread(target=_script_ahead_loop, daemon=True).start()
     if os.environ.get("SM_NO_BROWSER") != "1":
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     try:
