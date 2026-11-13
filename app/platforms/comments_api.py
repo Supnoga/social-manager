@@ -14,27 +14,43 @@ from .common import PlatformError, check, client, tokens
 from . import linkedin, meta, tiktok_business, youtube
 
 
+def _yt_item(acc, it, by_id):
+    s = it["snippet"]["topLevelComment"]["snippet"]
+    if (s.get("authorChannelId") or {}).get("value") == acc["external_id"]:
+        return None
+    vid = it["snippet"].get("videoId") or s.get("videoId") or ""
+    p = by_id.get(vid, {})
+    return {"id": it["id"], "post": vid, "post_url": p.get("url", "") or (f"https://www.youtube.com/watch?v={vid}" if vid else ""),
+            "post_title": p.get("title") or "", "author": s.get("authorDisplayName", ""),
+            "text": s.get("textDisplay") or s.get("textOriginal", ""), "created": s.get("publishedAt", ""),
+            "likes": s.get("likeCount", 0), "answered": it["snippet"].get("totalReplyCount", 0) > 0}
+
+
 def _yt(acc, posts):
+    """Všetky nové komentáre kanála jedným volaním (1 jednotka kvóty na kanál, nie 1 na každé video).
+    Číta sa len z rezervy kvóty: keď sa blíži limit nahrávania, komentáre počkajú (nahrávanie má prednosť)."""
+    from ..insights import _read_ok, block_today
+    if not _read_ok(acc):
+        raise PlatformError("YouTube: dnes bez rezervy limitu, komentáre sa načítajú neskôr (nahrávanie videí má prednosť).")
     tok = youtube.access_token(acc)
+    by_id = {p["external_id"]: p for p in posts}
     out = []
     with client() as c:
-        for p in posts:
-            r = c.get("https://www.googleapis.com/youtube/v3/commentThreads", headers={"Authorization": f"Bearer {tok}"},
-                      params={"part": "snippet", "videoId": p["external_id"], "maxResults": 50, "order": "time",
-                              "textFormat": "plainText"})
-            if r.status_code == 403 and "insufficient" in r.text.lower():
-                raise PlatformError("YouTube: chýba povolenie na komentáre. Pripoj kanál znova (Účty → YouTube).")
-            if r.status_code == 403 and "commentsDisabled" in r.text:
-                continue
-            check(r, "YouTube komentáre")
-            for it in r.json().get("items", []):
-                s = it["snippet"]["topLevelComment"]["snippet"]
-                if (s.get("authorChannelId") or {}).get("value") == acc["external_id"]:
-                    continue
-                out.append({"id": it["id"], "post": p["external_id"], "post_url": p.get("url", ""),
-                            "post_title": p.get("title") or "", "author": s.get("authorDisplayName", ""),
-                            "text": s.get("textDisplay") or s.get("textOriginal", ""), "created": s.get("publishedAt", ""),
-                            "likes": s.get("likeCount", 0), "answered": it["snippet"].get("totalReplyCount", 0) > 0})
+        r = c.get("https://www.googleapis.com/youtube/v3/commentThreads", headers={"Authorization": f"Bearer {tok}"},
+                  params={"part": "snippet", "allThreadsRelatedToChannelId": acc["external_id"], "maxResults": 100,
+                          "order": "time", "textFormat": "plainText"})
+        if r.status_code == 403 and "insufficient" in r.text.lower():
+            raise PlatformError("YouTube: chýba povolenie na komentáre. Pripoj kanál znova (Účty → YouTube).")
+        if r.status_code == 403 and "quota" in r.text.lower():
+            block_today(acc)
+            raise PlatformError("YouTube: dnes vyčerpaný limit, komentáre sa načítajú zajtra.")
+        if r.status_code == 403 and "commentsDisabled" in r.text:
+            return out
+        check(r, "YouTube komentáre")
+        for it in r.json().get("items", []):
+            x = _yt_item(acc, it, by_id)
+            if x:
+                out.append(x)
     return out
 
 

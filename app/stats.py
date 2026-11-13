@@ -30,8 +30,8 @@ def _ago(days):
 
 # ---------- sťahovanie čísel ----------
 def _yt(acc, posts):
-    """Čísla videí: najprv z rezervy kvóty kanála, inak cez API kľúč Radaru (iný Google projekt, nahrávanie nebrzdí)."""
-    from .insights import _read_ok, block_today, key_get
+    """Čísla videí z rezervy kvóty kanála. Keď rezerva nie je, čísla dodá bezplatný kanálový feed a YouTube Analytics."""
+    from .insights import _read_ok, block_today
     out = {}
     todo = [p["external_id"] for p in posts]
     tok = None
@@ -47,8 +47,6 @@ def _yt(acc, posts):
                     items = r.json().get("items", [])
                 elif "quota" in r.text.lower():
                     block_today(acc)
-            if items is None:
-                items = (key_get("videos", part="statistics", id=",".join(ids)) or {}).get("items")
             if items is None:
                 continue
             for v in items:
