@@ -91,9 +91,18 @@ async function homeComments(el) {
   const all = pid ? `#/p/${pid}/komentare?f=new&all=1` : '#/';
   el.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px;margin-bottom:10px"><h2 style="margin:0;flex:1">${I('message')}Komentáre</h2>
       <span class="chip ${d.open ? 'acc' : ''}">${d.open} nezodpovedaných</span><span class="chip">${d.day} za 24 h</span>
+      <button class="btn sec sm" onclick="hCmFetch(this)" ${d.running ? 'disabled' : ''}>${I('refresh', 's')}${d.running ? 'Načítavam…' : 'Načítať teraz'}</button>
       <a class="btn sec sm" href="${all}">${I('right', 's')}Všetky komentáre</a></div>
     ${d.latest.length ? d.latest.map(c => `<div class="hcm"><div class="small dim row" style="gap:6px;flex-wrap:wrap">${plat(c.platform, false)}<span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${c.project_color}"></span>${esc(c.project_name || '')} · ${esc(c.account_name)}${c.post_title ? ' · ' + esc(c.post_title) : ''}<span style="flex:1"></span>${cmWhen(c.created)}</div>
       <div class="row" style="gap:10px;align-items:flex-start;margin-top:4px"><div style="flex:1"><b>${esc(c.author || 'Niekto')}:</b> ${esc(c.text)}${c.text_sk ? `<div class="small muted">Po slovensky: ${esc(c.text_sk)}</div>` : ''}</div>
       ${cmLink(c) ? `<a class="btn ghost sm" href="${esc(cmLink(c))}" target="_blank">${I('ext', 's')}Odpovedať</a>` : ''}</div></div>`).join('')
       : empty('message', 'Žiadne nezodpovedané komentáre.' + (d.last ? ' Naposledy načítané ' + esc(d.last) + '.' : ' Načítavajú sa samé každé 2 hodiny.'))}`;
+}
+async function hCmFetch(b) {
+  b.disabled = true; b.innerHTML = I('refresh', 's') + 'Načítavam…';
+  try {
+    const r = await api('/api/comments/fetch', { method: 'POST', body: {} });
+    toast(r.busy ? 'Komentáre sa už práve načítavajú.' : `Nových komentárov: ${r.new}` + (r.errors ? ` · ${r.errors} účtov dnes nešlo (YouTube limit alebo prihlásenie)` : ''));
+  } catch (e) { }
+  homeComments($('#hCm'));
 }
