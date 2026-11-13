@@ -294,6 +294,30 @@ def release(account, video_id, when=None):
     return video_id, f"https://youtu.be/{video_id}"
 
 
+def add_related(account, video_id, text):
+    """Pridá riadok s odkazom na podobné video na koniec popisu a ten istý odkaz ako komentár kanála (pripnúť sa cez API nedá)."""
+    if not text:
+        return
+    tok = access_token(account)
+    h = {"Authorization": f"Bearer {tok}"}
+    with client(timeout=60) as c:
+        r = check(c.get("https://www.googleapis.com/youtube/v3/videos", params={"part": "snippet", "id": video_id}, headers=h),
+                  "YouTube video")
+        items = r.json().get("items") or []
+        if not items:
+            return
+        sn = items[0]["snippet"]
+        desc = sn.get("description") or ""
+        if text not in desc:
+            sn["description"] = (desc.rstrip() + "\n\n" + text)[:4900]
+            body = {"id": video_id, "snippet": {k: sn[k] for k in ("title", "description", "tags", "categoryId",
+                                                                   "defaultLanguage", "defaultAudioLanguage") if k in sn}}
+            check(c.put("https://www.googleapis.com/youtube/v3/videos", params={"part": "snippet"}, headers=h, json=body),
+                  "YouTube popis")
+            c.post("https://www.googleapis.com/youtube/v3/commentThreads", params={"part": "snippet"}, headers=h,
+                   json={"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text}}}})
+
+
 def delete_video(account, video_id):
     tok = access_token(account)
     with client(timeout=60) as c:

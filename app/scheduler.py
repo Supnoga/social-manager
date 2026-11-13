@@ -44,6 +44,12 @@ def process_one(post):
         ext_id, url = UPLOADERS[acc["platform"]](acc, vid, post["privacy"])
         db.run("UPDATE posts SET status='done', external_id=?, url=?, error='', updated_at=? WHERE id=?",
                (str(ext_id), url or "", now_str(), post["id"]))
+        if acc["platform"] == "youtube":
+            try:  # odkaz na podobné video z príbuzného kanála (len dlhé videá)
+                from . import crosslink
+                youtube.add_related(acc, str(ext_id), crosslink.line(acc, vid, post["scheduled_at"], post["id"]))
+            except Exception as e2:
+                print("Odkaz na podobné video:", e2)
     except Exception as e:
         msg = str(e)[:800]
         if acc["platform"] == "youtube" and ("quotaExceeded" in msg or "uploadLimitExceeded" in msg or "quota" in msg.lower()):
@@ -80,7 +86,13 @@ def release_one(post):
         ext_id, url = youtube.release(acc, post["stash_id"], _utc(when) if future else None)
         db.run("UPDATE posts SET status='done', external_id=?, url=?, error='', updated_at=? WHERE id=?",
                (ext_id, url, now_str(), post["id"]))
-        youtube.add_to_series(acc, db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],)) or {}, ext_id)
+        vrow = db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],)) or {}
+        youtube.add_to_series(acc, vrow, ext_id)
+        try:  # odkaz na podobné video z príbuzného kanála (len dlhé videá)
+            from . import crosslink
+            youtube.add_related(acc, ext_id, crosslink.line(acc, vrow, when, post["id"]))
+        except Exception as e:
+            print("Odkaz na podobné video:", e)
     except Exception as e:
         msg = str(e)[:800]
         if "notFound" in msg or "404" in msg:  # niekto video na YouTube zmazal: nahrá sa nanovo, ak je súbor
