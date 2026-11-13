@@ -351,3 +351,44 @@ function lineChart(el, cur, prev, f, cut, cut0) {
   hit.onmouseleave = e => { xL.style.display = 'none'; o.style.display = 'none'; dTip(e, ''); };
 }
 let _dRs; addEventListener('resize', () => { clearTimeout(_dRs); _dRs = setTimeout(() => { if ($('#dLine')) pDash($('#main')); }, 250); });
+
+// ---------- Prehľad (hlavná stránka): poradie projektov ----------
+S.hp = S.hp || { days: 7, k: 'v' };
+const HPK = [['v', 'Pozretia'], ['fg', 'Rast odberateľov'], ['lk', 'Lajky'], ['done', 'Zverejnené videá']];
+async function homeProjects(el) {
+  if (!el) return;
+  const f = S.hp;
+  let D;
+  try { D = await api(`/api/dash?days=${f.days * 2}&pdays=${f.days}`); } catch (e) { el.innerHTML = `<h2>${I('chart')}Ako sa darí projektom</h2>${empty('chart', 'Čísla sa nepodarilo načítať.')}`; return; }
+  if (!el.isConnected) return;
+  const day = 864e5, now = Date.now(), cut = now - f.days * day, cut0 = now - 2 * f.days * day;
+  const ds = t => new Date(t).toISOString().slice(0, 10), cutD = ds(cut), cut0D = ds(cut0);
+  const rows = D.rows.map(x => ({ ...x, ts: new Date(x.d.replace(' ', 'T')).getTime() }));
+  const list = S.projects.map(p => {
+    const cur = agg(rows.filter(x => x.p === p.id && x.ts >= cut)), prev = agg(rows.filter(x => x.p === p.id && x.ts >= cut0 && x.ts < cut));
+    const ac = (D.accounts || []).filter(a => a.p === p.id), ids = new Set(ac.map(a => a.id));
+    const dl = (D.daily || []).filter(x => ids.has(x.a)), ytIds = new Set(dl.filter(x => x.d >= cutD).map(x => x.a));
+    const fg = ac.reduce((s, a) => s + (a.pl === 'youtube' && ytIds.has(a.id) ? dl.filter(x => x.a === a.id && x.d >= cutD).reduce((t, x) => t + x.sg - x.sl, 0) : (a.f != null && a.f0 != null ? a.f - a.f0 : 0)), 0);
+    const fgp = dl.filter(x => x.d >= cut0D && x.d < cutD).reduce((t, x) => t + x.sg - x.sl, 0);
+    const fl = ac.filter(a => a.f != null);
+    return { p, v: cur.v, vp: prev.v, lk: cur.lk, lkp: prev.lk, cm: cur.cm, n: cur.n, fg, fgp, f: fl.reduce((s, a) => s + a.f, 0), hasF: fl.length,
+      w: dl.filter(x => x.d >= cutD).reduce((t, x) => t + x.w, 0) / 60, done: ((D.prod || {})[p.id] || {}).done || 0, nacc: ac.length };
+  });
+  const k = f.k; list.sort((a, b) => b[k] - a[k] || b.v - a.v || b.f - a.f);
+  const top = Math.max(...list.map(x => x[k]), 1e-9), any = list.some(x => x.v || x.f || x.done);
+  const tr = (a, b) => !b ? (a ? '<span class="dd up">nové</span>' : '<span class="dim">–</span>') : `<span class="dd ${a >= b ? 'up' : 'down'}">${a >= b ? '▲' : '▼'} ${Math.round(Math.abs(a - b) / b * 100)} %</span>`;
+  const fmtK = (x) => k === 'fg' ? (x.fg > 0 ? '+' : '') + nf(x.fg) : k === 'done' ? nf(x.done) : cf(x[k]);
+  el.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px;margin-bottom:10px"><h2 style="margin:0;flex:1">${I('chart')}Ako sa darí projektom</h2>
+    <div class="seg">${HPK.map(([kk, n]) => `<button class="${k === kk ? 'on' : ''}" onclick="S.hp.k='${kk}';homeProjects($('#hProj'))">${n}</button>`).join('')}</div>
+    <div class="seg">${[[7, '7 dní'], [30, '30 dní'], [90, '3 mesiace']].map(([d, n]) => `<button class="${f.days === d ? 'on' : ''}" onclick="S.hp.days=${d};homeProjects($('#hProj'))">${n}</button>`).join('')}</div></div>
+  ${!any ? empty('chart', 'Zatiaľ žiadne čísla. Objavia sa samé po prvých zverejnených videách (sťahujú sa každých 6 hodín).') : `
+  <table class="dtab hrank"><tr><th>#</th><th>Projekt</th><th></th><th>Pozretia</th><th>oproti predtým</th><th>Lajky</th><th>Komentáre</th><th>Odberatelia</th><th>Rast</th><th>Hodiny</th><th>Zverejnené</th></tr>
+  ${list.map((x, i) => `<tr class="cl" onclick="S.dash.all=0;location.hash='#/p/${x.p.id}/dashboard'">
+    <td class="${i === 0 && x[k] > 0 ? 'lead' : 'dim'}">${i + 1}</td>
+    <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${x.p.color};margin-right:6px"></span>${esc(x.p.name)}${i === 0 && x[k] > 0 ? ' <span class="chip acc">vedie</span>' : ''}${i === list.length - 1 && list.length > 2 && x[k] < top * 0.2 ? ' <span class="chip">zaostáva</span>' : ''}</td>
+    <td style="width:22%"><div class="hbar"><i style="width:${Math.max(1, x[k] / top * 100)}%;background:${x.p.color || 'var(--acc)'}"></i></div><span class="small dim">${fmtK(x)}</span></td>
+    <td>${nf(x.v)}</td><td>${tr(x.v, x.vp)}</td><td>${nf(x.lk)}</td><td>${nf(x.cm)}</td>
+    <td>${x.hasF ? nf(x.f) : '<span class="dim">–</span>'}</td><td class="${x.fg > 0 ? 'up' : x.fg < 0 ? 'down' : 'dim'}">${x.hasF ? (x.fg > 0 ? '+' : '') + nf(x.fg) : ''}</td>
+    <td>${x.w ? nf(x.w) : '<span class="dim">–</span>'}</td><td>${nf(x.done)}</td></tr>`).join('')}</table>
+  <p class="small dim" style="margin:8px 0 0">Klikni na projekt pre celý dashboard. Len skutočné čísla zo sietí${D.last ? ', posledné stiahnutie ' + esc(D.last.slice(8, 10) + '.' + D.last.slice(5, 7) + '. ' + D.last.slice(11, 16)) : ''}.</p>`}`;
+}

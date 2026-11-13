@@ -206,6 +206,7 @@ async function pHome(m) {
     ${tile('clock', d.posts.queued || 0, 'naplánovaných')}${tile('check', d.posts.done || 0, 'zverejnených')}
     ${tile('bot', ((d.ai.day.inp + d.ai.day.outp) / 1000).toFixed(1) + 'k', 'AI tokenov za 24 h')}
   </div>
+  <div class="card" id="hProj" style="margin-bottom:14px"><h2>${I('chart')}Ako sa darí projektom</h2><div class="small dim">Načítavam čísla…</div></div>
   ${d.expiring.length ? `<div class="hint" style="margin-bottom:14px">${I('alert')}<div>LinkedIn prihlásenie čoskoro vyprší: ${d.expiring.map(e => `<b>${esc(e.name)}</b> (${e.days} dní)`).join(', ')}. <a class="btn sm" href="/api/accounts/linkedin/connect${d.expiring.some(e => e.org) ? '?org=1' : ''}">Prihlásiť znova</a></div></div>` : ''}
   ${(d.posts.failed || 0) ? `<div class="hint" style="margin-bottom:14px;border-color:rgba(240,68,56,.4);background:var(--badSoft);color:#ffc9c4">${I('alert')}<div>${d.posts.failed} publikovaní skončilo chybou. <a href="#/kalendar?f=failed">Pozrieť</a></div></div>` : ''}
   <div class="g2">
@@ -217,6 +218,7 @@ async function pHome(m) {
     <div class="card"><h2>${I('clock')}Naplánované</h2>${postList(d.upcoming)}</div>
     ${steps.some(s => !s[0]) ? `<div class="card"><h2>${I('check')}Posledné výsledky</h2>${postList(d.recent)}</div>` : `<div class="card"><h2>${I('chart')}AI za 24 h</h2><p class="muted">${d.ai.day.calls} volaní · ${((d.ai.day.inp + d.ai.day.outp) / 1000).toFixed(1)}k tokenov · ${d.ai.day.cached} zadarmo z pamäte</p><a href="#/nastavenia">Detail spotreby</a></div>`}
   </div>`;
+  homeProjects($('#hProj'));
 }
 function postList(list) {
   if (!list.length) return empty('calendar', 'Nič tu nie je.');
