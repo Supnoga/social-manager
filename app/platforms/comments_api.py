@@ -28,10 +28,10 @@ def _yt_item(acc, it, by_id):
 
 def _yt(acc, posts):
     """Všetky nové komentáre kanála jedným volaním (1 jednotka kvóty na kanál, nie 1 na každé video).
-    Číta sa len z rezervy kvóty: keď sa blíži limit nahrávania, komentáre počkajú (nahrávanie má prednosť)."""
+    Číta sa z malej pevnej dennej rezervy pre komentáre (insights.READ_RESERVE), nahrávanie má svoj limit zvlášť."""
     from ..insights import _read_ok, block_today
-    if not _read_ok(acc):
-        raise PlatformError("YouTube: dnes bez rezervy limitu, komentáre sa načítajú neskôr (nahrávanie videí má prednosť).")
+    if not _read_ok(acc, kind="comments"):
+        raise PlatformError("YouTube: dnešná rezerva na komentáre je minutá alebo Google hlási minutý limit, komentáre sa načítajú zajtra ráno.")
     tok = youtube.access_token(acc)
     by_id = {p["external_id"]: p for p in posts}
     out = []
