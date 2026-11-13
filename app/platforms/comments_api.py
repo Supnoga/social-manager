@@ -26,12 +26,94 @@ def _yt_item(acc, it, by_id):
             "likes": s.get("likeCount", 0), "answered": it["snippet"].get("totalReplyCount", 0) > 0}
 
 
+# ---------- YouTube bez kvóty (keď je denný limit Googlu minutý) ----------
+_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+
+
+def _yti(c, body):
+    """Verejné rozhranie stránky youtube.com (to isté, čo používa prehliadač), nečerpá kvótu Google API."""
+    r = c.post("https://www.youtube.com/youtubei/v1/next", params={"prettyPrint": "false"},
+               headers={"User-Agent": _UA, "Content-Type": "application/json"},
+               json={"context": {"client": {"clientName": "WEB", "clientVersion": "2.20241101.00.00", "hl": "en", "gl": "US"}}, **body})
+    r.raise_for_status()
+    return r.json()
+
+
+def _walk(o, key):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == key:
+                yield v
+            yield from _walk(v, key)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _walk(v, key)
+
+
+def _ago_iso(t):
+    """„3 hours ago“ → približný čas (presný čas YouTube stránka nedáva)."""
+    from datetime import datetime, timedelta, timezone
+    m = re.match(r"(\d+)\s+(second|minute|hour|day|week|month|year)", t or "")
+    n, u = (int(m.group(1)), m.group(2)) if m else (0, "second")
+    sec = {"second": 1, "minute": 60, "hour": 3600, "day": 86400, "week": 604800, "month": 2592000, "year": 31536000}[u]
+    return (datetime.now(timezone.utc) - timedelta(seconds=n * sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def yt_page_comments(acc, video_id, title="", url=""):
+    """Komentáre jedného videa z verejnej stránky (prvá strana, ~20 najnovších/najlepších). Bez kvóty."""
+    out = []
+    with client(timeout=30) as c:
+        d = _yti(c, {"videoId": video_id})
+        tok = None
+        for sec in _walk(d, "itemSectionRenderer"):
+            if sec.get("sectionIdentifier") == "comment-item-section":
+                tok = next(_walk(sec, "token"), None)
+                break
+        if not tok:
+            return out  # komentáre vypnuté alebo žiadne
+        d = _yti(c, {"continuation": tok})
+        mine = set()  # komentáre, na ktoré už odpovedal sám kanál
+        for th in _walk(d, "commentThreadRenderer"):
+            rtok = next(_walk(th.get("replies") or {}, "token"), None)
+            cid = next(_walk(th.get("commentViewModel") or th, "commentId"), None)
+            if not rtok or not cid:
+                continue
+            try:
+                rd = _yti(c, {"continuation": rtok})
+                if any((x.get("author") or {}).get("channelId") == acc["external_id"] for x in _walk(rd, "commentEntityPayload")):
+                    mine.add(cid)
+            except Exception:
+                pass
+    for p in _walk(d, "commentEntityPayload"):
+        pr, au, tb = p.get("properties") or {}, p.get("author") or {}, p.get("toolbar") or {}
+        if not pr.get("commentId") or au.get("channelId") == acc["external_id"] or "." in pr["commentId"]:
+            continue  # vlastné komentáre kanála a odpovede vynechá
+        likes = re.sub(r"\D", "", tb.get("likeCountNotliked") or "") or "0"
+        out.append({"id": pr["commentId"], "post": video_id, "post_url": url or f"https://www.youtube.com/watch?v={video_id}",
+                    "post_title": title or "", "author": au.get("displayName", ""),
+                    "text": (pr.get("content") or {}).get("content", ""), "created": _ago_iso(pr.get("publishedTime")),
+                    "likes": int(likes), "answered": pr["commentId"] in mine})
+    return out
+
+
+def _yt_pages(acc, posts):
+    import time
+    out = []
+    for p in posts[:40]:
+        try:
+            out += yt_page_comments(acc, p["external_id"], p.get("title") or "", p.get("url") or "")
+        except Exception as e:
+            print("YouTube komentáre zo stránky:", p["external_id"], e)
+        time.sleep(1)
+    return out
+
+
 def _yt(acc, posts):
     """Všetky nové komentáre kanála jedným volaním (1 jednotka kvóty na kanál, nie 1 na každé video).
     Číta sa z malej pevnej dennej rezervy pre komentáre (insights.READ_RESERVE), nahrávanie má svoj limit zvlášť."""
     from ..insights import _read_ok, block_today
     if not _read_ok(acc, kind="comments"):
-        raise PlatformError("YouTube: dnešná rezerva na komentáre je minutá alebo Google hlási minutý limit, komentáre sa načítajú zajtra ráno.")
+        return _yt_pages(acc, posts)  # limit minutý: komentáre z verejnej stránky videí
     tok = youtube.access_token(acc)
     by_id = {p["external_id"]: p for p in posts}
     out = []
@@ -43,7 +125,7 @@ def _yt(acc, posts):
             raise PlatformError("YouTube: chýba povolenie na komentáre. Pripoj kanál znova (Účty → YouTube).")
         if r.status_code == 403 and "quota" in r.text.lower():
             block_today(acc)
-            raise PlatformError("YouTube: dnes vyčerpaný limit, komentáre sa načítajú zajtra.")
+            return _yt_pages(acc, posts)
         if r.status_code == 403 and "commentsDisabled" in r.text:
             return out
         check(r, "YouTube komentáre")
