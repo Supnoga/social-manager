@@ -3,6 +3,7 @@
 Čo dnes funguje (overené 2026-11):
 - TikTok: prvý riadok = háčik, kľúčové slová v texte (TikTok hľadá podľa textu), otázka do komentárov, 3-5 hashtagov.
 - Instagram Reels: prvých ~125 znakov pred „viac“ musí niesť háčik aj kľúčové slovo, výzva uložiť/poslať ďalej, max 5 hashtagov.
+- YouTube popis (vzor): 1. veta s hľadaným výrazom, kapitoly pri dlhom videu, otázka, odkaz na odber, 3 hashtagy; pri Shorts z dlhého videa hore odkaz na celé video.
 - YouTube Shorts: názov krátky (prvých ~50 znakov vidno), kľúčové slovo na začiatku; prvé 3 hashtagy z popisu sa ukážu nad názvom.
 - Facebook Reels: krátko (1-2 vety), otázka, 0-3 hashtagy.
 - LinkedIn: háčik do ~140 znakov (potom „viac“), krátke odseky, vecný tón, otázka na konci, 3 hashtagy, bez emoji.
@@ -21,7 +22,7 @@ RULES = {
     "instagram": {"hook": 125, "max": 2200, "tags": 5, "question": True, "save": True},
     "facebook":  {"hook": 125, "max": 2000, "tags": 3, "question": True, "save": False},
     "linkedin":  {"hook": 140, "max": 3000, "tags": 3, "question": True, "save": False},
-    "youtube":   {"hook": 100, "max": 4900, "tags": 4, "question": True, "save": False},
+    "youtube":   {"hook": 100, "max": 4900, "tags": 3, "question": True, "save": False},
 }
 GENERIC = {"fyp", "foryou", "foryoupage", "viral", "trending", "explore", "fy", "reels", "tiktok", "shorts",
            "reelsinstagram", "instagood", "follow", "like", "likeforlikes", "xyzbca"}
@@ -235,8 +236,15 @@ def pick_tags(project, video, platform, country):
         rest = local[1:]
         k = (video.get("id") or 0) % len(rest) if rest else 0
         rot = [local[0]] + (rest[k:] + rest[:k])
-    # poradie dôležitosti: hlavná téma krajiny, téma videa, značka, ďalšie
-    order = rot[:1] + vid_tags[:1] + brand[:1] + rot[1:2] + vid_tags[1:2] + rot[2:3] + vid_tags[2:] + rot[3:] + brand[1:]
+    # témy z banky, ktoré sa videa naozaj týkajú, idú prvé; ostatné až na koniec (nech pri videu o čerpadle nie je #solar)
+    hay = _norm(" ".join(str(video.get(f) or "") for f in ("title", "caption", "description", "hashtags")))
+    rel = [t for t in rot if _relevant(t, hay)]
+    off = [t for t in rot if t not in rel]
+    if platform == "youtube":  # YouTube ukáže prvé 3 nad názvom: téma videa, značka, príbuzná téma
+        order = vid_tags[:1] + rel[:1] + brand[:1] + vid_tags[1:] + rel[1:] + brand[1:]
+    else:
+        # poradie dôležitosti: hlavná téma krajiny, téma videa, značka, ďalšie
+        order = rel[:1] + vid_tags[:1] + brand[:1] + rel[1:2] + vid_tags[1:2] + rel[2:3] + vid_tags[2:] + rel[3:] + off + brand[1:]
     ban = [_norm(b) for b in _banned(project) if _norm(b)]
     out, seen = [], set()
     for t in order:
@@ -250,6 +258,63 @@ def pick_tags(project, video, platform, country):
     if platform in ("tiktok", "instagram", "linkedin", "facebook") and brand and _norm(brand[0]) not in seen:
         out = out[:n - 1] + [brand[0]]  # značka vždy, aby sa dala nájsť
     return out
+
+
+def _relevant(tag, hay):
+    """Týka sa hashtag videa? Aspoň polovica jeho slov (4+ písmen) je v texte videa."""
+    raw = tag.lstrip("#")
+    words = [w for w in re.findall(r"[A-ZÀ-Ý]?[a-zà-ÿ0-9]+|[A-ZÀ-Ý]+(?![a-zà-ÿ])", raw) if len(w) >= 4] or [raw]
+    if _norm(raw) in hay:
+        return True
+    return len(words) > 1 and sum(_norm(w) in hay for w in words) >= (len(words) + 1) // 2
+
+
+SUB = {"en": "Subscribe for more", "sk": "Odoberaj kanál", "cs": "Odebírej kanál", "de": "Kanal abonnieren", "fr": "Abonne-toi",
+       "es": "Suscríbete", "it": "Iscriviti", "pl": "Subskrybuj", "pt": "Subscreve", "nl": "Abonneer"}
+
+
+def _fmt_t(t):
+    t = int(t)
+    return f"{t // 3600}:{t % 3600 // 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
+
+
+def chapters(video):
+    """Kapitoly dlhého videa (YouTube ich ukáže na časovej osi): z nadpisov scén a časov hlasu. Bez AI."""
+    try:
+        s = db.one("SELECT * FROM scripts WHERE id=?", (video.get("script_id") or 0,))
+        if not s or not s.get("voice_path"):
+            return ""
+        from . import explainer, media
+        total = media.duration(s["voice_path"]) or 0
+        if total < 180:
+            return ""
+        scenes = json.loads(s["scenes"] or "[]")
+        times = explainer.timeline(scenes, media.word_times(s["voice_path"], s["voiceover"]), total)
+        gap = max(30.0, total / 10)
+        out, last = [], -1e9
+        for sc, (t0, _) in zip(scenes, times):
+            name = re.sub(r"[<>]", "", (sc.get("onscreen") or "").strip())
+            if not name or total - t0 < 15:
+                continue
+            if not out:
+                t0 = 0
+            elif t0 - last < gap:
+                continue
+            out.append(f"{_fmt_t(t0)} {name}")
+            last = t0
+        return "\n".join(out) if len(out) >= 3 else ""
+    except Exception as e:
+        print("kapitoly:", str(e)[:200])
+        return ""
+
+
+def _sub_line(video, account, lang):
+    """Riadok s odkazom na odber kanála (YouTube)."""
+    a = account or db.one("SELECT * FROM accounts WHERE platform='youtube' AND project_id=? ORDER BY (lang=?) DESC, id LIMIT 1",
+                          (video.get("project_id") or 0, lang))
+    if not a or not a.get("external_id") or lang not in SUB:
+        return ""
+    return f"{SUB[lang]}: https://www.youtube.com/channel/{a['external_id']}?sub_confirmation=1"
 
 
 def _country_of(account, lang):
@@ -277,9 +342,14 @@ def build(video, platform, account=None):
     if platform == "youtube":
         title = _cut(re.sub(r"[<>]", "", k["title"] or hook or "Video"), 100)
         desc = k["desc"] or "\n\n".join(x for x in (hook, body) if x)
+        # vzor popisu: čo sa divák dozvie, kapitoly (dlhé video), otázka, odber kanála, hľadané výrazy, 3 hashtagy
         parts = [desc]
+        ch = chapters(video)
+        if ch:
+            parts.append(ch)
         if q and q not in desc:
             parts.append(q)
+        parts.append(_sub_line(video, account, lang))
         if k["keywords"]:
             low = desc.lower()
             miss = [w for w in k["keywords"] if w.lower() not in low]
