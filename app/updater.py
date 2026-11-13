@@ -52,6 +52,11 @@ def apply_zip(data: bytes):
                 shutil.copytree(item, dest)
             else:
                 shutil.copy2(item, dest)
+    for f in list(BASE.glob("*.command")) + list(BASE.glob("*.sh")):  # zip nenesie práva na spustenie
+        try:
+            f.chmod(0o755)
+        except Exception:
+            pass
     # doinštaluje nové knižnice, ak pribudli
     try:
         subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(BASE / "requirements.txt")],
