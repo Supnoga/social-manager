@@ -61,7 +61,7 @@ def block_today(acc):
 # Pevná denná rezerva na čítanie (na Google projekt). Appka zastaví nahrávanie pri 95 nahratiach, pod skutočným
 # limitom Googlu; z toho, čo ostane, si čítanie berie najviac tieto jednotky. Komentáre majú vlastnú časť,
 # aby sa načítali aj v deň, keď sa nahráva naplno. Čítanie sa zastaví hneď, keď Google povie, že kvóta je minutá.
-READ_RESERVE = {"comments": 180, "stats": 70}
+READ_RESERVE = {"comments": 180, "stats": 80}
 
 
 def _read_ok(acc, units=1, kind="stats"):
@@ -181,9 +181,54 @@ def _merge(pid, views, likes, comments=None):
               fetched_at=?, error='' WHERE post_id=?""", (views, likes, comments, _now(), pid))
 
 
+def yt_subs_batch():
+    """Odberatelia všetkých YouTube kanálov: 1 volanie (1 jednotka) na Google projekt pre až 50 kanálov naraz."""
+    groups = {}
+    for a in db.q("SELECT * FROM accounts WHERE platform='youtube' AND external_id LIKE 'UC%'"):
+        groups.setdefault(_cli(a), []).append(a)
+    for accs in groups.values():
+        for i in range(0, len(accs), 50):
+            part = accs[i:i + 50]
+            if not _read_ok(part[0]):
+                break
+            tok = None
+            for a in part:  # token hocktorého kanála z toho istého Google projektu (verejné čísla)
+                try:
+                    tok = youtube.access_token(a)
+                    break
+                except Exception:
+                    continue
+            if not tok:
+                continue
+            try:
+                with client() as c:
+                    r = c.get("https://www.googleapis.com/youtube/v3/channels", headers={"Authorization": f"Bearer {tok}"},
+                              params={"part": "statistics", "id": ",".join(a["external_id"] for a in part), "maxResults": 50})
+                if r.status_code != 200:
+                    if "quota" in r.text.lower():
+                        block_today(part[0])
+                    continue
+                by = {a["external_id"]: a for a in part}
+                for it in r.json().get("items") or []:
+                    a = by.get(it["id"])
+                    if not a:
+                        continue
+                    st = it.get("statistics", {})
+                    subs = None if st.get("hiddenSubscriberCount") else int(st.get("subscriberCount", 0) or 0)
+                    _snap(a["id"], subs, int(st.get("viewCount", 0) or 0), int(st.get("videoCount", 0) or 0))
+                    _ins(a["id"], stats_at=_now(), error="")
+            except Exception as e:
+                print("YouTube odberatelia:", e)
+
+
 def rss_job():
-    """Každú hodinu, zadarmo a bez kvóty: verejný feed kanála (posledných 15 videí) s pozretiami a lajkami."""
+    """Každú hodinu: verejný feed kanála (posledných 15 videí) s pozretiami a lajkami (bez kvóty)
+    a počty odberateľov všetkých kanálov (1 jednotka na Google projekt z rezervy na čítanie)."""
     import re
+    try:
+        yt_subs_batch()
+    except Exception as e:
+        print("YouTube odberatelia:", e)
     for acc in db.q("SELECT id, external_id FROM accounts WHERE platform='youtube' AND external_id LIKE 'UC%'"):
         posts = {p["external_id"]: p["id"] for p in db.q("SELECT id, external_id FROM posts WHERE account_id=? AND status='done' AND external_id!=''",
                                                          (acc["id"],))}
@@ -288,6 +333,11 @@ def refresh(force=False):
     return True
 
 
+def _fresh_snap(aid):
+    r = db.one("SELECT MAX(fetched_at) t FROM account_stats WHERE account_id=?", (aid,))
+    return bool(r and r["t"] and r["t"] > _ago(1 / 12))
+
+
 def job():
     """Každých 6 h počty sledovateľov, raz denne YouTube Analytics. Chyba jedného účtu nezastaví ostatné."""
     for acc in db.q("SELECT * FROM accounts"):
@@ -295,7 +345,7 @@ def job():
         if not fn:
             continue
         st = db.one("SELECT * FROM acc_insight WHERE account_id=?", (acc["id"],)) or {}
-        if (st.get("stats_at") or "") < _ago(0.24):
+        if (st.get("stats_at") or "") < _ago(0.24) and not (acc["platform"] == "youtube" and _fresh_snap(acc["id"])):
             try:
                 fn(acc)
                 _ins(acc["id"], stats_at=_now(), error="")

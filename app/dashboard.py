@@ -22,8 +22,18 @@ def _country(acc_country, lang):
     return cs[0] if len(cs) == 1 else ""
 
 
+def _comment_counts():
+    """Počet komentárov, ktoré appka sama stiahla, po videách (čerstvejšie ako čísla z Analytics)."""
+    try:
+        return {(r["platform"], r["post_ext"]): r["n"] for r in db.q(
+            "SELECT platform, post_ext, COUNT(*) n FROM comments WHERE post_ext!='' GROUP BY platform, post_ext")}
+    except Exception:
+        return {}
+
+
 def _real(since):
-    rows = db.q("""SELECT p.id, p.scheduled_at, p.url, p.account_id, a.platform, a.name account, a.country acc_country,
+    cc = _comment_counts()
+    rows = db.q("""SELECT p.id, p.scheduled_at, p.url, p.external_id ext, p.account_id, a.platform, a.name account, a.country acc_country,
                           a.lang acc_lang, v.lang vlang, v.title, v.project_id,
                           ps.views, ps.likes, ps.comments, ps.shares, ps.fetched_at, ps.watch_min, ps.avg_pct, ps.subs, v.duration
                    FROM posts p JOIN accounts a ON a.id=p.account_id JOIN videos v ON v.id=p.video_id
@@ -35,7 +45,7 @@ def _real(since):
         out.append({"id": r["id"], "d": r["scheduled_at"][:16], "pl": r["platform"], "acc": r["account"] or r["platform"],
                     "aid": r["account_id"], "c": _country(r["acc_country"], lang), "l": lang, "p": r["project_id"],
                     "t": r["title"] or "", "u": r["url"] or "", "m": 1 if r["fetched_at"] else 0,
-                    "v": r["views"] or 0, "lk": r["likes"] or 0, "cm": r["comments"] or 0, "sh": r["shares"] or 0,
+                    "v": r["views"] or 0, "lk": r["likes"] or 0, "cm": max(r["comments"] or 0, cc.get((r["platform"], r["ext"]), 0)), "sh": r["shares"] or 0,
                     "wm": round(r["watch_min"] or 0, 1), "ap": round(r["avg_pct"] or 0, 1), "sb": r["subs"] or 0,
                     "du": round(r["duration"] or 0)})
     return out
