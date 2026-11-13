@@ -247,14 +247,19 @@ def send(ids):
 
 # ---------------- automatický zber na pozadí ----------------
 def _loop():
+    """Každé 2 hodiny, a navyše hneď po obnovení kvóty YouTube (9:00 nášho času), skôr než ju minie nahrávanie."""
+    from .platforms.youtube import gday
     time.sleep(60)
+    last, last_day = 0.0, ""
     while True:
         try:
-            if settings()["auto_fetch"] and not db.get_setting("paused", False):
+            if (time.time() - last >= 2 * 3600 or gday() != last_day) and settings()["auto_fetch"] \
+                    and not db.get_setting("paused", False):
+                last, last_day = time.time(), gday()
                 fetch_all()
         except Exception:
             traceback.print_exc()
-        time.sleep(2 * 3600)
+        time.sleep(600)
 
 
 _started = False

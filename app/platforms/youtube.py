@@ -61,9 +61,19 @@ def pick_client(project_id=None):
     return idx if 0 <= idx < max(n, 1) else 0
 
 
+def gday():
+    """Dátum "Google dňa": kvóta YouTube sa obnovuje o polnoci v Kalifornii (u nás 9:00, v lete tiež 9:00)."""
+    import datetime as dt
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.datetime.now(ZoneInfo("America/Los_Angeles")).date().isoformat()
+    except Exception:
+        return (dt.datetime.utcnow() - dt.timedelta(hours=8)).date().isoformat()
+
+
 def _uploads():
     u = db.get_setting("yt_uploads") or {}
-    return u.get(time.strftime("%Y-%m-%d"), {})
+    return u.get(gday(), {})
 
 
 def quota_ok(account):
@@ -71,7 +81,7 @@ def quota_ok(account):
 
 
 def count_upload(account):
-    day = time.strftime("%Y-%m-%d")
+    day = gday()
     u = db.get_setting("yt_uploads") or {}
     u = {day: u.get(day, {})}
     k = str(_client_idx(account))
