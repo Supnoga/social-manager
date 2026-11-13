@@ -23,6 +23,7 @@ PREVIEW_DIR = db.MEDIA_DIR / "previews"
 STATE = {"awake": False, "freed_mb": 0.0, "last_clean": "", "error": ""}
 _caff = None
 _lock = threading.Lock()
+BUSY = lambda: False  # main.py sem dá: beží teraz nejaká dlhá úloha (ručná výroba)?
 
 
 def cfg():
@@ -86,6 +87,10 @@ def has_work():
 
 def awake_tick(busy=False):
     """Volá sa pravidelne: Mac drží hore počas výroby/nahrávania alebo v nočnom okne s prácou."""
+    try:
+        busy = busy or BUSY()
+    except Exception:
+        pass
     want = busy or (cfg().get("on") and _awake_hours() and has_work() and on_power())
     keep_awake(bool(want))
 
