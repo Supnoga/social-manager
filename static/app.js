@@ -715,7 +715,7 @@ async function pReview(m) {
       <div class="small muted">${g.langs.length} ${g.langs.length === 1 ? 'jazyk' : g.langs.length < 5 ? 'jazyky' : 'jazykov'} · ${g.accounts} ${g.accounts === 1 ? 'účet' : g.accounts < 5 ? 'účty' : 'účtov'} · ${g.platforms.map(x => I(x, 's')).join(' ')} · spolu ${g.posts} zverejnení</div>
       <div class="pick" style="margin:12px 0">${g.langs.map((l, li) => `<label class="${li ? '' : 'on'}" onclick="revLang(${gi},${li},this)" style="cursor:pointer">${esc(langName(l.lang))}${l.source ? ' ★' : ''}</label>`).join('')}</div>
       <div id="rc${gi}" class="small" style="${L.caption || L.hashtags ? "" : "display:none;"}white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:140px;overflow:auto">${esc((L.caption || '') + (L.hashtags ? '\n' + L.hashtags : ''))}</div>
-      <div class="row" style="margin-top:14px"><button class="btn" onclick="revApprove(['${g.key}'])">${I('check')}Schváliť a pustiť</button><button class="btn sec" onclick="revReject('${g.key}')">${I('x')}Vrátiť na úpravu</button><button class="btn sec" onclick="capsModal(window._rev[${gi}].langs[window._rev[${gi}].cur||0].video_id)">${I('type')}Popisky pre siete</button></div>
+      <div class="row" style="margin-top:14px"><button class="btn" onclick="revApprove(['${g.key}'])">${I('check')}Schváliť a pustiť</button><button class="btn sec" onclick="revReject('${g.key}')">${I('x')}Vrátiť na úpravu</button><button class="btn sec" onclick="capsModal(window._rev[${gi}].langs[window._rev[${gi}].cur||0].video_id)">${I('type')}Popisky pre siete</button>${L.yt ? `<a class="btn sec" href="${L.yt}" target="_blank">${I('youtube')}Na YouTube (súkromné)</a>` : ''}</div>
     </div></div>`; }).join('') : `<div class="card empty">${I('check', 'l')}<p>Nič nečaká na schválenie.</p><p class="small dim">Keď naplánuješ videá, objavia sa tu. Kým ich neschváliš, nikam sa neodošlú.</p></div>`}`;
   window._rev = groups;
 }
@@ -901,11 +901,19 @@ async function pSettings(m) {
     <label class="l">Náhodný posun času publikovania (min)</label><input id="jit" type="number" value="${st.jitter_min}" style="max-width:120px">
     <div style="margin-top:12px"><button class="btn sm" onclick="savePub()">${I('check', 's')}Uložiť</button></div></div>
   <div class="card"><h2>${I('settings')}Ostatné</h2><p class="small muted">Video nástroj: ${S.meta.ffmpeg ? '<span class="ok-t">OK</span>' : '<span class="bad-t">chýba</span>'} · Dáta sú v priečinku <code>data</code> vedľa appky.</p>
+    ${(() => { const n = S.meta.night || { config: {} }; const c = n.config || {}; return `<div style="margin:6px 0 14px;padding:12px;border:1px solid var(--line);border-radius:10px">
+      <b>Nočná výroba a miesto na disku</b>
+      <label class="row" style="margin-top:6px"><input type="checkbox" id="nOn" ${c.on !== false ? 'checked' : ''}> Denná výroba beží len v noci od <input id="nFrom" type="number" min="0" max="23" value="${c.from ?? 22}" style="width:64px;margin:0 6px"> do <input id="nTo" type="number" min="0" max="23" value="${c.to ?? 8}" style="width:64px;margin:0 6px"> h</label>
+      <label class="row"><input type="checkbox" id="nStash" ${c.stash !== false ? 'checked' : ''}> Hotové videá hneď nahrať na YouTube ako súkromné (nikto ich nevidí, verejné až po schválení)</label>
+      <label class="row"><input type="checkbox" id="nClean" ${c.clean !== false ? 'checked' : ''}> Mazať z Macu, čo už je bezpečne na YouTube</label>
+      <p class="small dim">Dáta appky: ${n.data_mb ?? '?'} MB · uvoľnené: ${n.freed_mb ?? 0} MB · Mac ${n.awake ? '<span class="ok-t">drží hore</span>' : 'môže spať'} · ${n.on_power ? 'na nabíjačke' : 'na batérii'}. V noci musí byť Mac na nabíjačke s otvoreným vekom.</p>
+      <button class="btn sm" onclick="saveNight()">${I('check', 's')}Uložiť</button> <button class="btn sm sec" onclick="api('/api/storage/clean',{method:'POST'}).then(r=>toast('Uvoľnené spolu '+r.freed_mb+' MB'))">Upratať teraz</button></div>`; })()}
     <label class="row" style="margin-top:4px"><input type="checkbox" id="reqApp" ${st.require_approval !== false ? 'checked' : ''} onchange="api('/api/settings',{method:'POST',body:{require_approval:this.checked}}).then(()=>toast('Uložené'))"> Pred zverejnením chcem videá schváliť (Kontrola)</label>
     <label class="l">Verzia Meta API</label><input id="metaV" value="${esc(st.meta_api_version)}" style="max-width:160px"></div>
   </div></div>`;
   loadUpd(); loadVoiceList(); prLoad();
 }
+async function saveNight() { await api('/api/settings', { method: 'POST', body: { night: { on: $('#nOn').checked, from: +$('#nFrom').value, to: +$('#nTo').value, stash: $('#nStash').checked, clean: $('#nClean').checked } } }); S.meta = await api('/api/meta'); toast('Uložené'); render(); }
 async function saveSettings() { await api('/api/settings', { method: 'POST', body: { ai_mode: $('#aiMode').value, claude_path: $('#cPath').value, model_creative: $('#mC').value, model_cheap: $('#mCh').value, meta_api_version: $('#metaV').value } }); toast('Uložené'); render(); }
 async function savePub() { await api('/api/settings', { method: 'POST', body: { public_base_url: $('#pubUrl').value.trim(), cf_tunnel_token: $('#cfTok').value.trim(), verify_name: $('#vfName').value, verify_content: $('#vfCont').value, ttb_draft: $('#ttbDraft').checked, ttb_ai_label: $('#ttbAi').checked, jitter_min: +$('#jit').value } }); toast('Uložené'); setTimeout(render, 1500); }
 function voiceUsageHTML(g) {

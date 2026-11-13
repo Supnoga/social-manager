@@ -154,9 +154,9 @@ FULL = {"en": "Watch the full video", "sk": "Celé video", "cs": "Celé video", 
 def full_video_line(video, account):
     """Short vyrobený z dlhého videa: prvý riadok popisu je odkaz na celé video (ak už je na tomto kanáli)."""
     try:
-        r = db.one("""SELECT p.external_id FROM scripts s JOIN ideas i ON i.id=s.idea_id JOIN scripts ps ON ps.idea_id=i.parent_id
+        r = db.one("""SELECT COALESCE(NULLIF(p.external_id,''), p.stash_id) external_id FROM scripts s JOIN ideas i ON i.id=s.idea_id JOIN scripts ps ON ps.idea_id=i.parent_id
                       JOIN videos pv ON pv.script_id=ps.id JOIN posts p ON p.video_id=pv.id
-                      WHERE s.id=? AND i.parent_id>0 AND p.account_id=? AND p.external_id!='' ORDER BY p.id DESC LIMIT 1""",
+                      WHERE s.id=? AND i.parent_id>0 AND p.account_id=? AND (p.external_id!='' OR COALESCE(p.stash_id,'')!='') ORDER BY p.id DESC LIMIT 1""",
                    (video.get("script_id") or 0, account["id"]))
     except Exception:
         r = None
@@ -202,3 +202,26 @@ def upload(account, video, privacy="public", publish_at=None):
                 print("YouTube náhľad:", e)
     count_upload(account)
     return vid, f"https://youtu.be/{vid}"
+
+
+def release(account, video_id, when=None):
+    """Súkromne odložené video pustí von: v budúcom čase cez publishAt (YouTube ho zverejní sám), inak hneď."""
+    tok = access_token(account)
+    status = {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
+    if when:
+        status = {"privacyStatus": "private", "publishAt": when, "selfDeclaredMadeForKids": False}
+    with client(timeout=60) as c:
+        check(c.put("https://www.googleapis.com/youtube/v3/videos", params={"part": "status"},
+                    headers={"Authorization": f"Bearer {tok}"}, json={"id": video_id, "status": status}),
+              "YouTube zverejnenie")
+    return video_id, f"https://youtu.be/{video_id}"
+
+
+def delete_video(account, video_id):
+    tok = access_token(account)
+    with client(timeout=60) as c:
+        r = c.delete("https://www.googleapis.com/youtube/v3/videos", params={"id": video_id},
+                     headers={"Authorization": f"Bearer {tok}"})
+        if r.status_code not in (204, 404):
+            check(r, "YouTube zmazanie")
+

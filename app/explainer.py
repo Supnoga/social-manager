@@ -12,13 +12,14 @@ import re
 import subprocess
 import threading
 
-from . import db
+from . import db, icons_extra
 
 W, H = 1080, 1920
 KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
               "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
+ICON_NAMES += tuple(n for n in icons_extra.NAMES if n not in ICON_NAMES)
 
 # Stručný popis pre AI (pridá sa do promptu scenára, cca 200 tokenov)
 SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: black, thin line schematics drawn step by step). Pick ONE that explains the point visually:
@@ -132,6 +133,9 @@ KEYWORDS = [
     (r"teplot|°c|thermo|temperatur", "thermo"),
     (r"rok|rokov|hod|minút|čas|year|time|zeit", "clock"),
 ]
+
+
+KEYWORDS += icons_extra.KEYWORDS
 
 
 def _num(s):
@@ -392,7 +396,7 @@ function el(tag,cls,css,html){const e=document.createElement(tag);if(cls)e.class
 function fit(e,max,min,h,w){let s=max;e.style.fontSize=s+'px';const W=w||e.clientWidth;const cw=()=>{const r=document.createRange();r.selectNodeContents(e);return r.getBoundingClientRect().width};while(s>min&&(e.scrollHeight>h+2||cw()>W+2)){s-=2;e.style.fontSize=s+'px'}return s}
 const SVGNS='http://www.w3.org/2000/svg';
 function svg(w,h,inner){const s=document.createElementNS(SVGNS,'svg');s.setAttribute('width',w);s.setAttribute('height',h);s.setAttribute('viewBox',`0 0 ${w} ${h}`);s.innerHTML=inner;return s}
-const ICONS={
+const ICONS={/*EXTRA_ICONS*/
 house:'<path d="M14 48 L50 17 L86 48"/><path d="M24 41 V85 H76 V41"/><path d="M42 85 V62 H58 V85"/>',
 heatpump:'<rect x="8" y="22" width="84" height="56" rx="6"/><circle cx="36" cy="50" r="18"/><path d="M36 32 C44 42 28 58 36 68 M18 50 C28 42 44 58 54 50"/><path d="M66 36 H84 M66 44 H84 M66 52 H84 M66 60 H84"/><path d="M18 78 V86 M82 78 V86"/>',
 radiator:'<rect x="14" y="24" width="12" height="54" rx="6"/><rect x="30" y="24" width="12" height="54" rx="6"/><rect x="46" y="24" width="12" height="54" rx="6"/><rect x="62" y="24" width="12" height="54" rx="6"/><path d="M8 70 H14 M74 70 H92"/>',
@@ -662,6 +666,8 @@ T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length
 fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}};
 window.READY=true;
 </script></body></html>"""
+
+TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + ",", 1)
 
 STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars": lambda d: len(d.get("i") or []) + 1,
          "calc": lambda d: len(d.get("r") or []) + .5, "compare": lambda d: 2.5, "count": lambda d: 2, "list": lambda d: len(d.get("i") or []),

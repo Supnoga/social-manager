@@ -169,6 +169,9 @@ MIGRATIONS = [
     "ALTER TABLE comp_posts ADD COLUMN ratio_all REAL DEFAULT 0",
     "ALTER TABLE competitors ADD COLUMN backlog_at TEXT DEFAULT ''",
     "ALTER TABLE scripts ADD COLUMN thumb TEXT DEFAULT ''",
+    "ALTER TABLE posts ADD COLUMN stash_id TEXT DEFAULT ''",
+    "ALTER TABLE videos ADD COLUMN removed INTEGER DEFAULT 0",
+    "ALTER TABLE videos ADD COLUMN preview_path TEXT DEFAULT ''",
 ]
 
 

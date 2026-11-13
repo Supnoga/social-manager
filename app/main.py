@@ -12,7 +12,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import ai, anim, brand, content, db, explainer, footage, languages, media, scheduler, tunnel, pronounce, updater, voices
+from . import ai, anim, brand, content, db, explainer, footage, languages, media, scheduler, nightly, tunnel, pronounce, updater, voices
 from .platforms import linkedin, meta, tiktok, tiktok_business, youtube
 from .platforms.common import PORT, PlatformError
 
@@ -223,6 +223,7 @@ def api_meta():
         "footage": footage.status(),
         "anim": __import__("app.anim", fromlist=["status"]).status(),
         "review_count": db.one("SELECT COUNT(*) n FROM posts WHERE status='review'")["n"],
+        "night": nightly.status(),
     }
 
 
@@ -233,7 +234,7 @@ def api_settings(data: dict = Body(...)):
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
-               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce"}
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce", "night"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -289,6 +290,10 @@ def _posts(where, order, limit, args=()):
 @app.get("/api/file")
 def get_file(path: str):
     p = Path(path).resolve()
+    if not p.exists():  # video už je na YouTube a z Macu zmazané: ukáž malý náhľad, ak ešte je
+        v = db.one("SELECT COALESCE(preview_path,'') pv FROM videos WHERE file_path=?", (path,))
+        if v and v["pv"]:
+            p = Path(v["pv"]).resolve()
     allowed = [db.DATA_DIR.resolve()] + [Path(x).resolve() for x in db.get_setting("import_dirs", [])]
     if not any(str(p).startswith(str(a)) for a in allowed) or not p.exists():
         raise HTTPException(404)
@@ -1031,7 +1036,7 @@ def _autopilot(params):
 
 
 # ---------------- Denná výroba: appka si sama drží zásobu hotových videí podľa plánu projektu ----------------
-PROD = {"running": False, "step": "", "log": [], "wait_until": 0}
+PROD = {"running": False, "step": "", "log": [], "wait_until": 0, "resumed": set()}
 
 
 def _prod_supply(pid, fmt):
@@ -1068,8 +1073,13 @@ def _produce_once():
         return
     if any(not j.get("done") for j in JOBS.values()):
         return  # používateľ práve niečo vyrába
+    if not nightly.in_window():
+        PROD["step"] = "Čakám na noc"
+        return
     PROD["running"] = True
+    nightly.keep_awake(True)
     try:
+        _prod_resume(cfg)
         for pid_s, c in cfg.items():
             pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
             made = 0
@@ -1127,6 +1137,44 @@ def _produce_once():
     finally:
         PROD["running"] = False
         PROD["log"] = PROD["log"][-30:]
+        try:
+            nightly.awake_tick()
+        except Exception:
+            pass
+
+
+def _prod_resume(cfg):
+    """Dokončí, čo prerušil spánok alebo reštart: scenár bez videa, dlhé video bez Shorts."""
+    for pid_s, c in cfg.items():
+        if not nightly.in_window():
+            return
+        for r in db.q("""SELECT i.id, COALESCE(i.format,'short') fmt FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
+                         WHERE i.project_id=? AND s.created_at > datetime('now','localtime','-3 days')
+                         AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)
+                         ORDER BY i.id""", (int(pid_s),)):
+            if r["id"] in PROD["resumed"]:
+                continue  # každé len raz za beh appky, nech sa chyba neopakuje dookola
+            PROD["resumed"].add(r["id"])
+            PROD["step"] = "Dokončujem prerušené video"
+            try:
+                idea_produce_first(r["id"], {})
+            except Exception as e:
+                PROD["log"].append(f"dokončenie {r['id']}: {e}")
+                continue
+        if bool(c.get("from_long")) and int(c.get("short") or 0) and int(c.get("long") or 0):
+            k = max(1, round(int(c["short"]) / int(c["long"])))
+            for r in db.q("""SELECT i.id FROM ideas i WHERE i.project_id=? AND i.format='long'
+                             AND EXISTS (SELECT 1 FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=i.id
+                                         AND v.created_at > datetime('now','localtime','-3 days'))
+                             AND NOT EXISTS (SELECT 1 FROM ideas t WHERE t.parent_id=i.id)""", (int(pid_s),)):
+                if -r["id"] in PROD["resumed"]:
+                    continue
+                PROD["resumed"].add(-r["id"])
+                PROD["step"] = "Dokončujem Shorts z dlhého videa"
+                try:
+                    idea_teasers(r["id"], {"count": k, "produce": True})
+                except Exception as e:
+                    PROD["log"].append(f"Shorts {r['id']}: {e}")
 
 
 def dt_now():
@@ -1145,9 +1193,17 @@ def _produce_loop():
         _t.sleep(300)
 
 
+@app.post("/api/storage/clean")
+def storage_clean():
+    """Ručné upratanie (inak beží samo každých 30 minút)."""
+    nightly.clean()
+    return nightly.status()
+
+
 @app.get("/api/produce")
 def produce_status():
-    return dict(PROD, config=db.get_setting("auto_produce", {}) or {})
+    return dict({k: v for k, v in PROD.items() if k != "resumed"}, config=db.get_setting("auto_produce", {}) or {},
+                night=nightly.status())
 
 
 @app.post("/api/autopilot")
@@ -1521,7 +1577,8 @@ def schedule(data: dict = Body(...)):
 # ---------------- Kontrola pred zverejnením ----------------
 def _review_rows():
     return db.q("""SELECT p.id post_id, p.scheduled_at, a.platform, a.name account, v.id video_id, v.lang, v.title,
-                          v.caption, v.hashtags, v.file_path, v.project_id, v.original_name, s.idea_id, s.is_source
+                          v.caption, v.hashtags, CASE WHEN COALESCE(v.removed,0)=1 THEN COALESCE(v.preview_path,'') ELSE v.file_path END file_path,
+                          v.project_id, v.original_name, s.idea_id, s.is_source, COALESCE(p.stash_id,'') stash_id
                    FROM posts p JOIN videos v ON v.id=p.video_id JOIN accounts a ON a.id=p.account_id
                    LEFT JOIN scripts s ON s.id=v.script_id WHERE p.status='review' ORDER BY p.scheduled_at""")
 
@@ -1539,7 +1596,9 @@ def review_list():
         g["platforms"].add(r["platform"])
         L = g["langs"].setdefault(r["lang"] or "-", {"lang": r["lang"], "video_id": r["video_id"], "title": r["title"] or r["original_name"],
                                                        "caption": r["caption"], "hashtags": r["hashtags"], "file": r["file_path"],
-                                                       "source": bool(r["is_source"]), "posts": 0})
+                                                       "source": bool(r["is_source"]), "posts": 0, "yt": ""})
+        if r["stash_id"] and not L["yt"]:
+            L["yt"] = f"https://studio.youtube.com/video/{r['stash_id']}/edit"
         L["posts"] += 1
     out = []
     for g in groups.values():
@@ -1578,6 +1637,13 @@ def review_reject(data: dict = Body(...)):
     """Vráti na úpravu: zruší naplánovanie (videá ostanú, po oprave ich naplánuješ znova)."""
     ids = _review_ids(data.get("keys") or [])
     for pid in ids:
+        r = db.one("SELECT p.stash_id, p.account_id FROM posts p WHERE p.id=?", (pid,))
+        if r and r["stash_id"]:  # súkromne odložené na YouTube: zmazať, nech tam nestraší
+            try:
+                acc = db.one("SELECT * FROM accounts WHERE id=?", (r["account_id"],))
+                youtube.delete_video(acc, r["stash_id"])
+            except Exception as e:
+                print("YouTube zmazanie:", e)
         db.run("DELETE FROM posts WHERE id=?", (pid,))
     return {"rejected": len(ids)}
 
