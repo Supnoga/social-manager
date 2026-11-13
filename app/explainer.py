@@ -777,21 +777,24 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
         b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         try:
+            if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
+                tp = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)  # vlastná stránka, video ostane čisté
+                try:
+                    tp.set_content(html)
+                    tp.wait_for_function("window.READY===true", timeout=20000)
+                    if (thumb_text or "").strip() and sc_data:
+                        tp.evaluate("([i,t])=>thumbMode(i,t)", [thumb_index(scenes, sc_data, thumb_scene), thumb_text.strip()])
+                    else:
+                        tp.evaluate("renderAt(%.2f);document.getElementById('cap').innerHTML='';document.getElementById('bar').style.width=0"
+                                    % min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6))
+                    tp.screenshot(path=str(thumb), type="jpeg", quality=92)
+                except Exception as e:
+                    print("náhľad:", e)
+                finally:
+                    tp.close()
             pg = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)
-            if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
-                try:
-                    if (thumb_text or "").strip() and sc_data:
-                        pg.evaluate("([i,t])=>thumbMode(i,t)", [thumb_index(scenes, sc_data, thumb_scene), thumb_text.strip()])
-                    else:
-                        pg.evaluate("renderAt(%.2f);document.getElementById('cap').innerHTML='';document.getElementById('bar').style.width=0"
-                                    % min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6))
-                    pg.screenshot(path=str(thumb), type="jpeg", quality=92)
-                    pg.set_content(html)  # čistá stránka pre samotné video
-                    pg.wait_for_function("window.READY===true", timeout=20000)
-                except Exception as e:
-                    print("náhľad:", e)
             for i in range(n):
                 pg.evaluate(f"renderAt({i / fps:.4f})")
                 proc.stdin.write(pg.screenshot(type="jpeg", quality=90))
@@ -803,7 +806,29 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             if proc.poll() is None:
                 proc.kill()
             b.close()
+    if _all_black(out, length):
+        raise RuntimeError("Video vyšlo celé čierne, skús ho vyrobiť znova")
     return str(out)
+
+
+def _all_black(path, length):
+    """Poistka: pár snímok z hotového videa; keď sú všetky čierne, video je pokazené."""
+    from . import media
+    ff = media.ffmpeg()
+    if not ff:
+        return False
+    try:
+        mx = 0
+        for t in (length * 0.2, length * 0.5, length * 0.8):
+            r = subprocess.run([ff, "-ss", f"{t:.1f}", "-i", str(path), "-frames:v", "1", "-vf", "signalstats,metadata=print:key=lavfi.signalstats.YMAX",
+                                "-f", "null", "-"], capture_output=True, text=True, errors="ignore", timeout=60, stdin=subprocess.DEVNULL)
+            m = re.findall(r"YMAX=(\d+)", r.stderr + r.stdout)
+            if not m:
+                return False
+            mx = max(mx, int(m[-1]))
+        return mx < 40
+    except Exception:
+        return False
 
 
 def preview(d, out_png, accent="#FF6B00", lang="sk", title="Ukážka", at=6.0):
