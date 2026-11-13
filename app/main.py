@@ -274,7 +274,7 @@ def api_meta():
 
 @app.post("/api/settings")
 def api_settings(data: dict = Body(...)):
-    allowed = {"ai_mode", "model_creative", "model_cheap", "paused", "claude_path", "meta_api_version", "tt_mode",
+    allowed = {"ai_mode", "model_creative", "model_cheap", "model_premium", "paused", "claude_path", "meta_api_version", "tt_mode",
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min", "ttb_redirect",
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
