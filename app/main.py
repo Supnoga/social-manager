@@ -295,6 +295,21 @@ def get_file(path: str):
     return FileResponse(p)
 
 
+@app.post("/api/videos/{vid}/save-copy")
+def video_save_copy(vid: int, data: dict = Body(default={})):
+    """Uloží kópiu videa do priečinka Stiahnuté (Downloads), aby sa dalo ľahko poslať alebo skontrolovať."""
+    import re
+    v = db.one("SELECT file_path, title FROM videos WHERE id=?", (vid,))
+    if not v or not Path(v["file_path"]).exists():
+        raise HTTPException(404)
+    name = re.sub(r"[^\w.-]+", "-", str(data.get("name") or v["title"] or f"video-{vid}")).strip("-")[:80] or f"video-{vid}"
+    if not name.lower().endswith(".mp4"):
+        name += ".mp4"
+    dest = Path.home() / "Downloads" / name
+    shutil.copy2(v["file_path"], dest)
+    return {"ok": True, "path": str(dest)}
+
+
 # ---------------- Projekty ----------------
 PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned", "brand_tags"]
 
