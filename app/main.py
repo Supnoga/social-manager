@@ -879,6 +879,9 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     return {"video_id": vid, "style": style if done or style != "broll" else "color"}
 
 
+brand.RENDER = script_to_video  # oprava videí so zlým logom ich skladá nanovo
+
+
 @app.get("/api/ideas/{iid}/shots")
 def idea_shots(iid: int):
     src = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
