@@ -1379,8 +1379,11 @@ def _mp_run(workers, until):
                 elif slot["state"] == "ok" and _mp_short(pid, slot["final"]):
                     MPROD["done"]["short"] += 1
                 if MPROD.get("publish") and slot["state"] == "ok":   # hotové video hneď do plánu zverejnenia
-                    from . import planner
-                    planner.plan_week([pid], 3)
+                    try:
+                        from . import planner
+                        planner.plan_week([pid], 3)
+                    except Exception as e:
+                        MPROD["log"].append(f"plánovanie kanála {pid}: {str(e)[:120]}")
             except Exception as e:
                 MPROD["log"].append(f"{date} kanál {pid}: {str(e)[:150]}")
                 if kind == 0:
