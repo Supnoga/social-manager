@@ -1905,6 +1905,37 @@ def posts(status: str = "", limit: int = 300):
     return _posts(where, "p.scheduled_at DESC" if status in ("done", "failed") else "p.scheduled_at", limit, args)
 
 
+@app.post("/api/posts/hold-all")
+def posts_hold_all(data: dict = Body(default={})):
+    """Zastaví všetko, čo ešte nie je verejné: posty dostanú stav 'hold' (pôvodný sa zapamätá v posts_hold) a
+    videám s nastaveným publishAt na YouTube sa plán zruší, ostanú súkromné. Nič sa nemaže. project_ids voliteľne."""
+    now = scheduler.now_str()
+    ids = data.get("project_ids") or []
+    rows = db.q("""SELECT p.*, a.platform, v.project_id vpid FROM posts p JOIN accounts a ON a.id=p.account_id
+                   JOIN videos v ON v.id=p.video_id WHERE p.status IN ('review','queued','failed')
+                   OR (p.status='done' AND p.scheduled_at>?)""", (now,))
+    keep = db.get_setting("posts_hold", {}) or {}
+    held, unsched, errors = 0, 0, []
+    for p in rows:
+        if ids and p["vpid"] not in ids:
+            continue
+        if p["status"] == "done" and p["platform"] == "youtube" and (p["external_id"] or p["stash_id"]):
+            acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
+            try:
+                youtube.unschedule(acc, p["external_id"] or p["stash_id"])
+                unsched += 1
+                if not p["stash_id"]:
+                    db.run("UPDATE posts SET stash_id=? WHERE id=?", (p["external_id"], p["id"]))
+            except Exception as e:
+                errors.append([p["id"], str(e)[:200]])
+                continue
+        keep[str(p["id"])] = p["status"]
+        db.run("UPDATE posts SET status='hold', updated_at=? WHERE id=?", (now, p["id"]))
+        held += 1
+    db.set_setting("posts_hold", keep)
+    return {"held": held, "unscheduled": unsched, "errors": errors}
+
+
 @app.post("/api/posts/{pid}/retry")
 def post_retry(pid: int):
     db.run("UPDATE posts SET status='queued', attempts=0, error='', scheduled_at=? WHERE id=?",
