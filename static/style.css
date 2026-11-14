@@ -272,3 +272,13 @@ body.dropping::after{content:"Pusti súbory sem – pridajú sa do dizajnu proje
 .hrank td.lead{color:var(--acc);font-weight:750}
 .hcm{padding:10px 0;border-top:1px solid var(--line)}.hcm:first-of-type{border-top:0}
 .dtab th.r,.dtab td.r{text-align:right}
+
+/* typ videa: krátke (oranžové) a dlhé (biele) */
+.fmt{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:2px 7px 2px 5px;font-size:11px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;vertical-align:middle;line-height:1.3;flex-shrink:0}
+.fmt svg.i{width:13px;height:13px}
+.fmt.s{background:var(--acc);color:#000}
+.fmt.l{background:transparent;color:#fff;border:1px solid #fff;padding:1px 6px 1px 4px}
+h1 .fmt,h2 .fmt{font-size:12px}
+.fmtseg button{display:inline-flex;align-items:center;gap:5px}
+.dp i.fs{font-style:normal;font-size:11px;color:var(--dim)}
+.dsel .seg{text-transform:none;letter-spacing:0;font-weight:400;font-size:14px}

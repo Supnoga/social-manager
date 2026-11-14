@@ -284,3 +284,10 @@ def get_setting(key, default=None):
 def set_setting(key, value):
     run("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (key, json.dumps(value)))
+
+
+def fmt_sql(v="v"):
+    """Typ videa (0 tokenov): 'long' = dlhé video, 'short' = krátke (Short/Reel/TikTok).
+    Berie sa z nápadu; video bez nápadu (nahraté ručne) podľa dĺžky: nad 3 minúty je dlhé."""
+    return (f"COALESCE(NULLIF((SELECT i_f.format FROM scripts s_f JOIN ideas i_f ON i_f.id=s_f.idea_id WHERE s_f.id={v}.script_id),''),"
+            f" CASE WHEN COALESCE({v}.duration,0)>180 THEN 'long' ELSE 'short' END)")

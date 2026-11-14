@@ -173,7 +173,7 @@ def _rescore(aid):
 # ---------- vyhodnotenie ----------
 def _rows(pid=None, days=90):
     return db.q(f"""SELECT ps.*, p.account_id, p.scheduled_at, a.platform, a.name account, a.lang acc_lang, v.lang, v.title,
-                          s.idea_id, i.title idea_title, i.hook, i.pillar, i.project_id
+                          s.idea_id, i.title idea_title, i.hook, i.pillar, i.project_id, COALESCE(NULLIF(i.format,''),'short') fmt
                    FROM post_stats ps JOIN posts p ON p.id=ps.post_id JOIN accounts a ON a.id=p.account_id
                    JOIN videos v ON v.id=p.video_id LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
                    WHERE ps.error='' AND p.scheduled_at>=? {'AND v.project_id=?' if pid else ''}""",
@@ -186,7 +186,7 @@ def ideas_perf(pid, days=90):
     for r in _rows(pid, days):
         if not r["idea_id"] or not r["ratio"]:
             continue
-        a = agg.setdefault(r["idea_id"], {"idea_id": r["idea_id"], "title": r["idea_title"], "hook": r["hook"], "pillar": r["pillar"],
+        a = agg.setdefault(r["idea_id"], {"idea_id": r["idea_id"], "title": r["idea_title"], "hook": r["hook"], "pillar": r["pillar"], "fmt": r["fmt"],
                                           "ratios": [], "views": 0, "likes": 0, "comments": 0, "posts": 0})
         a["ratios"].append(r["ratio"])
         a["views"] += r["views"]
