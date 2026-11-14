@@ -905,25 +905,31 @@ for _m in BOARD_META.values():
         STEPS.setdefault(_k, lambda d, _st=_st: float(_st[0]) + (float(_st[1]) * len(d.get(_st[2]) or []) if len(_st) > 2 else 0))
 
 class _Slots:
-    """Koľko videí sa smie skladať naraz (nastavenie render_parallel, 1–4, predvolene 2). Každé má vlastný prehliadač."""
-    _init = threading.Lock()
+    """Koľko videí sa smie skladať naraz (nastavenie render_parallel, 1–4, predvolene 2). Každé má vlastný prehliadač.
+    Nastavenie sa číta pri každom skladaní, takže sa dá meniť bez reštartu appky."""
 
     def __init__(self):
-        self._s = None
+        self._c = threading.Condition()
+        self.active = 0
+
+    @staticmethod
+    def limit():
+        try:
+            return max(1, min(4, int(db.get_setting("render_parallel", 2) or 2)))
+        except Exception:
+            return 2
 
     def __enter__(self):
-        with self._init:
-            if self._s is None:
-                try:
-                    n = int(db.get_setting("render_parallel", 2) or 2)
-                except Exception:
-                    n = 2
-                self._s = threading.BoundedSemaphore(max(1, min(4, n)))
-        self._s.acquire()
+        with self._c:
+            while self.active >= self.limit():
+                self._c.wait(timeout=15)
+            self.active += 1
         return self
 
     def __exit__(self, *a):
-        self._s.release()
+        with self._c:
+            self.active -= 1
+            self._c.notify_all()
 
 
 _lock = _Slots()
