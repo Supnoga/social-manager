@@ -89,10 +89,13 @@ const metal=(x,x0,x1)=>{const g=x.createLinearGradient(x0,0,x1,0);g.addColorStop
 
 // ---------- veľké plátno a kamera ----------
 // plátno presahuje bežnú plochu schémy, aby model vyplnil obrazovku; okraje sa strácajú do pozadia
-const STG=v=>{const w=WIDE?900:980,h=WIDE?640:760,R=2,c=el('canvas','',`position:absolute;left:${(864-w)/2}px;top:${(560-h)/2}px;width:${w}px;height:${h}px`);c.width=w*R;c.height=h*R;v.append(c);const x=c.getContext('2d',{willReadFrequently:true});x.scale(R,R);x.lineCap='round';x.lineJoin='round';
+// Na výšku je plátno vyššie než plocha modelu (PT hore, PB dole): stroj presahuje pod nadpis aj pod titulky a tam sa stráca do pozadia,
+// takže zaberá celú obrazovku a text pláva nad ním. Súradnice modelu a čísla pri ňom (S.w × S.h) ostávajú rovnaké.
+const STG=v=>{const w=WIDE?900:980,h=WIDE?640:820,PT=WIDE?0:260,PB=WIDE?0:330,HH=PT+h+PB,R=2,c=el('canvas','',`position:absolute;left:${(864-w)/2}px;top:${(560-h)/2-PT}px;width:${w}px;height:${HH}px`);c.width=w*R;c.height=HH*R;v.append(c);const x=c.getContext('2d',{willReadFrequently:true});x.scale(R,R);x.lineCap='round';x.lineJoin='round';
 // každá snímka začína z čistého stavu: plátno sa na niektorých počítačoch (grafická karta) samo vynuluje a kresba by ostala malá v rohu
-const begin=()=>{x.setTransform(R,0,0,R,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.shadowBlur=0;x.shadowColor='rgba(0,0,0,0)';x.setLineDash([]);x.lineCap='round';x.lineJoin='round';x.clearRect(0,0,w,h)};
-c.style.cssText+=';-webkit-mask-image:linear-gradient(transparent 0,#000 6%,#000 94%,transparent 100%),linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%);-webkit-mask-composite:source-in;mask-composite:intersect';const FT=(getComputedStyle(document.documentElement).getPropertyValue('--f')||'').trim()||'Helvetica Neue,Arial,sans-serif';return {x,w,h,FT,begin}};
+const begin=()=>{x.setTransform(R,0,0,R,0,PT*R);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.shadowBlur=0;x.shadowColor='rgba(0,0,0,0)';x.setLineDash([]);x.lineCap='round';x.lineJoin='round';x.clearRect(0,-PT,w,HH)};
+const pc=y=>(y/HH*100).toFixed(1)+'%',VM=WIDE?'transparent 0,#000 6%,#000 94%,transparent 100%':`transparent 0,rgba(0,0,0,.1) ${pc(PT*.6)},rgba(0,0,0,.28) ${pc(PT)},#000 ${pc(PT+90)},#000 ${pc(PT+h-20)},rgba(0,0,0,.3) ${pc(PT+h+90)},transparent 100%`;
+c.style.cssText+=`;-webkit-mask-image:linear-gradient(${VM}),linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%);-webkit-mask-composite:source-in;mask-composite:intersect`;const FT=(getComputedStyle(document.documentElement).getPropertyValue('--f')||'').trim()||'Helvetica Neue,Arial,sans-serif';return {x,w,h,FT,begin}};
 // kamera po kľúčových záberoch [čas, [cx,cy,zoom]]: plynulý prelet (tr sekúnd) na každý ďalší záber
 const camAt=(KF,t,tr)=>{let c=KF[0][1];for(let i=1;i<KF.length;i++){if(t<KF[i][0])break;c=lerp(c,KF[i][1],ez((t-KF[i][0])/(KF[i][2]||tr||.7)))}return c};
 // veľký názov práve prebiehajúcej doby (číslo + text) s bodkami priebehu
@@ -261,7 +264,7 @@ if(hot&&CARHOT[hot]){const h=CARHOT[hot];x.beginPath();x.arc(h[0],h[1],58+16*pul
 const CTX={piston:['car','engine'],wankel:['car','engine'],rotary:['car','engine'],camshaft:['car','engine'],gearbox:['car','gearbox'],differential:['car','diff'],car_brake:['car','brake']};
 // obalí model: auto príde, diel sa rozsvieti, kamera doň vletí a prelne sa do rezu
 const withIntro=(v,d,ctx,base)=>{const vm=el('div','','position:absolute;left:0;top:0;width:864px;height:560px;transform-origin:50% 50%;opacity:0');v.append(vm);const upd=base(vm,d);
-const S=STG(v),x=S.x;x.canvas.style.cssText+=';-webkit-mask-image:radial-gradient(ellipse 56% 56% at 50% 50%,#000 74%,transparent 100%);-webkit-mask-composite:source-over;mask-composite:add';const A=D.acc,IN=Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)),SC=WIDE?1.5:1.62,OX=(S.w-520*SC)/2,OY=S.h/2+150,_sh=(d._sh=IN*.78),h=CARHOT[ctx[1]],H=[OX+h[0]*SC,OY+h[1]*SC];
+const S=STG(v),x=S.x;x.canvas.style.cssText+=';-webkit-mask-image:radial-gradient(ellipse 56% 56% at 50% 50%,#000 74%,transparent 100%);-webkit-mask-composite:source-over;mask-composite:add';const A=D.acc,IN=d._first?1.15:Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)),SC=WIDE?1.5:1.62,OX=(S.w-520*SC)/2,OY=S.h/2+150,_sh=(d._sh=IN*.78),h=CARHOT[ctx[1]],H=[OX+h[0]*SC,OY+h[1]*SC];
 return (t,st)=>{S.begin();const u=t/IN;if(u<1.02){const drive=1-ez(u/.42),dx=-drive*drive*700,zo=ez((u-.6)/.4),z=1+zo*zo*8.5,P=lerp(H,[S.w/2,S.h/2],ez((u-.6)/.34));
 x.save();x.globalAlpha=(d._first?1:E(u/.12))*(1-ez((u-.74)/.2));x.translate(P[0],P[1]);x.scale(z,z);x.translate(-H[0],-H[1]);
 {const g=x.createRadialGradient(S.w/2,OY-120,20,S.w/2,OY-120,460);g.addColorStop(0,'rgba(86,118,160,.2)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(0,0,S.w,S.h)}
