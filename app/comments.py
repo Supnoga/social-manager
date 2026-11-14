@@ -103,7 +103,7 @@ def fetch_all():
         state["last_fetch"] = datetime.now().strftime("%Y-%m-%d %H:%M")
         if new:
             _translate_new()
-            if settings()["auto_draft"]:
+            if settings()["auto_draft"] and not db.get_setting("paused", False):
                 try:
                     draft()
                 except Exception:
@@ -253,8 +253,7 @@ def _loop():
     last, last_day = 0.0, ""
     while True:
         try:
-            if (time.time() - last >= 2 * 3600 or gday() != last_day) and settings()["auto_fetch"] \
-                    and not db.get_setting("paused", False):
+            if (time.time() - last >= 2 * 3600 or gday() != last_day) and settings()["auto_fetch"]:  # len čítanie, beží aj pri pozastavenej výrobe
                 last, last_day = time.time(), gday()
                 fetch_all()
         except Exception:
