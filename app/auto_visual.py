@@ -5,11 +5,12 @@ import re
 # (regex, mechanizmus, popisky po anglicky) – poradie = priorita (konkrétne pred všeobecnými)
 RULES = [
     (r"jet engine|turbofan|turbojet|jet turbine", "jet", ["Intake", "Compressor", "Combustion", "Exhaust"]),
+    (r"rotary engine|wankel|rotor housing|apex seal", "wankel", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"four[- ]stroke|piston|cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engine",
      "piston", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"camshaft|valve timing|valves? open", "camshaft", ["Camshaft", "Valve spring", "Valve"]),
     (r"differential", "differential", ["Inner wheel", "Differential", "Outer wheel"]),
-    (r"gearbox|transmission|gear ratio|shift(ing)? gears?|torque", "gearbox", ["Engine", "Wheels"]),
+    (r"gearbox|transmission|gear ratio|shift(ing)? gears?", "gearbox", ["Engine", "Wheels"]),
     (r"\bbrake|braking|brake disc|brake pad", "car_brake", ["Brake disc", "Caliper", "Brake pads"]),
     (r"helicopter|main rotor|tail rotor", "rotor", ["Main rotor", "Tail rotor", "Torque"]),
     (r"\bwing|airfoil|aerofoil|\blift\b(?! shaft)|how planes? fl", "wing", ["Lift", "Airflow"]),
@@ -37,12 +38,12 @@ RULES = [
      ["Outdoor air", "Compressor", "Heat", "Expansion valve"]),
     (r"air ?condition|\bac unit", "aircon", ["Compressor", "Cooling", "Heat outside"]),
     (r"fridge|refrigerator", "fridge", ["Compressor", "Cold", "Heat"]),
-    (r"generator|dynamo|alternator|power plant|power station", "generator", ["Turbine", "Generator", "Bulb"]),
+    (r"generator|dynamo|alternator", "generator", ["Turbine", "Generator", "Bulb"]),
     (r"electric motor|e-motor|ev motor", "motor", ["Magnet", "Coil", "Battery"]),
     (r"transformer|high voltage|substation", "transformer", ["Primary coil", "Iron core", "Secondary coil"]),
     (r"circuit|electric current|\bohm|voltage", "circuit", ["Battery", "Switch", "Bulb"]),
     (r"conveyor|assembly line|production line|factory line|mass production", "conveyor", ["Weld", "Paint", "Check"]),
-    (r"\bcpu\b|processor|microchip|\bchips?\b|transistor", "cpu", ["RAM", "Cache", "Cores"]),
+    (r"\bcpu\b|processor|microchip|transistor", "cpu", ["RAM", "Cache", "Cores"]),
     (r"hard drive|\bhdd\b|\bssd\b|storage drive", "hdd", ["Hard drive", "SSD"]),
     (r"fib(er|re) optic|undersea cable|internet cable", "fiber", ["Core", "Cladding", "Laser"]),
     (r"bicycle|\bbikes?\b|chain drive", "bicycle", ["Sprocket", "Chainring"]),
@@ -53,8 +54,7 @@ RULES = [
 _RX = [(re.compile(r, re.I), m, l) for r, m, l in RULES]
 WEAK = ("hero", "icons", "scene", "draw", "text", "list")
 # ikony, ktoré sa naozaj točia; ostatné sa nemajú otáčať (otáčajúca sa značka motora pôsobí lacno)
-SPINS = {"fan", "turbine", "gear", "gears", "wheel", "propeller", "windmill", "turbocharger", "tbm", "saw_blade", "pc_fan",
-         "ferris_wheel", "centrifuge", "anemometer", "radar_scope", "tyre", "compressor", "flywheel", "impeller", "rotor"}
+SPINS = set("gear wheel tyre saw_blade flywheel impeller propeller ship_propeller sprocket ball_bearing roller_bearing brake_disc vinyl film_reel roulette ship_wheel".split())
 
 
 def find(text):
@@ -76,12 +76,17 @@ def calm_draw(d):
     return dict(d, e=els)
 
 
-def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False):
+def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full=""):
     """d = diagram scény. Ak je slabý (ikona, text) a scéna hovorí o mechanizme z knižnice, vráti animovanú schému."""
     d = calm_draw(d)
     if d.get("k") not in WEAK:
         return d
-    hit = find(f"{scene.get('onscreen') or ''} . {scene.get('visual') or ''}") or find(spoken)
+    # radšej žiadny model než nesúvisiaci: stroj musí byť v nadpise/opise scény, alebo ho hlas spomína a video je o ňom
+    hit = find(f"{scene.get('onscreen') or ''} . {scene.get('visual') or ''}")
+    if not hit:
+        hit = find(spoken)
+        if hit and sum(len(rx.findall(full or "")) for rx, m, _ in _RX if m == hit[0]) < 3:
+            hit = None
     if not hit:
         return d
     m, labels = hit

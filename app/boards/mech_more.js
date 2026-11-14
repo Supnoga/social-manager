@@ -15,8 +15,7 @@ const ar=(x1,y1,x2,y2,c,w,h)=>{ln(x1,y1,x2,y2,c,w);const a=Math.atan2(y2-y1,x2-x
 const ci=(cx,cy,r,c,w,f)=>{x.beginPath();x.arc(cx,cy,r,0,6.2832);if(f){x.fillStyle=f;x.fill()}if(c){x.strokeStyle=c;x.lineWidth=w||4;x.stroke()}};
 const dot=(cx,cy,r,f)=>{x.fillStyle=f;x.beginPath();x.arc(cx,cy,r,0,6.2832);x.fill()};
 const rc=(l,t,w,h,c,lw,f)=>{if(f){x.fillStyle=f;x.fillRect(l,t,w,h)}if(c){x.strokeStyle=c;x.lineWidth=lw||4;x.strokeRect(l,t,w,h)}};
-const gear=(cx,cy,r,nT,rot,col)=>{x.save();x.translate(cx,cy);x.rotate(rot);x.beginPath();for(let i=0;i<nT*2;i++){const a=i*Math.PI/nT,rr=i%2?r:r*1.16,a2=a+Math.PI/nT,o=.72/nT;x.lineTo(Math.cos(a-o)*rr,Math.sin(a-o)*rr);x.lineTo(Math.cos(a2-o)*rr,Math.sin(a2-o)*rr)}x.closePath();x.fillStyle='#000';x.fill();x.strokeStyle=col;x.lineWidth=4;x.stroke();
-x.beginPath();x.arc(0,0,r*.26,0,6.3);x.stroke();for(let k=0;k<4;k++){const a=k*Math.PI/2;x.beginPath();x.moveTo(Math.cos(a)*r*.26,Math.sin(a)*r*.26);x.lineTo(Math.cos(a)*r*.8,Math.sin(a)*r*.8);x.stroke()}x.restore()};
+const gear=(cx,cy,r,nT,rot,col)=>window.GEARPRO(x,cx,cy,r,nT,rot,col);
 // bodky prúdu po lomenej čiare (pole bodov), u = posun 0..1
 const path=(P,closed)=>{const pts=closed?P.concat([P[0]]):P;const seg=[];let tot=0;for(let i=1;i<pts.length;i++){const l=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);seg.push(l);tot+=l}
 return {tot,at:(u)=>{let s=((u%1)+1)%1*tot;for(let i=0;i<seg.length;i++){if(s<=seg[i]||i==seg.length-1){const f=seg[i]?s/seg[i]:0;return [pts[i][0]+(pts[i+1][0]-pts[i][0])*f,pts[i][1]+(pts[i+1][1]-pts[i][1])*f]}s-=seg[i]}return pts[0]},
@@ -31,11 +30,11 @@ const RUN=(S,fn)=>(t,st)=>{const p=E(st(0,1));S.x.clearRect(0,0,864,560);S.x.glo
 
 // ---------- prevodovka: n=[zuby hnacieho, zuby hnaného] → otáčky a krútiaci moment ----------
 MECH2.gearbox=(v,d)=>{const S=M2(v,d),{x,A}=S;const a=Math.round(S.nn(0,12,6,60)),b=Math.round(S.nn(1,36,6,60));const i=b/a;
-const k=Math.min(165/(Math.max(a,b)*1.16),470/(2.32*(a+b))),r1=a*k,r2=b*k,D2=r1+r2+6;const c1=432-(r2-r1)/2-D2/2+0,c2=c1+D2,cy=215;const e1=c1-r1*1.16-18,e2=c2+r2*1.16+18;
+const k=Math.min(165/(Math.max(a,b)*1.16),470/(2.32*(a+b))),r1=a*k,r2=b*k,D2=r1+r2;const c1=432-(r2-r1)/2-D2/2+0,c2=c1+D2,cy=215;const e1=c1-r1*1.16-18,e2=c2+r2*1.16+18;
 const L0=S.lab(0,8,cy-30,e1-8,'right',22),L1=S.lab(1,e2,cy-30,856-e2,'left',22,A);
 const vN=S.val(32,470,250,'center',46),vI=S.val(307,462,250,'center',58,A),vM=S.val(582,470,250,'center',46);
 const sN=el('div','lab',`left:32px;top:432px;width:250px;text-align:center;font-size:20px;opacity:0`,esc(S.L[2]||'n')),sM=el('div','lab',`left:582px;top:432px;width:250px;text-align:center;font-size:20px;opacity:0`,esc(S.L[3]||'M'));v.append(sN,sM);fit(sN,20,13,30,250);fit(sM,20,13,30,250);
-return RUN(S,(t,st,p)=>{const sp=cl(st(.3,1)),w=t*1.6;x.globalAlpha=p;S.gear(c1,cy,r1,a,w,'#fff');S.gear(c2,cy,r2,b,-w/i+Math.PI/b+(b%2?0:Math.PI/b),A);
+return RUN(S,(t,st,p)=>{const sp=cl(st(.3,1)),w=t*1.6;x.globalAlpha=p;S.gear(c1,cy,r1,a,w,'#fff');S.gear(c2,cy,r2,b,window.GEARMESH(w,a,b,0),A);
 // smer otáčania
 x.globalAlpha=p*sp;[[c1,r1,1,'#fff'],[c2,r2,-1,A]].forEach(([cx,r,s,c])=>{const R=r*1.16+16,a0=-Math.PI/2-.5,a1=-Math.PI/2+.5;x.strokeStyle=c;x.lineWidth=3;x.beginPath();x.arc(cx,cy,R,a0,a1);x.stroke();const e=s>0?a1:a0,tx=-Math.sin(e)*s,ty=Math.cos(e)*s,px=cx+Math.cos(e)*R,py=cy+Math.sin(e)*R;x.beginPath();x.moveTo(px-tx*12-Math.cos(e)*7,py-ty*12-Math.sin(e)*7);x.lineTo(px,py);x.lineTo(px-tx*12+Math.cos(e)*7,py-ty*12+Math.sin(e)*7);x.stroke()});
 x.globalAlpha=p;S.op(L0,st(.4,.6));S.op(L1,st(.6,.6));const q=st(1.2,.8);S.txt(vI,'1 : '+S.f1(i),q);S.txt(vN,'× '+S.f1(1/i),st(1.6,.6));S.txt(vM,'× '+S.f1(i),st(1.9,.6));S.op(sN,st(1.6,.6));S.op(sM,st(1.9,.6));

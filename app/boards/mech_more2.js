@@ -17,8 +17,7 @@ const ci=(cx,cy,r,c,w,f)=>{x.beginPath();x.arc(cx,cy,Math.max(0,r),0,6.2832);if(
 const dot=(cx,cy,r,f)=>{x.fillStyle=f;x.beginPath();x.arc(cx,cy,r,0,6.2832);x.fill()};
 const rc=(l,t,w,h,c,lw,f)=>{if(f){x.fillStyle=f;x.fillRect(l,t,w,h)}if(c){x.strokeStyle=c;x.lineWidth=lw||4;x.strokeRect(l,t,w,h)}};
 const ct=(s,X,Y,fs,col,al,wt)=>{x.fillStyle=col||'#bdbdbd';x.font=`${wt||700} ${fs||18}px sans-serif`;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y)};
-const gear=(cx,cy,r,nT,rot,col,spk)=>{x.save();x.translate(cx,cy);x.rotate(rot);x.beginPath();for(let i=0;i<nT*2;i++){const a=i*Math.PI/nT,rr=i%2?r:r*(1+Math.min(.16,2.4/nT)),a2=a+Math.PI/nT,o=.72/nT;x.lineTo(Math.cos(a-o)*rr,Math.sin(a-o)*rr);x.lineTo(Math.cos(a2-o)*rr,Math.sin(a2-o)*rr)}x.closePath();x.fillStyle='#000';x.fill();x.strokeStyle=col;x.lineWidth=3;x.stroke();
-x.lineWidth=3;x.beginPath();x.arc(0,0,r*.2,0,6.3);x.stroke();const k=spk||5;for(let j=0;j<k;j++){const a=j*Math.PI*2/k;x.beginPath();x.moveTo(Math.cos(a)*r*.2,Math.sin(a)*r*.2);x.lineTo(Math.cos(a)*r*.82,Math.sin(a)*r*.82);x.stroke()}x.restore()};
+const gear=(cx,cy,r,nT,rot,col,spk)=>window.GEARPRO(x,cx,cy,r,nT,rot,col);
 const path=(P,closed)=>{const pts=closed?P.concat([P[0]]):P;const seg=[];let tot=0;for(let i=1;i<pts.length;i++){const l=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);seg.push(l);tot+=l}
 return {tot,pts,at:(u)=>{let s=((u%1)+1)%1*tot;for(let i=0;i<seg.length;i++){if(s<=seg[i]||i==seg.length-1){const f=seg[i]?s/seg[i]:0;return [pts[i][0]+(pts[i+1][0]-pts[i][0])*f,pts[i][1]+(pts[i+1][1]-pts[i][1])*f]}s-=seg[i]}return pts[0]},
 draw:(c,w)=>{x.strokeStyle=c||'#fff';x.lineWidth=w||4;x.beginPath();pts.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]));x.stroke()}}};
