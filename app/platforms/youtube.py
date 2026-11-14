@@ -447,6 +447,16 @@ def release(account, video_id, when=None):
     return video_id, f"https://youtu.be/{video_id}"
 
 
+def unschedule(account, video_id):
+    """Zruší naplánované zverejnenie (publishAt): video ostane na YouTube súkromné."""
+    tok = access_token(account)
+    with client(timeout=60) as c:
+        check(c.put("https://www.googleapis.com/youtube/v3/videos", params={"part": "status"},
+                    headers={"Authorization": f"Bearer {tok}"},
+                    json={"id": video_id, "status": {"privacyStatus": "private", "selfDeclaredMadeForKids": False}}),
+              "YouTube zrušenie plánu")
+
+
 def add_related(account, video_id, text):
     """Pridá riadok s odkazom na podobné video na koniec popisu a ten istý odkaz ako komentár kanála (pripnúť sa cez API nedá)."""
     if not text:

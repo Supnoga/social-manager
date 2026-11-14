@@ -67,7 +67,7 @@ PRO.piston=(v,d)=>{const x=cv2(v,864,560),A=D.acc,L=labs(v,d,4),any=L.some(e=>e.
 const CX=any?290:432,B=92,TOP=36,DECK=96,r=56,l=176,PH=84,PIN=46,CL=12,CY=DECK+CL+PIN+r+l,Ri=104,LB=306,T=5.6;
 L.forEach((e,i)=>place(e,CX+250,138+i*74,864-(CX+250)-6,'left'));
 const num=L.map((e,i)=>{const n=el('div','big',`left:${CX+196}px;top:${130+i*74}px;width:44px;text-align:center;font-size:34px;opacity:0`,String(i+1));v.append(n);return n});
-const rnd=[...Array(16)].map((_,i)=>[((i*0.618034)%1),((i*0.381966+.13)%1)]);
+const rnd=[...Array(16)].map((_,i)=>[((i*0.754878+.37)%1),((i*0.569840+.11)%1)]);
 const outer=()=>{x.rect(CX-B-24,TOP,2*B+48,LB-TOP+40);x.moveTo(CX+Ri+16,CY);x.arc(CX,CY,Ri+16,0,TAU)};
 const cavity=()=>{x.rect(CX-B,DECK,2*B,CY-DECK);x.moveTo(CX+Ri,CY);x.arc(CX,CY,Ri,0,TAU)};
 const port=s=>{x.beginPath();x.moveTo(CX+s*(B+118),62);x.lineTo(CX+s*96,62);x.quadraticCurveTo(CX+s*46,62,CX+s*46,DECK+1)};
