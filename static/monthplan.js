@@ -38,12 +38,12 @@ async function pProjectPlan(m, p) {
   const d = await api('/api/month-plan?project_id=' + p.id);
   const x = d.projects[0];
   const chip = c => c ? `<span class="chip ${MP_COVER[c.cover][0]}">${c.cover === 'model' ? esc(mpModel(c.model)) : MP_COVER[c.cover][1]}</span>` : '';
-  const shortTxt = s => !s ? '<span class="small" style="color:#ff8080">krátke chýba</span>'
+  const shortTxt = (s, r) => !s ? (r && r.wait ? '<span class="small dim">kanál začína až svojím prvým dlhým videom</span>' : '<span class="small" style="color:#ff8080">krátke chýba</span>')
     : s.idea_id ? `${FMT('short')} <span class="small">${esc(s.title)}</span>${s.script ? '' : ' <span class="small dim">· scenár až pri výrobe</span>'}`
     : `${FMT('short')} <span class="small dim">výrez ${s.cut} z „${esc(s.title)}“</span>`;
   const row = r => `<tr${r.long ? ' style="background:rgba(255,107,0,.06)"' : ''}><td style="width:90px;white-space:nowrap" class="small muted">${mpDay(r.date)}</td>
     <td>${r.long ? `<div style="margin-bottom:4px"><span class="small dim">14:00</span> ${FMT('long')} <a href="#/p/${p.id}/v/${r.long.idea_id}" style="color:#fff">${esc(r.long.title)}</a>${r.long.script ? '' : ' <span class="small dim">· scenár až pri výrobe</span>'}</div>` : r.long_gap ? '<div class="small" style="color:#ff8080;margin-bottom:4px">dlhé video: zatiaľ nie je téma s dobrým obrazom</div>' : ''}
-      <div><span class="small dim">18:00</span> ${shortTxt(r.short)}</div></td>
+      <div>${r.short ? '<span class="small dim">18:00</span> ' : ''}${shortTxt(r.short, r)}</div></td>
     <td style="text-align:right;white-space:nowrap">${chip(r.long || r.short)}</td></tr>`;
   m.innerHTML = `<div class="top"><div>${pTitle('Plán na mesiac')}
     <p class="muted">1 krátke video denne o 18:00, dlhé každý 3. deň o 14:00 a jeho 3 krátke v ten deň po ňom a 2 dni potom. ${x ? `Od ${esc(d.start)} na ${d.days} dní.` : ''}</p></div>
