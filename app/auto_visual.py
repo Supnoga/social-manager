@@ -7,7 +7,7 @@ RULES = [
     (r"jet engine|turbofan|turbojet|jet turbine", "jet", ["Intake", "Compressor", "Combustion", "Exhaust"]),
     (r"rotary engine|wankel|rotor housing|apex seal|triangular rotor", "wankel", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"turbo(charger|charged|charging)?s?\b|turbo lag|wastegate|boost pressure", "turbo", ["Exhaust in", "Turbine", "Compressor", "Air to engine"]),
-    (r"four[- ]stroke|piston|cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engine"
+    (r"four[- ]stroke|piston|(?<!lock )cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engines?\b"
      r"|(petrol|gasoline|inline[- ]?(four|six|4|6)|straight[- ](four|six)|boxer) engines?|\bv(6|8|10|12)\b|crankshaft|spark plugs?|engine knock",
      "piston", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"camshaft|valve timing|valves? open|valve ?train|timing (belt|chain)|cam lobe", "camshaft", ["Camshaft", "Valve", "Timing belt"]),
@@ -15,7 +15,7 @@ RULES = [
     (r"gearbox|transmission|gear ratio|shift(ing|s)? gears?|\bsynchro|layshaft|first gear|top gear", "gearbox", ["Input shaft", "Gear pairs", "Selector", "Output shaft"]),
     (r"\bbrake|braking|brake disc|brake pad", "car_brake", ["Brake disc", "Caliper", "Brake pads"]),
     (r"helicopter|main rotor|tail rotor", "rotor", ["Main rotor", "Tail rotor", "Torque"]),
-    (r"\bwing|airfoil|aerofoil|\blift\b(?! shaft)|how planes? fl", "wing", ["Lift", "Airflow"]),
+    (r"\bwing|airfoil|aerofoil|lift force|lift and drag|generat\w+ lift|\blift, not|how planes? fl", "wing", ["Lift", "Airflow"]),
     (r"parachut|skydiv|terminal velocity", "parachute", ["Drag", "Weight"]),
     (r"rocket|booster|launch vehicle|liftoff|stage separation", "rocket", ["Payload", "Second stage", "First stage"]),
     (r"satellite|\bgps\b|orbit", "orbit", ["Earth", "Satellites"]),
@@ -148,9 +148,20 @@ def topic(full, title="", strict=False):
     return m
 
 
+# názov menuje stroj, ale video je o jeho inej podobe, ktorú model neukazuje (rekuperačné brzdenie nie je kotúčová brzda): radšej žiadny model
+_AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine brak|air brake",
+          "gearbox": r"\bcvt\b|no gears|hybrid|direct[- ]drive|cycloidal|dual[- ]mass|dual[- ]clutch|automatic|planetary",
+          "gears": r"\bcvt\b|no gears", "wankel": r"[1-9][- ]stroke|one[- ]stroke|rival", "heatpump": r"brushless|\bmotors?\b|\bcost\b",
+          "piston": r"opposed|two[- ]stroke|2[- ]stroke|deactivat|diesel|spark plug makes|\bquiz\b|lasts longer",
+          "camshaft": r"rotary valve|camless|phaser", "turbo": r"supercharger",
+          "wind_turbine": r"\bweld|steel plates|\b1 piece|floats|floating", "solar": r"solar (thermal|water)"}
+
+
 def _topic(full, title=""):
     hit = find(title or "")
     if hit:
+        if hit[0] in _AVOID and re.search(_AVOID[hit[0]], title, re.I):
+            return None
         return hit[0] if hit[0] in PRECISE else None   # video je o inom stroji: jeho model nesmie zabrať celé video
     score = {}
     for m in dict.fromkeys(m for _, m, _ in _RX):
