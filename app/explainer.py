@@ -904,7 +904,29 @@ for _m in BOARD_META.values():
         _st = _v.get("steps") or [2]
         STEPS.setdefault(_k, lambda d, _st=_st: float(_st[0]) + (float(_st[1]) * len(d.get(_st[2]) or []) if len(_st) > 2 else 0))
 
-_lock = threading.Lock()
+class _Slots:
+    """Koľko videí sa smie skladať naraz (nastavenie render_parallel, 1–4, predvolene 2). Každé má vlastný prehliadač."""
+    _init = threading.Lock()
+
+    def __init__(self):
+        self._s = None
+
+    def __enter__(self):
+        with self._init:
+            if self._s is None:
+                try:
+                    n = int(db.get_setting("render_parallel", 2) or 2)
+                except Exception:
+                    n = 2
+                self._s = threading.BoundedSemaphore(max(1, min(4, n)))
+        self._s.acquire()
+        return self
+
+    def __exit__(self, *a):
+        self._s.release()
+
+
+_lock = _Slots()
 
 
 TAIL = 1.8  # záverečná karta s logom po dohovorení hlasu
