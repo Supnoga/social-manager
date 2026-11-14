@@ -905,7 +905,7 @@ for _m in BOARD_META.values():
         STEPS.setdefault(_k, lambda d, _st=_st: float(_st[0]) + (float(_st[1]) * len(d.get(_st[2]) or []) if len(_st) > 2 else 0))
 
 class _Slots:
-    """Koľko videí sa smie skladať naraz (nastavenie render_parallel, 1–4, predvolene 2). Každé má vlastný prehliadač.
+    """Koľko videí sa smie skladať naraz (nastavenie render_parallel, 1–8, predvolene 4). Každé má vlastný prehliadač.
     Nastavenie sa číta pri každom skladaní, takže sa dá meniť bez reštartu appky."""
 
     def __init__(self):
@@ -915,9 +915,9 @@ class _Slots:
     @staticmethod
     def limit():
         try:
-            return max(1, min(4, int(db.get_setting("render_parallel", 2) or 2)))
+            return max(1, min(8, int(db.get_setting("render_parallel", 4) or 4)))
         except Exception:
-            return 2
+            return 4
 
     def __enter__(self):
         with self._c:
