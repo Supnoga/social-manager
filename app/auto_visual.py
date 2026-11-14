@@ -15,7 +15,7 @@ RULES = [
     (r"gearbox|transmission|gear ratio|shift(ing|s)? gears?|\bsynchro|layshaft|first gear|top gear", "gearbox", ["Input shaft", "Gear pairs", "Selector", "Output shaft"]),
     (r"\bbrake|braking|brake disc|brake pad", "car_brake", ["Brake disc", "Caliper", "Brake pads"]),
     (r"helicopter|main rotor|tail rotor", "rotor", ["Main rotor", "Tail rotor", "Torque"]),
-    (r"\bwing|airfoil|aerofoil|lift force|lift and drag|generat\w+ lift|\blift, not|how planes? fl", "wing", ["Lift", "Airflow"]),
+    (r"\bwing|airfoil|aerofoil|lift force|lift and drag|generat\w+ lift|\blift, not|how planes? fl", "wing", ["Airflow", "Low pressure", "High pressure", "Lift"]),
     (r"parachut|skydiv|terminal velocity", "parachute", ["Drag", "Weight"]),
     (r"rocket|booster|launch vehicle|liftoff|stage separation", "rocket", ["Payload", "Second stage", "First stage"]),
     (r"satellite|\bgps\b|orbit", "orbit", ["Earth", "Satellites"]),
@@ -112,6 +112,16 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
               ("target", r"\becho|bounces?|reflect|\btarget\b|aircraft|\bplanes?\b|\bjet\b|missile|\bhull\b|metal"),
               ("pulse", r"\bpulses?\b|radio waves?|microwaves?|speed of light|\bbeam\b|sends? out|transmit|\bsignal"),
               ("antenna", r"antenna|\bdish\b|\barray\b|transmitter|receiver|rotat|\bsweeps?\b")],
+    "bridge": [("gap", r"expansion (joint|gap)|\bgaps?\b|expands?|contracts?|thermal|summer|winter|temperature"),
+               ("wind", r"\bwind\b|resonan|flutter|twist|oscillat|\bsway|gallop|tacoma|wobbl|vibrat"),
+               ("anchor", r"anchor|bedrock|concrete block|buried"), ("towers", r"\btowers?\b|pylons?|compress|foundation|caisson|\bpiers?\b"),
+               ("hangers", r"hangers?|suspenders?|vertical (cables|ropes)|hang(s|ing)? from"),
+               ("cable", r"main cable|\bcables?\b|\bwires?\b|strands?|tension|\bspun\b|spinning"),
+               ("deck", r"\bdeck\b|roadway|\broad\b|traffic|trucks?|\bcars?\b|\blanes?\b|girder|truss")],
+    "wing": [("stall", r"\bstall|separat|too steep|critical angle|loses? (its )?lift"), ("flap", r"\bflaps?\b|\bslats?\b|landing|take[- ]?off"),
+             ("pressure", r"pressure|suction|bernoulli|faster over|speeds? up over|\bsucks?"),
+             ("lift", r"\blift\b|upward force|newton|pushes? (the )?air down|downwash|deflect"),
+             ("flow", r"airflow|air flows?|streamlines?|leading edge|air (splits|hits|meets)")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
                   ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
 }
@@ -123,7 +133,8 @@ CAM_ONLY = {"turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "va
             "gearbox": {"input", "gears", "collar", "output"}, "differential": {"pinion", "spider"},
             "heatpump": {"evap", "comp", "cond", "valve"}, "wind_turbine": {"rotor", "gearbox", "generator"},
             "solar": {"light", "junction", "circuit"}, "tunnel": {"cutter", "jacks", "rings", "conveyor"},
-            "radar": {"antenna", "pulse", "target", "screen"}}
+            "radar": {"antenna", "pulse", "target", "screen"}, "bridge": {"deck", "hangers", "cable", "towers", "anchor"},
+            "wing": {"flow", "pressure", "lift"}}
 # tenké schémy, ktoré v krátkom videu o stroji nahradí model (grafy s číslami ostávajú)
 SOFT = {"flow", "cycle", "steps", "network", "tree", "layers", "split", "stack", "level", "zoom", "size", "sim", "forces", "myth", "dots",
         "funnel", "venn", "house", "crack", "clock", "matrix"}   # modely, ktoré vedia záber „beží naplno“
@@ -148,9 +159,11 @@ _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": 
             "wind_turbine": r"\bblades?\b|nacelle|\brotor\b|gearbox|generator|\byaw|\bpitch|megawatt|\bMW\b|\btower",
             "tunnel": r"cutter ?head|\bcutters?\b|lining|segments?|\brings?\b|\bjacks?\b|conveyor|\bshield\b|\bmuck\b|boring machine|\btbm\b",
             "radar": r"\bpulses?\b|\becho|antenna|\bdish\b|radio waves?|reflect|bounces?|\bblip|\bscreen\b|stealth|microwaves?",
+            "bridge": r"\bcables?\b|hangers?|suspenders?|\btowers?\b|anchor|\bdeck\b|suspension|\bspan\b|strands?",
+            "wing": r"\blift\b|airflow|air ?foil|angle of attack|\bstall|pressure|\bflaps?\b|leading edge|trailing edge|\bdrag\b",
             "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
 # model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
-_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3}
+_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3}
 
 
 def topic(full, title="", strict=False):
@@ -170,6 +183,8 @@ _AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine b
           "camshaft": r"rotary valve|camless|phaser", "turbo": r"supercharger",
           "wind_turbine": r"\bweld|steel plates|\b1 piece|floats|floating", "solar": r"solar (thermal|water)",
           "tunnel": r"sewer|flood|immersed|float|wind tunnel|drill and blast|\bblast|dynamite|by hand|\bmines?\b|mining|quantum|carpal|\bvpn\b|\bquiz\b|\bsink|riverbed|underwater|breathe|chimney|\bair\b|\bfire\b|\brain\b|drain|pump|stream|\bpipes?\b|never (came|dry)|stay cool|poured|below it all|cross passages|alive|future",
+          "bridge": r"paint|holes in|americas|\bships?\b|too low|\barch|truss bridge|draw ?bridge|bascule|cable[- ]stayed|pontoon|float|covered|beam bridge|\brope|land bridge|rectifier|cantilever|viaduct|aqueduct|\bstone|roman|lift bridge|swing|movable|\bopens?\b|\bquiz\b|\bship'?s? bridge|dental|card game",
+          "wing": r"holds itself|wobble|crosswind|wing low|grounded|winglet|swept|sweep|\bflex|\bbend|fold|\bbirds?\b|insect|wingtip|vortex|vortices|turbulence|\bice\b|icing|fuel|wingspan|delta|flying wing|\bquiz\b|buffalo|chicken|right[- ]wing|left[- ]wing|rivet|\bspar\b",
           "radar": r"sonar|lidar|speed (camera|trap|gun)|weather|\bquiz\b|microwave oven|candy|chocolate|passive|never transmits|phased|from space|\bimages?\b|mapping|sensor fusion|hopping|beamforming|signal processing|whisper|reveals its own|turn off|horizon|bomber|warning receivers?|locked on|lost fights"}
 
 
@@ -192,7 +207,7 @@ def _topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar"}
+NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
