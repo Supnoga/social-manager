@@ -9,7 +9,7 @@ const tag=(S,s,px,py,al,col,fs)=>{if(!s)return;const x=S.x;x.font=`800 ${fs||24}
 const meter=(S,val,unit,A,a,top)=>{const x=S.x,X=40,Y=top?118:S.h-70;x.save();x.globalAlpha*=a;x.textAlign='left';x.textBaseline='alphabetic';x.font=`900 64px ${S.FT}`;const w=x.measureText(val).width;x.fillStyle='rgba(0,0,0,.8)';x.beginPath();x.roundRect(X-14,Y-62,w+x.measureText(unit).width*.5+70,84,16);x.fill();x.fillStyle='#fff';x.fillText(val,X,Y);x.font=`800 30px ${S.FT}`;x.fillStyle=A;x.fillText(unit,X+w+12,Y);x.restore()};
 // kamera modelu: celok → zábery na časti → celok; f = jeden záber; run = pomalý nájazd
 const cams=(d,FULL,FV0,tour,DUR)=>{const f=String(d.f||''),PZ=WIDE?1:1.2,FV={};for(const k in FV0)FV[k]=[FV0[k][0],FV0[k][1],FV0[k][2]*PZ];   // na výšku idú zábery na časti bližšie, nech diel zaberie celú šírku
-if(f=='run')return [[0,FULL],[.2,[FULL[0],FULL[1],FULL[2]*1.14],Math.max(3,DUR)]];if(FV[f])return [[0,FULL],[.45,FV[f],.8]];
+if(f=='run')return [[0,FULL],[.2,[FULL[0],FULL[1],FULL[2]*1.14],Math.max(3,DUR)]];if(FV[f]){const KF=[[0,FULL],[.45,FV[f],.8]];for(let q=6.4;q<DUR-3.4;q+=6.6){KF.push([q,[FULL[0],FULL[1],FULL[2]*1.08],1]);KF.push([q+2.3,FV[f],.9])}return KF}   // dlhá scéna na jednej časti: kamera občas odíde na celok a vráti sa, obraz nestojí
 const n=tour.length,KF=[[0,FULL]];tour.forEach((k,i)=>KF.push([.9+i*(DUR*.72-.9)/n,FV[k],.8]));KF.push([DUR*.8,FULL,1]);return KF};
 
 // ---------- turbodmychadlo: výfukové plyny točia turbínu, tá cez hriadeľ točí kompresor, ktorý stláča vzduch do motora ----------

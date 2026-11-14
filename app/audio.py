@@ -124,7 +124,7 @@ def scene_times(scenes, words, total):
     sim = []
     for sc in scenes:
         a = sc.get("anim") if isinstance(sc.get("anim"), dict) else {}
-        tk = _tokens(" ".join([sc.get("onscreen") or ""] + list(_strings(a.get("d")))))
+        tk = _tokens(" ".join([sc.get("onscreen") or "", sc.get("visual") or ""] + list(_strings(a.get("d")))))   # aj opis obrazu: hovorí, o čom scéna je
         sim.append([sum(1.0 / df[x] for x in tk & st) for st in stoks])
     ideal = total / n
     NEG = -1e9
