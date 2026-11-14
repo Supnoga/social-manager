@@ -48,7 +48,7 @@ x.strokeStyle='#fff';x.lineWidth=2.2;x.lineCap='round';x.beginPath();x.moveTo(X,
 if(za>.01){const g=x.globalAlpha;x.globalAlpha=g*za;x.font=`900 13px ${S.FT}`;x.textAlign='center';x.textBaseline='middle';const w=x.measureText(s).width+12;x.fillStyle='rgba(0,0,0,.8)';x.beginPath();x.roundRect(X-w/2,Y+22,w,18,6);x.fill();x.fillStyle=col;x.fillText(s,X,Y+31.5);x.globalAlpha=g}};
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=ez((cm[2]/zf-(F=='run'?1.16:1))/.22),pk=1/Math.pow(Math.max(1,cm[2]/zf),.6),th=-Math.PI/2-WC*t,q=(WC*t/TAU)%1,ex=CC[0]+EC*Math.cos(th),ey=CC[1]+EC*Math.sin(th);
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);
-{const g=x.createRadialGradient(470,290,20,470,290,560);g.addColorStop(0,'rgba(86,118,160,.2)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(-140,-260,1240,1100)}
+
 if(HI){// prostredie: zem, betónový základ na gumených nohách, stena domu a teplo za ňou
 x.fillStyle='rgba(255,255,255,.04)';x.fillRect(-200,598,1400,420);x.strokeStyle='rgba(255,255,255,.4)';x.lineWidth=2;x.beginPath();x.moveTo(-200,598);x.lineTo(1200,598);x.stroke();
 x.fillStyle='rgba(255,255,255,.2)';for(let j=0;j<70;j++)x.fillRect(-190+HS(j,64)*1380,606+HS(j,65)*120,2.2,2.2);

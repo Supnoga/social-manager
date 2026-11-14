@@ -18,7 +18,7 @@ const Y=CY+sy*BL,s=sy>0?1:-1;x.beginPath();x.moveTo(HUBX-19,CY+s*30);x.quadratic
 const cone=()=>{x.beginPath();x.moveTo(196,CY-52);x.bezierCurveTo(120,CY-56,62,CY-30,58,CY);x.bezierCurveTo(62,CY+30,120,CY+56,196,CY+52);x.closePath()};
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=ez((cm[2]/zf-(RUN?1.16:1))/.22),w=wr(t),wk=w/1.57,aR=integ(wr,t),aI=-5*aR,aG=20*aR;
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);
-{const g=x.createRadialGradient(450,290,20,450,290,560);g.addColorStop(0,'rgba(86,118,160,.2)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(-160,-300,1240,1200)}
+
 // vietor
 x.lineCap='round';for(let i=0;i<44;i++){const u=(t*.2*(.7+.6*HS(i,41))*wk+HS(i,42))%1,X=-90+u*1100,Y=-150+HS(i,43)*860;x.strokeStyle=`rgba(190,226,255,${(.32*Math.sin(Math.PI*u)).toFixed(3)})`;x.lineWidth=2.5;x.beginPath();x.moveTo(X,Y);x.lineTo(X+30*wk,Y);x.stroke()}x.lineCap='butt';
 // veža a otoč gondoly (stoja)
