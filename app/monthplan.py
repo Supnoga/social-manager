@@ -60,21 +60,35 @@ def build_project(pid, start, days=30, offset=0):
     d0 = dt.date.fromisoformat(start)
     dates = [d0 + dt.timedelta(days=n) for n in range(days)]
     longs = [d for d in dates if (d.toordinal() + offset) % LONG_EVERY == 0]
-    used = picked[:len(longs)]
+    made = {k.split(":")[1]: v for k, v in (db.get_setting("month_plan_made", {}) or {}).items() if k.split(":")[0] == str(pid)}
+    made_rows = {}
+    for dte, m in made.items():   # už vyrobené dlhé ostane vo svojom dni aj po prestavaní plánu
+        r = db.one("SELECT id, title, COALESCE(score,0) score, status, 1 has_script FROM ideas WHERE id=?", (m.get("long"),))
+        if r:
+            r["cover"], r["model"] = _cover(r["title"] or "")
+            if r["cover"] == "gap":
+                r["cover"] = "verify"
+            made_rows[dte] = r
+    used = picked[:len([d for d in longs if d.isoformat() not in made_rows])]
     queue, cur, out = [], None, []
-    kids_of = {r["id"]: _children(r["id"]) for r in used}
+    kids_of = {r["id"]: _children(r["id"]) for r in used + list(made_rows.values())}
     li = 0
     for day in dates:
         rec = {"date": day.isoformat(), "long": None}
         if (day.toordinal() + offset) % LONG_EVERY == 0:
-            if li < len(used):
-                r = used[li]
-                li += 1
+            if day.isoformat() in made_rows or li < len(used):
+                r = made_rows.get(day.isoformat())
+                if not r:
+                    r = used[li]
+                    li += 1
                 cur = r
                 rec["long"] = {"idea_id": r["id"], "title": r["title"], "script": bool(r["has_script"]), "status": r["status"],
-                               "cover": r["cover"], "model": r["model"]}
+                               "cover": r["cover"], "model": r["model"], "made": day.isoformat() in made_rows}
                 ks = [{"idea_id": k["id"], "title": k["title"], "script": bool(k["has_script"])} for k in kids_of[r["id"]]]
+                nd = int((made.get(day.isoformat()) or {}).get("shorts") or 0)
+                ks = [{"done": True, "title": r["title"], "cut": 0} for _ in range(nd)] + ks
                 queue = ks + [{"cut": len(ks) + i + 1, "title": r["title"]} for i in range(LONG_EVERY - len(ks))]
+                queue = queue[:LONG_EVERY]
                 for q in queue:
                     q.update(of=r["id"], cover=r["cover"], model=r["model"])
             else:

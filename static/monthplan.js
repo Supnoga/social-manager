@@ -39,6 +39,7 @@ async function pProjectPlan(m, p) {
   const x = d.projects[0];
   const chip = c => c ? `<span class="chip ${MP_COVER[c.cover][0]}">${c.cover === 'model' ? esc(mpModel(c.model)) : MP_COVER[c.cover][1]}</span>` : '';
   const shortTxt = (s, r) => !s ? (r && r.wait ? '<span class="small dim">kanál začína až svojím prvým dlhým videom</span>' : '<span class="small" style="color:#ff8080">krátke chýba</span>')
+    : s.done ? `${FMT('short')} <span class="small dim">hotové</span>`
     : s.idea_id ? `${FMT('short')} <span class="small">${esc(s.title)}</span>${s.script ? '' : ' <span class="small dim">· scenár až pri výrobe</span>'}`
     : `${FMT('short')} <span class="small dim">výrez ${s.cut} z „${esc(s.title)}“</span>`;
   const row = r => `<tr${r.long ? ' style="background:rgba(255,107,0,.06)"' : ''}><td style="width:90px;white-space:nowrap" class="small muted">${mpDay(r.date)}</td>
