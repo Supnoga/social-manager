@@ -61,7 +61,7 @@ def _precise():
     """Stroje s presným spočítaným modelom = tie, ktoré má zz_mech_pro.js (zoznam sa číta priamo z neho)."""
     try:
         from pathlib import Path
-        js = (Path(__file__).parent / "boards" / "zz_mech_pro.js").read_text(encoding="utf-8")
+        js = "\n".join(f.read_text(encoding="utf-8") for f in sorted((Path(__file__).parent / "boards").glob("zz_mech_pro*.js")))
         return set(re.findall(r"^PRO\.(\w+)=", js, re.M)) or {"piston", "wankel", "gears"}
     except Exception:
         return {"piston", "wankel", "gears"}
