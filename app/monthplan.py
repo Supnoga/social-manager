@@ -1,8 +1,8 @@
 """Mesačný plán (1.64): pre každý kanál na každý deň 1 dlhé video a jeho 3 krátke.
 
 Bez AI, len z nápadov, ktoré už sú v appke:
-- kanál o strojoch: dlhé video len vtedy, keď má jeho téma presný model (auto_visual.topic). Stroj bez modelu = červená medzera.
-- ostatné kanály: téma „overí sa pri skladaní“ – rozhodne kontrola obrazu (video, ktoré neprejde, ostane zadržané a plán vezme ďalšiu tému).
+- téma s presným modelom (auto_visual.topic) ide prvá; stroj bez modelu sa nepoužije (červená medzera).
+- témy bez stroja: „overí sa pri skladaní“ – rozhodne kontrola obrazu (video, ktoré neprejde, ostane zadržané a plán vezme ďalšiu tému).
 - krátke: najprv vlastné krátke nápady dlhého videa (parent), zvyšok sú výrezy z dlhého (jedno volanie AI až pri výrobe).
 Plán sa ukladá do nastavenia month_plan, nič sa nevyrába ani nenahráva."""
 import datetime as dt
@@ -37,20 +37,21 @@ def _children(lid):
 
 def build_project(pid, start, days=30):
     machine = _machine_project(pid)
-    picked, gaps = [], {}
+    picked, rest, gaps = [], [], {}
     for r in _longs(pid):
         title = r["title"] or ""
-        if machine:
-            m = auto_visual.topic(title, title)
-            if not m:
-                hit = auto_visual.find(title)
-                if hit:
-                    gaps[hit[0]] = gaps.get(hit[0], 0) + 1
-                continue
+        m = auto_visual.topic(title, title)
+        if m:   # presný model: ide prvé
             r["cover"], r["model"] = "model", m
-        else:
-            r["cover"], r["model"] = "verify", ""
-        picked.append(r)
+            picked.append(r)
+            continue
+        hit = auto_visual.find(title)
+        if hit:   # stroj, ku ktorému model ešte nie je = medzera, nečaká sa na kontrolu
+            gaps[hit[0]] = gaps.get(hit[0], 0) + 1
+            continue
+        r["cover"], r["model"] = "verify", ""   # téma bez stroja: rozhodne kontrola obrazu pri skladaní
+        rest.append(r)
+    picked += rest
     out = []
     d0 = dt.date.fromisoformat(start)
     for n in range(days):
@@ -75,8 +76,11 @@ def build_project(pid, start, days=30):
 def build(project_ids=None, start=None, days=30):
     start = start or (dt.date.today() + dt.timedelta(days=1)).isoformat()
     days = max(1, min(62, int(days or 30)))
-    ids = project_ids or [r["id"] for r in db.q("SELECT id FROM projects ORDER BY id")]
     plan = db.get_setting("month_plan", {}) or {}
+    if not project_ids:   # celý plán: kanály, ktoré sa plánujú (plan_projects), inak všetky
+        project_ids = [int(k) for k in (db.get_setting("plan_projects", {}) or {})] or [r["id"] for r in db.q("SELECT id FROM projects ORDER BY id")]
+        plan["projects"] = {}
+    ids = project_ids
     plan.setdefault("projects", {})
     plan.update(start=start, days=days, built=time.strftime("%Y-%m-%d %H:%M"))
     for pid in ids:
