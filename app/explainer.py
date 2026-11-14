@@ -90,7 +90,7 @@ PACK = {
     "lines": '{"k":"lines","x":["6:00","9:00","12:00","15:00","18:00"],"s":[["Solar",[0,30,80,50,5]],["Demand",[40,60,55,60,90]]]} = 2-3 lines over the same time (supply vs demand, two brands)',
     "hist": '{"k":"map","y":[-200,-1,117],"h":["Roman Empire"],"l":"optional tag"} = HISTORICAL map: approximate borders in that year (1-4 years show growth or fall over time), h = empire or state names as in history books',
     "truesize": '{"k":"map","c":["RU"],"t":"US"} = true size: the first country slides onto country t at the same real size',
-    "mech": '{"k":"mech","m":"piston|gears|wing|wave|radar|orbit|pendulum|jet","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine (l = the 4 strokes), gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
+    "mech": '{"k":"mech","m":"piston|wankel|gears|wing|wave|radar|orbit|pendulum|jet","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine cutaway (l = the 4 strokes), wankel = rotary engine cutaway (l = intake, compression, power, exhaust), gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
 }
 CHANNEL_PACKS = {
     "cash": ("growth", "inflation", "pie", "stack", "dots", "lines"), "wallet": ("loan", "growth", "pie", "waterfall", "inflation", "stack"),
@@ -668,6 +668,7 @@ fridge:'<rect x="26" y="8" width="48" height="84" rx="6"/><path d="M26 38 H74"/>
 fan:'<circle cx="50" cy="40" r="32"/><g class="spin"><circle cx="50" cy="40" r="4"/><path d="M50 36 C58 30 58 18 50 12 C46 20 46 30 50 36 Z"/><path d="M53.5 42 C63 44 72 52 74 58 C64 58 56 50 53.5 42 Z"/><path d="M46.5 42 C44 50 36 58 26 58 C28 50 37 44 46.5 42 Z"/></g><path d="M38 70 L32 90 H68 L62 70"/>',
 boiler:'<rect x="24" y="8" width="52" height="70" rx="6"/><path d="M50 60 C40 52 44 42 50 34 C56 42 60 52 50 60 Z"/><path d="M34 20 H66"/><path d="M36 78 V92 M64 78 V92"/>',
 city:'<path d="M8 88 H92"/><rect x="14" y="40" width="20" height="48"/><rect x="40" y="18" width="22" height="70"/><rect x="68" y="50" width="18" height="38"/><path d="M20 50 H28 M20 62 H28 M46 30 H56 M46 44 H56 M46 58 H56 M73 60 H81 M73 72 H81"/>'};
+const WSPIN=new Set('gear wheel tyre saw_blade flywheel impeller propeller ship_propeller sprocket ball_bearing roller_bearing brake_disc vinyl film_reel roulette ship_wheel'.split(' '));const canSpin=n=>WSPIN.has(IR(String(n||'')));
 function IR(name){const ok=n=>ICONS[n]?n:(ICON_ALIAS[n]&&ICONS[ICON_ALIAS[n]]?ICON_ALIAS[n]:null);const one=n=>ok(n)||ok(n.replace(/ies$/,'y'))||ok(n.replace(/es$/,''))||ok(n.replace(/s$/,''));
 let n=String(name||'').toLowerCase().trim().replace(/[\s-]+/g,'_');let r=one(n);if(r)return r;const p=n.split('_').filter(Boolean);for(let i=p.length-1;i>=0;i--){r=one(p[i]);if(r)return r}return 'check'}
 function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[IR(name)]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
@@ -779,7 +780,7 @@ const pos=NN.map(()=>[0,0]);cols.forEach((c,ci)=>c.forEach((i,ri)=>{pos[i]=[cw*c
 const s=svg(864,560,'');s.style.position='absolute';s.style.left='0';s.style.top='0';v.append(s);
 const nodes=NN.map((x,i)=>{const hot=LL.some(e=>e[1]==i&&e[3])&&!LL.some(e=>e[0]==i);const ic=icon(x[0],sz,hot?D.acc:'#fff',2.8);ic.style.left=(pos[i][0]-sz/2)+'px';ic.style.top=(pos[i][1]-sz/2)+'px';v.append(ic);
 const lb=el('div','lab',`left:${pos[i][0]-cw/2+8}px;width:${cw-16}px;top:${pos[i][1]+sz/2+10}px;text-align:center;font-size:22px;letter-spacing:2px;${hot?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,22,13,58,cw-40);
-return {ic,lb,a:String(x[2]||''),at:lay[i],ph:i*1.7}});
+return {ic,lb,n:x[0],a:String(x[2]||''),at:lay[i],ph:i*1.7}});
 const mk=(tag,at)=>{const e=document.createElementNS(SVGNS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
 const links=LL.map((e,k)=>{const a=pos[e[0]],b=pos[e[1]],col=e[3]?D.acc:'#9a9a9a',g=sz/2+16;let dstr;
 if(lay[e[1]]>lay[e[0]]){const x1=a[0]+g,x2=b[0]-g;dstr=a[1]==b[1]?`M${x1} ${a[1]} H${x2}`:`M${x1} ${a[1]} C${(x1+x2)/2} ${a[1]} ${(x1+x2)/2} ${b[1]} ${x2} ${b[1]}`}
@@ -789,7 +790,7 @@ const hd=mk('path',{d:`M${q.x-H*Math.cos(an-.5)} ${q.y-H*Math.sin(an-.5)} L${q.x
 const dots=[0,1].map(()=>{const c=mk('circle',{r:5.5,fill:e[3]?D.acc:'#fff',opacity:0});s.append(c);return c});
 const flat=a[1]==b[1]||lay[e[1]]<=lay[e[0]],skip=lay[e[1]]-lay[e[0]]>1;const m=pa.getPointAtLength(L*(flat&&skip?.2:.5));const lb=el('div','lab',flat?`left:${m.x-120}px;width:240px;top:${m.y-(skip?-12:44)}px;text-align:center;`:`left:${m.x+16}px;width:200px;top:${m.y-13}px;text-align:left;`);lb.style.cssText+=`font-size:20px;letter-spacing:1.5px;color:${e[3]?'var(--acc)':'#d0d0d0'};text-shadow:0 0 10px #000,0 0 10px #000`;lb.innerHTML=esc(e[2]||'');v.append(lb);fit(lb,20,13,30,flat?Math.max(90,(skip?.4:1)*(Math.abs(b[0]-a[0])-sz-20)):Math.max(70,(b[0]-a[0])/2-sz/2));
 return {pa,hd,dots,lb,L,at:Math.max(lay[e[0]],lay[e[1]]-1)+.6}});
-return (t,st)=>{nodes.forEach(o=>{const p=st(o.at*1.2,.9);draw(o.ic,p);o.ic.style.opacity=p>0?1:0;let tr=`scale(${.9+.1*E(p)})`;if(/shake/.test(o.a))tr+=` translate(${Math.sin(t*31+o.ph)*4}px,${Math.cos(t*27+o.ph)*2}px)`;if(/float/.test(o.a))tr+=` translateY(${Math.sin(t*1.4+o.ph)*7}px)`;if(/pulse/.test(o.a))tr+=` scale(${1+.06*Math.sin(t*3.2+o.ph)})`;if(/spin/.test(o.a))tr+=` rotate(${(t*80)%360}deg)`;o.ic.style.transform=tr;show(o.lb,st(o.at*1.2+.4,.5),0)});
+return (t,st)=>{nodes.forEach(o=>{const p=st(o.at*1.2,.9);draw(o.ic,p);o.ic.style.opacity=p>0?1:0;let tr=`scale(${.9+.1*E(p)})`;if(/shake/.test(o.a))tr+=` translate(${Math.sin(t*31+o.ph)*4}px,${Math.cos(t*27+o.ph)*2}px)`;if(/float/.test(o.a))tr+=` translateY(${Math.sin(t*1.4+o.ph)*7}px)`;if(/pulse/.test(o.a))tr+=` scale(${1+.06*Math.sin(t*3.2+o.ph)})`;if(/spin/.test(o.a)&&canSpin(o.n))tr+=` rotate(${(t*80)%360}deg)`;o.ic.style.transform=tr;show(o.lb,st(o.at*1.2+.4,.5),0)});
 links.forEach((o,k)=>{const p=st(o.at*1.2,.8);o.pa.style.strokeDasharray='1 1';o.pa.style.strokeDashoffset=1-cl(p);o.hd.setAttribute('opacity',p>=1?1:0);show(o.lb,st(o.at*1.2+.5,.5),0);
 o.dots.forEach((c,i)=>{const q=((t*.5+i/2+k*.17)%1);if(p<1){c.setAttribute('opacity',0);return}const pt=o.pa.getPointAtLength(q*o.L);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);c.setAttribute('opacity',Math.sin(q*Math.PI))})})}};
 // vlastná kresba: AI opíše jednoduché tvary, appka ich nakreslí a rozhýbe (ukázať, nie len povedať)
@@ -815,7 +816,7 @@ s.append(g);const dots=/flow/.test(A)&&flow?[0,1,2].map(()=>{const c=mk('circle'
 const pts=[];if(o.s=='turbine'){const x=p[0]||216,y=p[1]||240,h=Math.max(60,p[2]||150),R=h*.42;for(let k=0;k<=10;k++)pts.push([x,y-h*k/10]);[1,.6,.25].forEach(f=>{for(let k=0;k<20;k++)pts.push([x+R*f*Math.cos(k*.314),y-h+R*f*Math.sin(k*.314)])})}
 else if(o.s=='icon'){const z=Math.max(20,p[2]||60);for(let a=0;a<=4;a++)for(let b=0;b<=4;b++)pts.push([p[0]-z/2+z*a/4,p[1]-z/2+z*b/4])}
 else if(o.s!='text')g.querySelectorAll('.d').forEach(e=>{try{const L=e.getTotalLength(),m=Math.max(8,Math.min(60,Math.round(L/5)));for(let k=0;k<=m;k++){const q=e.getPointAtLength(L*k/m);pts.push([q.x,q.y])}}catch(_){}});
-return {g,lb,rot,cx,cy,A,at:Math.max(0,n(o.at)),dots,flow,ph:cx*.05+cy*.03,spin:/spin/.test(A)&&!rot,pts,tx:o.s=='text'?g.firstChild:null}}).filter(Boolean);
+return {g,lb,rot,cx,cy,A,at:Math.max(0,n(o.at)),dots,flow,ph:cx*.05+cy*.03,spin:/spin/.test(A)&&!rot&&(o.s!='icon'||canSpin(o.i)),pts,tx:o.s=='text'?g.firstChild:null}}).filter(Boolean);
 // texty a popisy nesmú ležať na čiarach ani na sebe: nájdi najbližšie voľné miesto
 const placed=[];const P=els.reduce((a,e)=>a.concat(e.pts),[]);
 const bb=e=>{try{const b=e.getBBox();return [b.x-3,b.y-2,b.x+b.width+3,b.y+b.height+2]}catch(_){return null}};
@@ -1028,7 +1029,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     from . import auto_visual
     for sc, (t0, t1) in zip(scenes, times):
         spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
-        v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12)
+        v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text)
         prev = v.get("m") if v.get("k") == "mech" else None
         v = prepare(v, lang)
         h = (sc.get("onscreen") or "").strip()
