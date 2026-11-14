@@ -93,9 +93,9 @@ const metal=(x,x0,x1)=>{const g=x.createLinearGradient(x0,0,x1,0);g.addColorStop
 // takže zaberá celú obrazovku a text pláva nad ním. Súradnice modelu a čísla pri ňom (S.w × S.h) ostávajú rovnaké.
 // PEVNÉ ZÓNY: model má vlastné okno (S.w × S.h) a nič z neho nejde pod nadpis ani pod titulky. Čísla a názvy pri modeli (doba, merač, číslo z hlasu)
 // majú vlastné plátno mimo okna – na výšku pás pod modelom, na šírku stĺpec vľavo – a každé svoje miesto, takže neležia cez model ani cez seba.
-const WD=!!D.wide,ZN=WD?{l:165,t:17,w:900,h:526,hl:-200,ht:17,hw:348,hh:526}:{l:-58,t:-133,w:980,h:729,hl:-58,ht:602,hw:980,hh:84};
+const WD=!!D.wide,ZN=WD?{l:165,t:17,w:900,h:526,hl:-200,ht:17,hw:348,hh:428}:{l:-58,t:-133,w:980,h:729,hl:-58,ht:602,hw:980,hh:84};
 // miesta v páse: [x, y, šírka, výška, zarovnať vpravo, prekryje susedov]
-const SLOT=WD?{callout:[0,10,348,104],stamp:[0,150,348,84],meter:[0,268,348,70],meterL:[0,268,348,70],badge:[0,352,348,70],mid:[0,436,110,86]}
+const SLOT=WD?{callout:[0,10,348,104],stamp:[0,150,348,84],meter:[0,268,348,70],meterL:[0,268,348,70],badge:[0,352,228,70],mid:[238,352,110,70]}
 :{stamp:[34,0,326,84],meterL:[34,7,326,70],meter:[376,7,220,70],mid:[606,12,56,60],badge:[672,7,228,70,1],callout:[376,0,524,84,1,1]};
 const STG=v=>{const Z=v._zn?{l:v._zn[0],t:v._zn[1],w:v._zn[2],h:v._zn[3]}:ZN,w=Z.w,h=Z.h,R=2,mk=(l,t,cw,ch,cls)=>{const c=el('canvas',cls,`position:absolute;left:${l}px;top:${t}px;width:${cw}px;height:${ch}px`);c.width=cw*R;c.height=ch*R;v.append(c);return c};
 // jemná žiara za strojom: hladká, bez hrán, smie presahovať okno (nie je to obsah)
@@ -254,7 +254,7 @@ PRO.rotary=PRO.wankel;
 PRO.versus=(v,d)=>{const ms=[d.a,d.b].map((m,i)=>PRO[m]&&m!='versus'?m:['piston','wankel'][i]),LN=(Array.isArray(d.l)?d.l:[]).map(s=>String(s==null?'':s).toUpperCase()),A=D.acc;
 const FT=(getComputedStyle(document.documentElement).getPropertyValue('--f')||'').trim()||'Helvetica Neue,Arial,sans-serif';
 // každý stroj má svoju polovicu okna, mená a „VS“ sú v riadku nad nimi – nič neleží cez stroj
-const X0=WD?ZN.hl:ZN.l,WW=WD?ZN.l+ZN.w-ZN.hl:ZN.w,HW=WW/2,HD=64,Y0=ZN.t;
+const X0=WD?-50:ZN.l,WW=WD?ZN.l+ZN.w-X0:ZN.w,HW=WW/2,HD=64,Y0=ZN.t;
 const ups=ms.map((m,i)=>{const w=el('div','','position:absolute;left:0;top:0;width:864px;height:560px');w._zn=[X0+i*HW,Y0+HD,HW,ZN.h-HD];w._zs=.86;v.append(w);return PRO[m](w,{m,f:'run',_dur:d._dur,l:[]})});
 const tags=ms.map((m,i)=>{const e=el('div','',`position:absolute;left:${X0+i*HW+(i?50:20)}px;top:${Y0+8}px;width:${HW-70}px;text-align:center;white-space:nowrap;font:800 34px/48px ${FT};letter-spacing:.02em;color:#fff`,esc(LN[i]||''));v.append(e);fit(e,34,16,52,HW-70);return e});
 const vs=el('div','',`position:absolute;left:${X0+HW-29}px;top:${Y0+3}px;width:52px;height:52px;border-radius:50%;background:#050607;border:3px solid ${A};color:${A};font:900 21px/52px ${FT};text-align:center;box-shadow:0 0 18px ${A}66`,'VS');v.append(vs);
