@@ -37,7 +37,7 @@ RULES = [
     (r"wind turbine|wind power|wind farm|wind energy", "wind_turbine", ["Wind", "Power"]),
     (r"solar (panel|cell|power|energy)|photovoltaic", "solar", ["Sunlight", "Solar cell", "Load"]),
     (r"heat pump|wärmepumpe|tepeln\w+ čerpad|tepeln\w+ čerpad|pompa ciepła|hőszivattyú|refrigerant", "heatpump",
-     ["Outdoor air", "Compressor", "Heat", "Expansion valve"]),
+     ["Evaporator", "Compressor", "Condenser", "Expansion valve"]),
     (r"air ?condition|\bac unit", "aircon", ["Compressor", "Cooling", "Heat outside"]),
     (r"fridge|refrigerator", "fridge", ["Compressor", "Cold", "Heat"]),
     (r"generator|dynamo|alternator", "generator", ["Turbine", "Generator", "Bulb"]),
@@ -91,12 +91,16 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
                      ("hold", r"hold(s|ing)? one wheel|\bheld\b|one wheel (is )?(stopped|stuck|locked|stops)|stand(s|ing)? still|twice as fast|\bice\b|\bmud\b|wheel ?spin|(loses?|no|without) grip|spins? freely|open diff"),
                      ("straight", r"straight|same speed|turn together|as one (block|piece|unit)|do(es)? not spin|nothing spins"),
                      ("turn", r"corner|\bbend|inner wheel|outer wheel|inside wheel|outside wheel|different speeds?|faster|slower|speeds up|slows down")],
+    "heatpump": [("valve", r"expansion|\bvalve|pressure drops?|throttl|expanz|škrtiac|drossel|rozpręż"),   # aj v jazykoch N2N
+                 ("comp", r"compress|squeez|kompres|verdicht|sprężark"),
+                 ("cond", r"condens|kondenz|verflüssig|skraplacz|heat exchanger|plate|to the water|heats? (the |your )?water|radiator|underfloor|floor heating|hot water"),
+                 ("evap", r"evaporat|výparn|verdampf|parownik|outdoor (air|coil)|outside air|from the air|\bfan\b|\bcoil\b|absorb|boil")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
                   ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
 }
 FOCUS = {m: [(f, re.compile(r, re.I)) for f, r in _STROKES] for m in ("piston", "wankel", "rotary")}
 FOCUS.update({m: [(f, re.compile(r, re.I)) for f, r in v] for m, v in _PARTS.items()})
-RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox")   # modely, ktoré vedia záber „beží naplno“
+RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump")   # modely, ktoré vedia záber „beží naplno“
 WEAK = ("hero", "icons", "scene", "draw", "text", "list")
 # ikony, ktoré sa naozaj točia; ostatné sa nemajú otáčať (otáčajúca sa značka motora pôsobí lacno)
 SPINS = set("gear wheel tyre saw_blade flywheel impeller propeller ship_propeller sprocket ball_bearing roller_bearing brake_disc vinyl film_reel roulette ship_wheel".split())
@@ -113,11 +117,22 @@ def find(text):
 _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": r"crankshaft|\bstrokes?\b|\bvalves?\b|connecting rod",
             "gears": r"\bteeth\b|\btooth\b|\bmesh|\bratio", "turbo": r"turbine|compressor|\bboost|exhaust gas|intercooler|\bspool",
             "camshaft": r"\blobes?\b|\bvalves?\b|timing|\bcams?\b", "car_brake": r"caliper|\bpads?\b|\bdis[ck]s?\b|friction|brake fluid|pedal",
-            "gearbox": r"\bgears?\b|\bshift|clutch|\bratio|synchro|\bshafts?\b", "differential": r"\bwheels?\b|corner|axle|spider|pinion|ring gear|\bturns?\b"}
+            "gearbox": r"\bgears?\b|\bshift|clutch|\bratio|synchro|\bshafts?\b", "differential": r"\bwheels?\b|corner|axle|spider|pinion|ring gear|\bturns?\b",
+            "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
+# model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
+_NEEDS = {"heatpump": 2}
 
 
-def topic(full, title=""):
-    """Stroj s presným modelom, o ktorom je celé video. Rozhoduje názov videa; bez neho musí stroj v texte jasne prevládať. Inak None."""
+def topic(full, title="", strict=False):
+    """Stroj s presným modelom, o ktorom je celé video. Rozhoduje názov videa; bez neho musí stroj v texte jasne prevládať. Inak None.
+    strict (hotový scenár): pri strojoch z _NEEDS musí text hovoriť aj o ich častiach, inak video nie je o tom, ako stroj funguje."""
+    m = _topic(full, title)
+    if strict and m in _NEEDS and len(re.findall(_SUPPORT.get(m, r"$^"), full or "", re.I)) < _NEEDS[m]:
+        return None
+    return m
+
+
+def _topic(full, title=""):
     hit = find(title or "")
     if hit:
         return hit[0] if hit[0] in PRECISE else None   # video je o inom stroji: jeho model nesmie zabrať celé video
@@ -134,7 +149,7 @@ def topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential"}
+NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
@@ -234,6 +249,9 @@ def sound_events(sc_data):
                 hits = [(0.5236 + j * 2.0944) / w for j in range(60)]
             elif f in ("intake", "exhaust"):
                 kind, hits = {"intake": "air", "exhaust": "hiss"}[f], [.5]
+        elif m == "heatpump":   # ventilátor ženie vzduch, za ventilom chladivo zasyčí
+            if f in ("", "evap", "valve"):
+                kind, hits = ("hiss" if f == "valve" else "air"), [.5]
         hits = [h for h in hits if 0 <= h and t0 + sh + h < end]
         if len(hits) > 5:   # pri behu naplno stačí pár úderov, nie každý zážih
             hits = hits[::-(-len(hits) // 5)]

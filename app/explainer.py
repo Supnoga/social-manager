@@ -1098,7 +1098,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     seen_mech = set()
     from . import auto_visual
     # stroj, o ktorom je celé video (ak má presný model): podľa názvu videa, inak podľa toho, čo v texte prevláda
-    topic = auto_visual.topic(" . ".join([text] + [f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''}" for sc in scenes]), title)
+    topic = auto_visual.topic(" . ".join([text] + [f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''}" for sc in scenes]), title, strict=True)
     for i, (sc, (t0, t1)) in enumerate(zip(scenes, times)):
         spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
         v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text,

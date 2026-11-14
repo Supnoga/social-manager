@@ -100,4 +100,5 @@ if(fi>=0&&t>.35)stamp(S,fi,[LN[0],LN[2]][fi]||'',2,t-.35,A);
 if(HOLD){meter(S,(1-k).toFixed(1),'× CAGE',A,a,fi>=0);badge(S,(1+k).toFixed(1),'× CAGE',A,a)}else{meter(S,String(nl),'RPM',A,a,fi>=0);badge(S,String(1000-nl),'RPM',A,a);x.globalAlpha=p*a;arrow(k);x.globalAlpha=p}
 callout(S,d,t,A);x.globalAlpha=1}};
 CTX.differential=['car','diff'];
+Object.assign(K,{integ,edge,bearing,lead,badge});
 }

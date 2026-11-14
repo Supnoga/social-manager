@@ -1223,9 +1223,16 @@ def _machine_project(pid):
     return bool(rows) and sum(1 for r in rows if auto_visual.find(r["title"] or "")) >= max(3, len(rows) * .2)
 
 
-def _models_focus():
+def _models_focus(pid=0):
+    """Zoznam strojov s presným modelom pre dopĺňanie nápadov; kanál dostane len stroje, o ktorých už píše (motory nedostanú tepelné čerpadlo)."""
     from . import auto_visual
-    names = sorted({auto_visual.NAMES[m] for m in auto_visual.PRECISE if m in auto_visual.NAMES})
+    mine = set()
+    for r in (db.q("SELECT title FROM ideas WHERE project_id=? ORDER BY id DESC LIMIT 200", (pid,)) if pid else []):
+        hit = auto_visual.find(r["title"] or "")
+        if hit:
+            mine.add(hit[0])
+    use = {m for m in auto_visual.PRECISE if m in mine} or auto_visual.PRECISE
+    names = sorted({auto_visual.NAMES[m] for m in use if m in auto_visual.NAMES})
     return ("Every idea must explain ONE of these machines (we have exact animated models only for them) and name it in the title: "
             + ", ".join(names) + ". Find fresh angles: how it works, why it fails, myths, comparisons, numbers.")
 
@@ -1426,7 +1433,7 @@ def _prod_project(pid_s, c):
             try:
                 before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
                 content.run_task("ideas", dict({"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt},
-                                               **({"focus": _models_focus()} if _precise_only() else {})))
+                                               **({"focus": _models_focus(pid)} if _precise_only() else {})))
                 for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
                     if r["id"] not in before and (r["score"] or 0) >= max(7, int(c.get("min_score") or 0)):
                         db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))

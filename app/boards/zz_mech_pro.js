@@ -261,18 +261,20 @@ part('engine',()=>{x.rect(392,-106,76,56);x.rect(402,-118,56,12)});part('gearbox
 for(let k=0;k<5;k++){const a=roll+k*TAU/5;x.beginPath();x.moveTo(cx+Math.cos(a)*7,-44+Math.sin(a)*7);x.lineTo(cx+Math.cos(a)*27,-44+Math.sin(a)*27);x.stroke()}});
 part('diff',()=>{x.arc(105,-44,15,0,TAU)});part('brake',()=>{x.arc(410,-44,22,0,TAU)});
 if(hot&&CARHOT[hot]){const h=CARHOT[hot];x.beginPath();x.arc(h[0],h[1],58+16*pulse,0,TAU);x.strokeStyle=rgba(A,.75*(1-pulse));x.lineWidth=3;x.stroke()}};
+// úvodné scény „kde to je“: auto príde zboku; ďalšie (napr. dom) si doplnia modely cez KIT.INTRO (still = scéna stojí, hýbe sa v nej len to, čo naozaj)
+const INTRO={car:{hot:CARHOT,draw:CAR}};
 const CTX={piston:['car','engine'],wankel:['car','engine'],rotary:['car','engine'],camshaft:['car','engine'],gearbox:['car','gearbox'],differential:['car','diff'],car_brake:['car','brake']};
 // obalí model: auto príde, diel sa rozsvieti, kamera doň vletí a prelne sa do rezu
 const withIntro=(v,d,ctx,base)=>{const vm=el('div','','position:absolute;left:0;top:0;width:864px;height:560px;transform-origin:50% 50%;opacity:0');v.append(vm);const upd=base(vm,d);
-const S=STG(v),x=S.x;x.canvas.style.cssText+=';-webkit-mask-image:radial-gradient(ellipse 56% 56% at 50% 50%,#000 74%,transparent 100%);-webkit-mask-composite:source-over;mask-composite:add';const A=D.acc,IN=d._first?1.15:Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)),SC=WIDE?1.5:1.62,OX=(S.w-520*SC)/2,OY=S.h/2+150,_sh=(d._sh=IN*.78),h=CARHOT[ctx[1]],H=[OX+h[0]*SC,OY+h[1]*SC];
-return (t,st)=>{S.begin();const u=t/IN;if(u<1.02){const drive=1-ez(u/.42),dx=-drive*drive*700,zo=ez((u-.6)/.4),z=1+zo*zo*8.5,P=lerp(H,[S.w/2,S.h/2],ez((u-.6)/.34));
+const S=STG(v),x=S.x;x.canvas.style.cssText+=';-webkit-mask-image:radial-gradient(ellipse 56% 56% at 50% 50%,#000 74%,transparent 100%);-webkit-mask-composite:source-over;mask-composite:add';const A=D.acc,IN=d._first?1.15:Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)),SC=WIDE?1.5:1.62,OX=(S.w-520*SC)/2,OY=S.h/2+150,_sh=(d._sh=IN*.78),SCN=INTRO[ctx[0]]||INTRO.car,h=SCN.hot[ctx[1]],H=[OX+h[0]*SC,OY+h[1]*SC];
+return (t,st)=>{S.begin();const u=t/IN;if(u<1.02){const drive=1-ez(u/.42),dx=SCN.still?0:-drive*drive*700,zo=ez((u-.6)/.4),z=1+zo*zo*8.5,P=lerp(H,[S.w/2,S.h/2],ez((u-.6)/.34));
 x.save();x.globalAlpha=(d._first?1:E(u/.12))*(1-ez((u-.74)/.2));x.translate(P[0],P[1]);x.scale(z,z);x.translate(-H[0],-H[1]);
 {const g=x.createRadialGradient(S.w/2,OY-120,20,S.w/2,OY-120,460);g.addColorStop(0,'rgba(86,118,160,.2)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(0,0,S.w,S.h)}
 x.strokeStyle='rgba(255,255,255,.22)';x.lineWidth=2;x.beginPath();x.moveTo(-200,OY);x.lineTo(S.w+200,OY);x.stroke();
-x.translate(OX+dx,OY);x.scale(SC,SC);CAR(x,dx/(44*SC),u>.36?ctx[1]:null,A,((t*1.5)%1));x.restore()}
+x.translate(OX+dx,OY);x.scale(SC,SC);SCN.draw(x,SCN.still?t:dx/(44*SC),u>.36?ctx[1]:null,A,((t*1.5)%1));x.restore()}
 const ma=ez((u-.76)/.24);vm.style.opacity=ma;vm.style.transform=`scale(${(.3+.7*ez((u-.68)/.32)).toFixed(4)})`;if(ma>0)upd(Math.max(0,t-IN*.78),st)}};
 window.MECHPRO=PRO;
 // stavebnica: overené diely a efekty, z ktorých sa skladajú ďalšie presné modely (zz_mech_pro_*.js)
-window.KIT={PRO,G,GEARPRO,HS,hex,rgba,mix,ez,lerp,wob,dot,flame,spark,metal,hatch,poly,STG,camAt,stamp,callout,CAR,CARHOT,CTX,AIR,FUEL,SMOKE,FIRE,WATER};
+window.KIT={PRO,G,GEARPRO,HS,hex,rgba,mix,ez,lerp,wob,dot,flame,spark,metal,hatch,poly,STG,camAt,stamp,callout,CAR,CARHOT,CTX,INTRO,AIR,FUEL,SMOKE,FIRE,WATER};
 const _m3=V.mech;V.mech=(v,d)=>{const base=PRO[d&&d.m]?PRO[d.m]:_m3,c=d&&d._in&&CTX[d.m];return c?withIntro(v,d,c,base):base(v,d)};
 }
