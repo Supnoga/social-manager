@@ -46,22 +46,6 @@ def _cover(title):
     return ("gap", auto_visual.find(title)[0]) if auto_visual.find(title) else ("verify", "")
 
 
-def _singles(pid, skip):
-    """Samostatné krátke nápady (bez dlhého) na dni pred prvým dlhým videom kanála."""
-    rows = db.q(f"""SELECT i.id, i.title, EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id AND s.is_source=1) has_script
-                   FROM ideas i WHERE i.project_id=? AND COALESCE(i.format,'short')='short' AND i.status IN {LIVE} AND {_no_video()}
-                   ORDER BY has_script DESC, COALESCE(i.score,0) DESC, i.id""", (pid,))
-    out = []
-    for r in rows:
-        if r["id"] in skip:
-            continue
-        c, m = _cover(r["title"] or "")
-        if c != "gap":
-            out.append(dict(r, cover=c, model=m))
-    out.sort(key=lambda r: r["cover"] != "model")
-    return out
-
-
 def build_project(pid, start, days=30, offset=0):
     machine = _machine_project(pid)
     picked, rest, gaps = [], [], {}
@@ -79,7 +63,6 @@ def build_project(pid, start, days=30, offset=0):
     used = picked[:len(longs)]
     queue, cur, out = [], None, []
     kids_of = {r["id"]: _children(r["id"]) for r in used}
-    singles = _singles(pid, {k["id"] for ks in kids_of.values() for k in ks})
     li = 0
     for day in dates:
         rec = {"date": day.isoformat(), "long": None}
@@ -99,17 +82,17 @@ def build_project(pid, start, days=30, offset=0):
                 queue = []
         if queue:
             rec["short"] = queue.pop(0)
-        elif singles:
-            x = singles.pop(0)
-            rec["short"] = {"idea_id": x["id"], "title": x["title"], "script": bool(x["has_script"]), "cover": x["cover"], "model": x["model"]}
-        else:
+        else:   # kanál začína dlhým videom (Oliver 14.11.): pred prvým dlhým sa nič nezverejní
             rec["short"] = None
+            if cur is None:
+                rec["wait"] = True
         out.append(rec)
     nl = [d["long"] for d in out if d["long"]]
     return {"machine": machine, "offset": offset, "days": out, "spare": max(0, len(picked) - len(longs)),
             "summary": {"longs": len(nl), "long_slots": len(longs), "model": sum(1 for x in nl if x["cover"] == "model"),
                         "verify": sum(1 for x in nl if x["cover"] == "verify"),
-                        "gap": sum(1 for d in out if d.get("long_gap")) + sum(1 for d in out if not d["short"]),
+                        "gap": sum(1 for d in out if d.get("long_gap")) + sum(1 for d in out if not d["short"] and not d.get("wait")),
+                        "first": next((d["date"] for d in out if d["long"]), ""),
                         "shorts": sum(1 for d in out if d["short"]),
                         "scripts_ready": sum(1 for x in nl if x["script"]),
                         "missing": dict(sorted(gaps.items(), key=lambda kv: -kv[1])[:8])}}

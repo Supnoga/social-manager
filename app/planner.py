@@ -105,9 +105,8 @@ def _plan_rot(a, own, cand, days, now, status, jit, dry):
                         kids[v["parent"]] = kids.get(v["parent"], 0) + 1
                 pool.sort(key=lambda v: (v["due"] != iso, -min(kids.get(v["idea_id"], 0), 3)))
             else:
+                # len krátke k poslednému dlhému videu účtu; pred prvým dlhým nič (Oliver 14.11.: začína sa dlhým)
                 pool = [v for v in cand if v["fmt"] != "long" and cur and v["parent"] == cur]
-                if not pool:   # krátke k inému dlhému, ktoré už na účte bolo; inak hocijaké hotové krátke
-                    pool = [v for v in cand if v["fmt"] != "long" and not (v["due"] and v["due"] != iso)]
             if not pool:
                 continue
             v = pool[0]
