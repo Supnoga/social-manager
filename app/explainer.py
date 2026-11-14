@@ -859,7 +859,7 @@ w.style.display='none';
 return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0,fast:i==0&&sc.v.k=='mech'&&!!(window.MECHPRO&&MECHPRO[sc.v.m])}});
 const CAP=document.getElementById('cap'),BAR=document.getElementById('bar'),GLOW=document.getElementById('glow'),LG=document.getElementById('lg'),END=document.getElementById('end');let lastCap=-1;
 const EIMG=END.querySelector('img'),ELN=END.querySelector('.ln'),EGL=END.querySelector('.gl');const TAIL=D.tail||0;
-// sprievodca: malý robot pri titulkoch – „hovorí“ ich, ukazuje hore na stroj a reaguje na čísla (len na výšku, keď je D.guide)
+// sprievodca: líška (maskot) pri titulkoch – „hovorí“ ich, ukazuje hore na stroj a reaguje na čísla (len na výšku, keď je D.guide)
 const GD=(()=>{if(!D.guide||WIDE)return null;const R=2,w=210,h=250,c=el('canvas','','position:absolute;left:36px;top:1338px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(1.2)');c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
 CAP.style.left='272px';CAP.style.width='672px';CAP.style.textAlign='left';return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
 function drawGuide(t,cur,talk,ending){const {x,R,w,h}=GD,A=D.acc,T2=Math.PI*2;x.setTransform(R,0,0,R,0,0);x.clearRect(0,0,w,h);const sc=D.scenes[cur]||{},v=sc.v||{},lt=t-(sc.t0||0),pt=v.k=='mech'?E((lt-.45)/.4):0;
@@ -867,20 +867,23 @@ let ex=0,ek=0;if(v.c&&v.c.t!=null){ek=lt-v.c.t;if(ek>=0&&ek<1.3)ex=Math.exp(-ek*
 const a=E((t-.15)/.45)*(ending?0:1);if(a<=0)return;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,bob=Math.sin(t*2.1)*5-ex*24*Math.abs(Math.sin(ek*12)),blink=((t+.7)%3.3)<.11&&ex<.2;
 x.globalAlpha=a;x.lineJoin='round';x.lineCap='round';x.fillStyle='rgba(0,0,0,.55)';x.beginPath();x.ellipse(92,240,44+bob*.4,6,0,0,T2);x.fill();
 x.save();x.translate(0,(1-a)*46+bob);const box=(X,Y,W,H,r,f,st,lw)=>{x.beginPath();x.roundRect(X,Y,W,H,r);x.fillStyle=f;x.fill();if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}};
-// trysky (vznáša sa)
-[74,110].forEach((X,i)=>{const f=.6+.4*Math.sin(t*31+i*2);x.globalAlpha=a*.85;const g=x.createLinearGradient(0,214,0,214+20*f);g.addColorStop(0,A);g.addColorStop(1,'rgba(255,107,0,0)');x.fillStyle=g;x.beginPath();x.moveTo(X-7,214);x.lineTo(X+7,214);x.lineTo(X,214+20*f);x.closePath();x.fill()});x.globalAlpha=a;
-// ľavá ruka (kýva sa), telo, krk
-x.strokeStyle='#fff';x.lineWidth=8;x.beginPath();x.moveTo(56,170);x.lineTo(40+Math.sin(t*2.1)*3,198);x.stroke();
-box(54,150,76,64,16,'#16181b','#fff');x.fillStyle=A;x.globalAlpha=a*(.55+.45*amp);x.beginPath();x.arc(92,182,9,0,T2);x.fill();x.globalAlpha=a;box(82,136,20,16,3,'#16181b','#fff',4);
-// pravá ruka: v pokoji dole, pri stroji ukazuje hore naň
-const an=1.2+(-2.3)*pt+Math.sin(t*4.6)*.07*pt,S0=[128,168],EL=[S0[0]+Math.cos(an+.4*pt)*40,S0[1]+Math.sin(an+.4*pt)*40],HD=[EL[0]+Math.cos(an-.25*pt)*44,EL[1]+Math.sin(an-.25*pt)*44];
-x.strokeStyle='#fff';x.lineWidth=8;x.beginPath();x.moveTo(S0[0],S0[1]);x.lineTo(EL[0],EL[1]);x.lineTo(HD[0],HD[1]);x.stroke();x.fillStyle=A;x.beginPath();x.arc(HD[0],HD[1],9,0,T2);x.fill();
-if(pt>.5){x.strokeStyle=A;x.lineWidth=6;x.beginPath();x.moveTo(HD[0],HD[1]);x.lineTo(HD[0]+Math.cos(an-.25)*18,HD[1]+Math.sin(an-.25)*18);x.stroke()}
-// hlava: anténa, uši, priezor s očami a „ústami“, ktoré idú s hlasom
-x.strokeStyle='#fff';x.lineWidth=5;x.beginPath();x.moveTo(92,46);x.lineTo(92,28);x.stroke();x.fillStyle=A;x.globalAlpha=a*(.6+.4*amp);x.beginPath();x.arc(92,21,7+2*ex,0,T2);x.fill();x.globalAlpha=a;
-box(20,80,12,26,4,'#16181b','#fff',4);box(152,80,12,26,4,'#16181b','#fff',4);box(30,46,124,92,28,'#16181b','#fff');box(44,60,96,56,18,'#050607','rgba(255,255,255,.45)',2);
-const eh=blink?3:22*(1+.35*ex),dx=4*pt,dy=-3*pt-2*ex;x.fillStyle=A;[72,112].forEach(X=>{x.beginPath();x.roundRect(X-8+dx,82-eh/2+dy,16,eh,Math.min(8,eh/2));x.fill()});
-x.fillStyle='#fff';for(let i=0;i<5;i++){const bh=2+9*amp*(.4+.6*Math.abs(Math.sin(t*17+i*1.9)));x.fillRect(79+i*6,107-bh/2,3.4,bh)}
+// líška (maskot kanálov): srsť má farbu kanála, papuľa je krémová; chvost sa kýve, ústa idú s hlasom, pri stroji ukáže hore naň
+const DK='#16181b',WH='#fff',CR='#e9e3d8',pth=(P,f,st,lw)=>{x.beginPath();P.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]));x.closePath();if(f){x.fillStyle=f;x.fill()}if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}},
+ell=(X,Y,rx,ry,f)=>{x.beginPath();x.ellipse(X,Y,rx,ry,0,0,T2);x.fillStyle=f;x.fill()};
+x.save();x.translate(66,204);x.rotate(.7+Math.sin(t*2.4)*.12);x.beginPath();x.moveTo(0,0);x.bezierCurveTo(-29.6,-18,-59.2,-30,-74,-8);x.bezierCurveTo(-59.2,10,-29.6,14,0,12);x.closePath();x.fillStyle=A;x.fill();x.strokeStyle=WH;x.lineWidth=4;x.stroke();
+x.beginPath();x.moveTo(-57.7,-24);x.bezierCurveTo(-66.6,-20,-74,-12,-74,-8);x.bezierCurveTo(-66.6,4,-60.7,6,-54.8,6);x.closePath();x.fillStyle=CR;x.fill();x.restore();
+// ľavá ruka, telo s bruškom
+{const EX=54+Math.sin(t*2.1)*3;x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(66,162);x.lineTo(EX,188);x.stroke();x.fillStyle=WH;x.beginPath();x.arc(EX,188,5.6,0,T2);x.fill()}
+box(62,146,60,70,24,A,WH);ell(92,186,20,26,CR);
+// hlava: uši, tvár s maskou, oči (pri stroji sa pozrú hore), ňufák, ústa
+pth([[52,80],[58,36],[84,64]],A,WH);pth([[132,80],[126,36],[100,64]],A,WH);pth([[59,72],[62,46],[76,64]],DK);pth([[125,72],[122,46],[108,64]],DK);
+pth([[44,72],[140,72],[136,102],[92,138],[48,102]],A,WH);pth([[48,98],[86,110],[92,138],[98,110],[136,98],[92,138]],CR);
+{const dx=4*pt,dy=-3*pt-2*ex;[72,112].forEach(X=>{if(blink){x.strokeStyle=DK;x.lineWidth=4;x.beginPath();x.moveTo(X-8,86);x.lineTo(X+8,86);x.stroke()}else{x.fillStyle=DK;x.beginPath();x.arc(X+dx,86+dy,8*(1+.25*ex),0,T2);x.fill();x.fillStyle='rgba(255,255,255,.9)';x.beginPath();x.arc(X+dx+2.8,86+dy-2.8,2.24,0,T2);x.fill()}})}
+ell(92,126,7,5,DK);{const hh=2+12*amp+6*ex;x.beginPath();x.roundRect(87,112-hh/2,10,hh,Math.min(hh/2,7));x.fillStyle=DK;x.fill()}
+// pravá ruka: v pokoji dole, pri stroji ukazuje hore naň (šípka, nie prst)
+{const an=1.2-2.32*pt+Math.sin(t*4.6)*.07*pt,S0=[122,160],EL=[S0[0]+Math.cos(an+.4*pt)*30,S0[1]+Math.sin(an+.4*pt)*30],HD=[EL[0]+Math.cos(an-.25*pt)*34,EL[1]+Math.sin(an-.25*pt)*34];
+x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(S0[0],S0[1]);x.lineTo(EL[0],EL[1]);x.lineTo(HD[0],HD[1]);x.stroke();x.fillStyle=A;x.beginPath();x.arc(HD[0],HD[1],8,0,T2);x.fill();x.strokeStyle=WH;x.lineWidth=2;x.stroke();
+if(pt>.5){const b=an-.25,k=E((pt-.5)/.4),w=3*Math.sin(t*5),TX=HD[0]+Math.cos(b)*(27+w),TY=HD[1]+Math.sin(b)*(27+w);x.globalAlpha=a*k;x.strokeStyle=A;x.lineWidth=6;x.beginPath();x.moveTo(TX-Math.cos(b-.75)*14,TY-Math.sin(b-.75)*14);x.lineTo(TX,TY);x.lineTo(TX-Math.cos(b+.75)*14,TY-Math.sin(b+.75)*14);x.stroke();x.globalAlpha=a}}
 x.restore();x.globalAlpha=1}
 
 if(D.logo){LG.src=D.logo;LG.style.display='block'}if(D.logoEnd||D.logo)EIMG.src=D.logoEnd||D.logo;
@@ -1083,7 +1086,7 @@ def check(sc_data, cover):
 
 
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title="", guide=False):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title="", guide=False, detail=1):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -1126,7 +1129,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     loop = bool(loop and not wide and len(sc_data) > 2)   # krátke video: koniec nadviaže na začiatok (bez záverečnej karty, logo ostáva v rohu)
     tail = 0 if loop else TAIL if (logo_end or logo) else 0
     data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
-            "logo": logo or "", "logoEnd": "" if loop else logo_end or "", "tail": tail, "wide": bool(wide), "guide": bool(guide) and not wide,
+            "logo": logo or "", "logoEnd": "" if loop else logo_end or "", "tail": tail, "wide": bool(wide), "guide": bool(guide) and not wide, "detail": int(detail or 1),
             "loop": loop, "len": round(total + (0.6 if loop else tail or 0.3), 3)}
     vw, vh = (H, W) if wide else (W, H)
     html = page(data, font, font_text)
