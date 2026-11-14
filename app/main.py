@@ -1378,13 +1378,13 @@ def _mp_run(workers, until):
                         MPROD["first"].setdefault(str(pid), date)
                 elif slot["state"] == "ok" and _mp_short(pid, slot["final"]):
                     MPROD["done"]["short"] += 1
+                if MPROD.get("publish") and slot["state"] == "ok":   # hotové video hneď do plánu zverejnenia
+                    from . import planner
+                    planner.plan_week([pid], 3)
             except Exception as e:
                 MPROD["log"].append(f"{date} kanál {pid}: {str(e)[:150]}")
                 if kind == 0:
                     slot["state"] = "bad"
-                if MPROD.get("publish") and (kind == 1 or slot["state"] == "ok"):   # hotové video hneď do plánu zverejnenia
-                    from . import planner
-                    planner.plan_week([pid], 3)
             finally:
                 MPROD["left"] = len(tasks)
                 MPROD["step"] = [x for x in MPROD["step"] if not x.startswith(f"{date} kanál {pid} ")]
