@@ -1,6 +1,8 @@
 // ---------- balíky vizuálov podľa témy kanála (peniaze, technika, veľkosti, vrstvy, pravdepodobnosť) ----------
 const GREYS=['#e9e9e9','#9a9a9a','#5c5c5c','#3a3a3a'];
-const cv2=(v,w,h)=>{const R=1.6,c=el('canvas','',`position:absolute;left:0;top:0;width:${w}px;height:${h}px`);c.width=w*R;c.height=h*R;v.append(c);const x=c.getContext('2d');x.scale(R,R);x.lineCap='round';x.lineJoin='round';return x};
+const cv2=(v,w,h)=>{const R=1.6,c=el('canvas','',`position:absolute;left:0;top:0;width:${w}px;height:${h}px`);c.width=w*R;c.height=h*R;v.append(c);const x=c.getContext('2d',{willReadFrequently:true});x.scale(R,R);x.lineCap='round';x.lineJoin='round';
+// keď sa plátno samo vynuluje (grafická karta), mierka by sa stratila a kresba by ostala malá v rohu: pri každom mazaní celej plochy sa mierka nastaví znova
+const cr=x.clearRect.bind(x);x.clearRect=(a,b,cw,ch)=>{if(!a&&!b&&cw>=w-1&&ch>=h-1){const m=x.getTransform();if(Math.abs(m.a-R)>.01||Math.abs(m.d-R)>.01||Math.abs(m.e)>.01||Math.abs(m.f)>.01){x.setTransform(R,0,0,R,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.lineCap='round';x.lineJoin='round'}}cr(a,b,cw,ch)};return x};
 const SHORT=(v)=>{const a=Math.abs(v);const f=(x,s)=>NF(x,x<10&&x%1?1:0)+s;return a>=1e12?f(v/1e12,' T'):a>=1e9?f(v/1e9,' B'):a>=1e6?f(v/1e6,' M'):a>=1e4?f(v/1e3,' k'):NF(v,v%1?Math.min(2,decs(v)):0)};
 // zložené úročenie: appka sama vypočíta každý rok (žiadne vymyslené čísla)
 V.growth=(v,d)=>{const P=N(d.p),r=N(d.r)/100,Y=Math.max(1,Math.min(60,Math.round(N(d.y)||10))),M=N(d.m)||0,u=d.u||'';

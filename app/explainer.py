@@ -962,6 +962,8 @@ class _Slots:
 
 
 _lock = _Slots()
+# plátna sa kreslia bez grafickej karty: na Macu sa inak plátno samo vynulovalo a model ostal malý v rohu
+CANVAS_ARGS = ["--disable-accelerated-2d-canvas"]
 
 
 TAIL = 1.8  # záverečná karta s logom po dohovorení hlasu
@@ -1118,7 +1120,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     from playwright.sync_api import sync_playwright
     with _lock, sync_playwright() as pw:
         exe = os.environ.get("SM_CHROMIUM")
-        b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
+        b = pw.chromium.launch(executable_path=exe, args=CANVAS_ARGS) if exe else pw.chromium.launch(args=CANVAS_ARGS)
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         try:
             if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
@@ -1191,7 +1193,7 @@ def preview(d, out_png, accent="#FF6B00", lang="sk", title="Ukážka", at=6.0):
     from playwright.sync_api import sync_playwright
     with _lock, sync_playwright() as pw:
         exe = os.environ.get("SM_CHROMIUM")
-        b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
+        b = pw.chromium.launch(executable_path=exe, args=CANVAS_ARGS) if exe else pw.chromium.launch(args=CANVAS_ARGS)
         try:
             pg = b.new_page(viewport={"width": W, "height": H})
             pg.set_content(page(data))

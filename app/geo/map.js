@@ -8,7 +8,7 @@ const big=P.reduce((a,b)=>b.a>a.a?b:a);const bb=d3.geoBounds(big.p);let r0=0;[[b
 const lim=Math.max(.17,r0*1.5);return {type:'MultiPolygon',coordinates:P.filter(x=>d3.geoDistance(x.m,big.m)<lim).map(x=>x.c)}}
 V.map=(v,d)=>{if(d.hist)return V.hmap(v,d);const F=geoInit();if(!F)return V.text(v,{w:d.l||(d.names&&d.names[d.main])||''});
 const MW=864,MH=560,R=1.6;const cv=el('canvas','',`position:absolute;left:0;top:${D.wide?36:0}px;width:${MW}px;height:${MH}px;-webkit-mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%);mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%)`);cv.width=MW*R;cv.height=MH*R;v.append(cv);
-const ctx=cv.getContext('2d');ctx.scale(R,R);ctx.lineJoin='round';ctx.lineCap='round';
+const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.scale(R,R);ctx.lineJoin='round';ctx.lineCap='round';
 const C=d.c||[],sel=new Set(C),group=!!d.group,PTS=d.pts||[],RT=d.r||[],RV=d.v||[];
 const SF=F.filter(f=>sel.has(f.id)).sort((a,b)=>(a.id==d.main)-(b.id==d.main));
 const core={};SF.forEach(f=>{core[f.id]=geoCore(f)});
@@ -34,7 +34,7 @@ const PL=PTS.map(p=>({p,e:mk(`font-family:var(--ft);font-weight:700;font-size:24
 const TAG=d.l||(group&&C.length?'':'');const tg=TAG?mk(`left:0;top:${MH-46}px;font-weight:800;text-transform:uppercase;font-size:30px;letter-spacing:3px;color:var(--acc);border-left:6px solid var(--acc);padding-left:14px`,esc(TAG)):null;
 const NST=1.2;
 return (t,st)=>{const p=st(0,1.7),pr=EI(cl(p*1.35)),pz=EI(cl((p-.22)/.78));const rc=ip(pr);const rot=[-rc[0],-rc[1]];const sc=S0*Math.pow(SF_/S0,pz);
-proj.rotate(rot).scale(sc).translate([MW/2,MH/2]);ctx.clearRect(0,0,MW,MH);
+proj.rotate(rot).scale(sc).translate([MW/2,MH/2]);ctx.setTransform(R,0,0,R,0,0);ctx.clearRect(0,0,MW,MH);
 ctx.beginPath();path({type:'Sphere'});ctx.fillStyle='rgba(255,255,255,.035)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=1.5;ctx.stroke();
 ctx.beginPath();path(GR);ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=1;ctx.stroke();
 const cr=[rc[0],rc[1]],va=Math.min(Math.PI/2,Math.asin(Math.min(1,Math.hypot(MW,MH)/2/sc)))+.06;
@@ -79,7 +79,7 @@ V.hmap=(v,d)=>{const F=geoInit();if(!F||!window.HIST)return V.text(v,{w:d.l||''}
 const FR=(d.hist||[]).map(f=>{const T=HIST[String(f.y)];if(!T)return null;const fs=topojson.feature(T,T.objects.h).features;const hs=new Set(f.hl||[]);return {y:f.y,fs,hl:fs.filter(x=>hs.has(x.properties.n))}}).filter(Boolean);
 if(!FR.length)return V.text(v,{w:d.l||''});
 const MW=864,MH=560,R=1.6,OY=D.wide?36:0;const cv=el('canvas','',`position:absolute;left:0;top:${OY}px;width:${MW}px;height:${MH}px;-webkit-mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%);mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%)`);cv.width=MW*R;cv.height=MH*R;v.append(cv);
-const ctx=cv.getContext('2d');ctx.scale(R,R);ctx.lineJoin='round';
+const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.scale(R,R);ctx.lineJoin='round';
 const HL=[].concat(...FR.map(f=>f.hl));const FC={type:'FeatureCollection',features:HL.length?HL:FR[0].fs};
 const gb=d3.geoBounds(FC);let lo0=gb[0][0],lo1=gb[1][0];if(lo1<lo0)lo1+=360;const cen=HL.length?[((lo0+lo1)/2+540)%360-180,(gb[0][1]+gb[1][1])/2]:[15,40];
 const proj=d3.geoOrthographic().clipAngle(90).precision(.5),path=d3.geoPath(proj,ctx);const ROT=[-cen[0],-Math.max(-60,Math.min(60,cen[1]))];proj.rotate(ROT).scale(1).translate([0,0]);
@@ -91,7 +91,7 @@ const LB=FR.map(f=>{const seen=new Set();return f.hl.filter(x=>{if(seen.has(x.pr
 const e=el('div','',`position:absolute;margin-top:${OY}px;white-space:nowrap;font-weight:800;text-transform:uppercase;font-size:30px;letter-spacing:1px;color:#fff;text-shadow:0 2px 10px #000,0 0 3px #000;opacity:0`,esc(x.properties.n));v.append(e);return {e,c:d3.geoCentroid(big)}})});
 const n=FR.length,SEG=1.25;
 return (t,st)=>{const p=st(0,1.5),pr=EI(cl(p*1.35)),pz=EI(cl((p-.22)/.78));const rc=ip(pr);const sc=S0*Math.pow(SF_/S0,pz);proj.rotate([-rc[0],-rc[1]]).scale(sc).translate([MW/2,MH/2]);
-ctx.clearRect(0,0,MW,MH);ctx.beginPath();path({type:'Sphere'});ctx.fillStyle='rgba(255,255,255,.035)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=1.5;ctx.stroke();
+ctx.setTransform(R,0,0,R,0,0);ctx.clearRect(0,0,MW,MH);ctx.beginPath();path({type:'Sphere'});ctx.fillStyle='rgba(255,255,255,.035)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=1.5;ctx.stroke();
 ctx.beginPath();path(GR);ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=1;ctx.stroke();
 ctx.beginPath();F.forEach(f=>path(f));ctx.fillStyle='#1d1d1d';ctx.fill();
 // ktorý rok práve ukazujeme (prelínanie medzi rokmi)
