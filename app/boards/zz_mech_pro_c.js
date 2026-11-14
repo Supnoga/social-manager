@@ -59,10 +59,10 @@ CTX.gearbox=['car','gearbox'];
 // aby sa kolesá v zákrute točili rôzne rýchlo. Súčet otáčok oboch kolies je vždy dvojnásobok otáčok klietky. ----------
 // Pohľad zhora, rez v rovine osí. Vnútro klietky je kreslené voči klietke: rovno sa v nej nič nehýbe, v zákrute sa satelity pretáčajú.
 // l = [pastorok, tanierové koleso, satelity, poloos]; f = pinion | spider | turn (celý čas zákruta) | straight (celý čas rovno)
-PRO.differential=(v,d)=>{const S=STG(v),x=S.x,A=D.acc,LN=LBL(d),DUR=N(d._dur)||9,CX=430,CY=310,RR=190,RP=57,WC=1.15,ZR=40,ZP=12,DV=.35,H=Math.PI/2;
-const zf=Math.min(S.w/770,S.h/700)*.98,FULL=[430,332,zf],FV={pinion:[404,196,zf*1.9],spider:[430,339,zf*2.2],turn:[430,332,zf*1.04],straight:[430,339,zf*1.5]},KF=cams(d,FULL,FV,['pinion','spider'],DUR),F=String(d.f||'');
-// jazda: rovno → zákruta vľavo (ľavé koleso je vnútorné, ide pomalšie) → rovno
-const TA=F=='straight'?1e9:F=='turn'?.8:DUR*.3,TB=F=='turn'?1e9:DUR*.74,turn=t=>ez((t-TA)/1)*(1-ez((t-TB)/1)),wl=t=>WC*(1-DV*turn(t)),wr=t=>WC*(1+DV*turn(t)),rel=t=>WC*DV*turn(t);
+PRO.differential=(v,d)=>{const S=STG(v),x=S.x,A=D.acc,LN=LBL(d),DUR=N(d._dur)||9,CX=430,CY=310,RR=190,RP=57,WC=1.15,ZR=40,ZP=12,F=String(d.f||''),HOLD=F=='hold'||!!d.h,DV=HOLD?1:.35,H=Math.PI/2;
+const zf=Math.min(S.w/770,S.h/700)*.98,FULL=[430,332,zf],FV={pinion:[404,196,zf*1.9],spider:[430,339,zf*2.2],turn:[430,332,zf*1.04],hold:[430,332,zf*.87],straight:[430,339,zf*1.5]},KF=cams(d,FULL,FV,['pinion','spider'],DUR);
+// jazda: rovno → zákruta vľavo (ľavé koleso je vnútorné, ide pomalšie) → rovno; HOLD = ľavé koleso niekto drží, pravé ide dvakrát rýchlejšie než klietka
+const TA=F=='straight'?1e9:HOLD&&F!='hold'?-9:(F=='turn'||F=='hold')?.8:DUR*.3,TB=(F=='turn'||HOLD)?1e9:DUR*.74,turn=t=>ez((t-TA)/1)*(1-ez((t-TB)/1)),wl=t=>WC*(1-DV*turn(t)),wr=t=>WC*(1+DV*turn(t)),rel=t=>WC*DV*turn(t);
 const tyre=(X,th)=>{edge(x,X,CY,72,118,118,th,24,{col:['#0c0d0e','#3b3e42','#0a0b0c'],tooth:'#9aa0a6',lw:5,ta:.8,ow:3});edge(x,X+(X<CX?45:-45),CY,18,40,40,th,5,{tooth:'#30343a',lw:2,ow:2})};
 const cage=()=>{x.beginPath();rr(x,CX-112,CY-112,224,224,20);rr(x,CX-150,CY-36,300,72,8)};
 const arrow=k=>{x.save();x.translate(S.w/2,S.h-48);x.fillStyle='rgba(0,0,0,.8)';x.beginPath();x.roundRect(-84,-106,148,128,16);x.fill();x.strokeStyle=A;x.lineWidth=9;x.lineCap='round';x.lineJoin='round';const ex=-60*k,ey=-78+22*k;x.beginPath();x.moveTo(0,0);x.quadraticCurveTo(0,-52,ex,ey);x.stroke();x.translate(ex,ey);x.rotate(-k*1.15);x.beginPath();x.moveTo(-17,16);x.lineTo(0,-6);x.lineTo(17,16);x.stroke();x.restore()};
@@ -74,6 +74,7 @@ x.beginPath();rr(x,246,34,368,502,46);x.fillStyle='#14161a';x.fill();x.lineWidth
 x.strokeStyle='rgba(255,255,255,.45)';x.lineWidth=3;[[168,246],[614,692]].forEach(q=>{x.beginPath();x.moveTo(q[0],CY-36);x.lineTo(q[1],CY-36);x.moveTo(q[0],CY+36);x.lineTo(q[1],CY+36);x.stroke()});
 // poloosi a kolesá: točia sa voči zemi, každé svojou rýchlosťou
 edge(x,(150+CX-47)/2,CY,CX-47-150,14,14,aL,6,{col:SH,tooth:'#30343a',lw:2,ow:2.5});edge(x,(710+CX+47)/2,CY,710-CX-47,14,14,aR,6,{col:SH,tooth:'#30343a',lw:2,ow:2.5});tyre(112,aL);tyre(748,aR);
+if(HOLD&&k>.02){x.save();x.globalAlpha*=k;x.fillStyle=A;x.strokeStyle='#fff';x.lineWidth=3;[-1,1].forEach(q=>{x.beginPath();x.roundRect(112-50,CY+q*(118+4+16*(1-k))-(q<0?26:0),100,26,8);x.fill();x.stroke()});x.restore()}
 // hnací hriadeľ (prichádza spredu, od motora) a tanierové koleso na prírube klietky
 edge(x,CX,46,116,14,14,ap,6,{rot:H,col:SH,tooth:'#30343a',lw:2,ow:2.5});bearing(x,CX-27,64,18,36);bearing(x,CX+27,64,18,36);
 x.fillStyle='#2c3035';x.strokeStyle='#fff';x.lineWidth=3;x.beginPath();x.rect(CX-RP-36,CY-RR-10,20,2*RR+20);x.fill();x.stroke();
@@ -96,7 +97,7 @@ x.restore();
 // otáčky ľavého a pravého kolesa: súčet je stále rovnaký
 const fi=['pinion','spider'].indexOf(F),a=cl((t-.6)/.4),nl=Math.round(500*wl(t)/WC/5)*5;x.globalAlpha=p;
 if(fi>=0&&t>.35)stamp(S,fi,[LN[0],LN[2]][fi]||'',2,t-.35,A);
-meter(S,String(nl),'RPM',A,a,fi>=0);badge(S,String(1000-nl),'RPM',A,a);x.globalAlpha=p*a;arrow(k);x.globalAlpha=p;
+if(HOLD){meter(S,(1-k).toFixed(1),'× CAGE',A,a,fi>=0);badge(S,(1+k).toFixed(1),'× CAGE',A,a)}else{meter(S,String(nl),'RPM',A,a,fi>=0);badge(S,String(1000-nl),'RPM',A,a);x.globalAlpha=p*a;arrow(k);x.globalAlpha=p}
 callout(S,d,t,A);x.globalAlpha=1}};
 CTX.differential=['car','diff'];
 }
