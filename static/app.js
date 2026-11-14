@@ -143,9 +143,10 @@ function sidebar() {
   $('#side').innerHTML = `
     <div class="logo"><div class="mark">${I('play')}</div>Social Manager</div>
     ${nav('', 'home', 'Prehľad', !cur)}
+    ${nav('plan', 'calendar', 'Mesačný plán', cur === 'plan')}
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
-      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'ucty', 'link', 'Účty a siete')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
+      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'plan', 'calendar', 'Plán na mesiac')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'ucty', 'link', 'Účty a siete')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Nastavenie</div>
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
     <div class="side-foot">
@@ -179,12 +180,14 @@ async function render() {
   try {
     if (!r[0]) await pHome(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
+    else if (r[0] === 'plan') await pMonthPlan(m);
     else if (r[0] === 'novy') pProjectForm(m, null);
     else if (r[0] === 'p') {
       const p = S.projects.find(x => x.id === +r[1]);
       if (!p) return go('');
       const sec = r[2] || 'videa';
       if (sec === 'v') await pIdea(m, p, +r[3], r[4] || null);
+      else if (sec === 'plan') await pProjectPlan(m, p);
       else if (sec === 'kontrola') await pReview(m);
       else if (sec === 'kalendar') await pCalendar(m);
       else if (sec === 'radar') await pRadar(m);

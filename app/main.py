@@ -1250,6 +1250,21 @@ def _models_focus(pid=0):
             + ", ".join(names) + ". Find fresh angles: how it works, why it fails, myths, comparisons, numbers.")
 
 
+@app.get("/api/month-plan")
+def month_plan_get(project_id: int = 0):
+    """Mesačný plán po kanáloch: každý deň 1 dlhé + 3 krátke, s tým, čím je téma pokrytá (model / overí sa / medzera)."""
+    from . import monthplan
+    return monthplan.get(project_id)
+
+
+@app.post("/api/month-plan/build")
+def month_plan_build(data: dict = Body(default={})):
+    """Zostaví plán z nápadov v appke, bez AI. Nič nevyrába ani nenahráva."""
+    from . import monthplan
+    monthplan.build(data.get("project_ids") or None, data.get("start") or None, data.get("days") or 30)
+    return monthplan.get(int(data["project_ids"][0]) if data.get("project_ids") and len(data["project_ids"]) == 1 else 0)
+
+
 @app.get("/api/models/demand")
 def models_demand(project_id: int = 0):
     """Ktoré nápady sa dajú vyrobiť s presným modelom a ktoré stroje chýbajú (podľa názvov čakajúcich nápadov)."""
