@@ -1281,7 +1281,12 @@ def _mp_long(slot, tried):
     for _ in range(4):
         if MPROD["stop"]:
             return None
-        if iid in tried:   # téma už išla ako náhrada za iný deň
+        have = db.one("""SELECT v.status FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=?
+                         ORDER BY v.status='ready' DESC LIMIT 1""", (iid,)) if iid else None
+        if have and have["status"] == "ready" and iid not in tried:   # už vyrobené (napr. pred reštartom appky)
+            tried.add(iid)
+            return iid
+        if iid in tried or have:   # téma už išla (náhrada inde / neprešla kontrolou)
             iid = 0
         if not iid:
             cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and monthplan._cover(r["title"] or "")[0] != "gap"]
@@ -1332,9 +1337,21 @@ def _mp_short(pid, lid):
     return False
 
 
+def _mp_mark(lock, pid, date, long=0, short=False):
+    with lock:
+        made = db.get_setting("month_plan_made", {}) or {}
+        m = made.setdefault(f"{pid}:{date}", {"long": 0, "shorts": 0})
+        if long:
+            m["long"] = long
+        if short:
+            m["shorts"] = int(m.get("shorts") or 0) + 1
+        db.set_setting("month_plan_made", made)
+
+
 def _mp_run(workers, until):
     from . import monthplan
     plan = monthplan.get()
+    made = db.get_setting("month_plan_made", {}) or {}   # čo už je vyrobené (prežije reštart appky)
     tasks = []   # (dátum, 0=dlhé/1=krátke, poradie, slot)
     for p in plan["projects"]:
         slot = None
@@ -1342,10 +1359,18 @@ def _mp_run(workers, until):
             if until and d["date"] > until:
                 break
             if d.get("long"):
-                slot = {"pid": p["id"], "idea": d["long"]["idea_id"], "state": "wait", "final": 0, "date": d["date"]}
-                tasks.append((d["date"], 0, p["id"], slot))
+                m = made.get(f"{p['id']}:{d['date']}") or {}
+                slot = {"pid": p["id"], "idea": d["long"]["idea_id"], "state": "wait", "final": 0, "date": d["date"],
+                        "skip": int(m.get("shorts") or 0)}
+                if m.get("long"):
+                    slot.update(state="ok", final=m["long"])
+                else:
+                    tasks.append((d["date"], 0, p["id"], slot))
             if d.get("short") and slot:
-                tasks.append((d["date"], 1, p["id"], slot))
+                if slot["skip"]:
+                    slot["skip"] -= 1
+                else:
+                    tasks.append((d["date"], 1, p["id"], slot))
     tasks.sort(key=lambda t: t[:3])
     lock, tried = threading.Lock(), {}
     MPROD.update(running=True, stop=False, total=len(tasks), left=len(tasks))
@@ -1376,8 +1401,10 @@ def _mp_run(workers, until):
                     if fin:
                         MPROD["done"]["long"] += 1
                         MPROD["first"].setdefault(str(pid), date)
+                        _mp_mark(lock, pid, slot["date"], long=fin)
                 elif slot["state"] == "ok" and _mp_short(pid, slot["final"]):
                     MPROD["done"]["short"] += 1
+                    _mp_mark(lock, pid, slot["date"], short=True)
                 if MPROD.get("publish") and slot["state"] == "ok":   # hotové video hneď do plánu zverejnenia
                     try:
                         from . import planner
