@@ -63,7 +63,7 @@ async function pDash(m) {
   const ts = x => new Date(x.d.replace(' ', 'T')).getTime();
   const all1 = pid && f.all;
   const proj = pid && !f.all ? pid : +f.p || 0;
-  const match = (x, skip) => (!proj || x.p === proj) && (skip === 'pl' || !f.pl || x.pl === f.pl) && (skip === 'c' || !f.c || x.c === f.c) && (skip === 'l' || !f.l || x.l === f.l);
+  const match = (x, skip) => (!proj || x.p === proj) && (skip === 'pl' || !f.pl || x.pl === f.pl) && (skip === 'c' || !f.c || x.c === f.c) && (skip === 'l' || !f.l || x.l === f.l) && (x.f === undefined || fmtOk(x.f));
   const all = DD.rows.map(x => ({ ...x, r: x.lk + x.cm + x.sh, ts: ts(x) }));
   const cur = all.filter(x => x.ts >= cut && match(x)), prev = all.filter(x => x.ts >= cut0 && x.ts < cut && match(x));
   const A = agg(cur), P = agg(prev);
@@ -113,6 +113,7 @@ async function pDash(m) {
   <div class="dfilters">${scopeSeg}${seg}
     ${pid && !f.all ? '' : sel('p', 'Projekt', S.projects.map(p => p.id), v => S.projects.find(p => p.id === +v)?.name || v)}
     ${sel('pl', 'Sieť', nets, v => PL[v])}${sel('c', 'Krajina', ctrs, cName)}${sel('l', 'Jazyk', lngs, lName)}
+    <div class="dsel"><span>Typ videa</span>${fmtSeg()}</div>
     ${anyF ? `<button class="btn ghost sm" onclick="dReset()">${I('x', 's')}Zrušiť filtre</button>` : ''}
   </div>
   <div class="dkpis d6">${['v', 'lk', 'cm'].map(kpi).join('')}${kpiF}${kpiW}${kpi('er')}</div>
@@ -161,14 +162,17 @@ async function dRefresh(b) {
 
 function prodCard(proj, days) {
   const P = DD.prod || {}, keys = proj ? [String(proj)] : Object.keys(P);
-  const s = k => keys.reduce((t, p) => t + ((P[p] || {})[k] || 0), 0);
+  const s0 = k => keys.reduce((t, p) => t + ((P[p] || {})[k] || 0), 0);
+  const sl = k => s0(k + '_l'), ss = k => s0(k) - sl(k);
+  const s = k => S.fmt === 'long' ? sl(k) : S.fmt === 'short' ? ss(k) : s0(k);
+  const sub = k => S.fmt || !s0(k) ? '' : `<i class="fs">${nf(ss(k))} krátkych · ${nf(sl(k))} dlhých</i>`;
   const nx = keys.map(p => (P[p] || {}).next).filter(Boolean).sort()[0];
   const per = DAYS.find(d => d[0] === days)?.[1] || days + ' dní';
-  const t = (ic, n, label, cls = '', hint = '') => `<div class="dp ${cls}" ${hint ? `data-tip="${esc(hint)}"` : ''}>${I(ic, 's')}<b>${nf(n)}</b><span>${label}</span></div>`;
-  return `<div class="card"><div class="row"><h2 style="margin:0;flex:1">Výroba videí</h2><span class="small dim">${nx ? 'najbližšie zverejnenie ' + nx.slice(8, 10) + '.' + nx.slice(5, 7) + '. ' + nx.slice(11, 16) : ''}</span></div>
-    <div class="dprod">${t('bulb', s('ideas'), 'nápadov v zásobníku')}${t('file', s('ready'), 'scenárov pripravených na video', '', 'Hotové scenáre, z ktorých ešte nie je video. Zásoba dopredu.')}${t('pencil', s('scripts'), 'scenárov napísaných za ' + per, '', 'Celkom ' + nf(s('scripts_all')) + ' scenárov od začiatku.')}${t('film', s('made'), 'vyrobených videí za ' + per, '', 'Každá jazyková verzia sa ráta zvlášť.')}
-    ${t('eye', s('review'), 'čaká na schválenie', s('review') ? 'warn' : '')}${t('calendar', s('queued'), 'naplánovaných')}${t('send', s('done'), 'zverejnených za ' + per, 'ok')}
-    ${s('failed') ? t('alert', s('failed'), 's chybou', 'bad', 'Pozri Publikovanie.') : ''}</div>${proj ? '' : prodByProject(P)}</div>`;
+  const t = (ic, k, label, cls = '', hint = '') => `<div class="dp ${cls}" ${hint ? `data-tip="${esc(hint)}"` : ''}>${I(ic, 's')}<b>${nf(s(k))}</b><span>${label}</span>${sub(k)}</div>`;
+  return `<div class="card"><div class="row"><h2 style="margin:0;flex:1">Výroba videí${S.fmt ? ' ' + FMT(S.fmt) : ''}</h2><span class="small dim">${nx ? 'najbližšie zverejnenie ' + nx.slice(8, 10) + '.' + nx.slice(5, 7) + '. ' + nx.slice(11, 16) : ''}</span></div>
+    <div class="dprod">${t('bulb', 'ideas', 'nápadov v zásobníku')}${t('file', 'ready', 'scenárov pripravených na video', '', 'Hotové scenáre, z ktorých ešte nie je video. Zásoba dopredu.')}${t('pencil', 'scripts', 'scenárov napísaných za ' + per, '', 'Celkom ' + nf(s('scripts_all')) + ' scenárov od začiatku.')}${t('film', 'made', 'vyrobených videí za ' + per, '', 'Každá jazyková verzia sa ráta zvlášť.')}
+    ${t('eye', 'review', 'čaká na schválenie', s('review') ? 'warn' : '')}${t('calendar', 'queued', 'naplánovaných')}${t('send', 'done', 'zverejnených za ' + per, 'ok')}
+    ${s('failed') ? t('alert', 'failed', 's chybou', 'bad', 'Pozri Publikovanie.') : ''}</div>${proj ? '' : prodByProject(P)}</div>`;
 }
 
 function prodByProject(P) {
@@ -320,7 +324,7 @@ function topTable(rows, m) {
 function vidTable(list) {
   const yt = list.some(x => x.wm || x.ap);
   return `<table class="dtab"><tr><th>Video</th><th>Sieť</th><th>Účet</th><th>Dátum</th><th>Pozretia</th><th>Lajky</th><th>Komentáre</th>${yt ? '<th>Hodiny</th><th>Pozreté z videa</th>' : ''}<th>Zapojenie</th></tr>
-    ${list.map(x => `<tr><td>${x.u ? `<a href="${esc(x.u)}" target="_blank">${esc(x.t || 'Bez názvu')}</a>` : esc(x.t || 'Bez názvu')}</td><td>${plat(x.pl, false)}</td><td class="dim">${esc(x.acc)}</td>
+    ${list.map(x => `<tr><td>${FMT(x.f)} ${x.u ? `<a href="${esc(x.u)}" target="_blank">${esc(x.t || 'Bez názvu')}</a>` : esc(x.t || 'Bez názvu')}</td><td>${plat(x.pl, false)}</td><td class="dim">${esc(x.acc)}</td>
       <td class="dim">${x.d.slice(8, 10)}.${x.d.slice(5, 7)}.</td><td>${nf(x.v)}</td><td>${nf(x.lk)}</td><td>${nf(x.cm)}</td>
       ${yt ? `<td>${x.wm ? nf(x.wm / 60) : '–'}</td><td>${x.ap ? Math.round(x.ap) + ' %' : '–'}</td>` : ''}<td>${x.v ? pf(x.r / x.v) : '–'}</td></tr>`).join('')}</table>`;
 }

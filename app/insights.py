@@ -469,24 +469,32 @@ def accounts_data(since_day):
 
 
 def production(since):
-    """Koľko je vymyslené, napísané, vyrobené, na schválenie, naplánované a zverejnené (po projektoch)."""
+    """Koľko je vymyslené, napísané, vyrobené, na schválenie, naplánované a zverejnené (po projektoch).
+    Každé číslo má aj časť pre dlhé videá (kľúč s príponou _l); krátke = celok mínus dlhé."""
     out = {}
+    IF = "COALESCE(NULLIF(i.format,''),'short')"
+    VF = db.fmt_sql("v")
 
     def add(sql, key, args=()):
         for r in db.q(sql, args):
-            out.setdefault(r["p"], {})[key] = r["n"]
-    add("SELECT project_id p, COUNT(*) n FROM ideas WHERE status IN ('new','approved','inbox') GROUP BY project_id", "ideas")
-    add("SELECT project_id p, COUNT(*) n FROM scripts WHERE is_source=1 AND created_at>=? GROUP BY project_id", "scripts", (since,))
-    add("SELECT project_id p, COUNT(*) n FROM videos WHERE created_at>=? GROUP BY project_id", "made", (since,))
-    add("SELECT project_id p, COUNT(*) n FROM scripts WHERE is_source=1 GROUP BY project_id", "scripts_all")
-    add("""SELECT s.project_id p, COUNT(*) n FROM scripts s WHERE s.is_source=1 AND NOT EXISTS (
+            d = out.setdefault(r["p"], {})
+            d[key] = d.get(key, 0) + r["n"]
+            if r["f"] == "long":
+                d[key + "_l"] = d.get(key + "_l", 0) + r["n"]
+    add(f"SELECT i.project_id p, {IF} f, COUNT(*) n FROM ideas i WHERE i.status IN ('new','approved','inbox') GROUP BY 1, 2", "ideas")
+    add(f"""SELECT s.project_id p, {IF} f, COUNT(*) n FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id
+            WHERE s.is_source=1 AND s.created_at>=? GROUP BY 1, 2""", "scripts", (since,))
+    add(f"SELECT v.project_id p, {VF} f, COUNT(*) n FROM videos v WHERE v.created_at>=? GROUP BY 1, 2", "made", (since,))
+    add(f"""SELECT s.project_id p, {IF} f, COUNT(*) n FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id
+            WHERE s.is_source=1 GROUP BY 1, 2""", "scripts_all")
+    add(f"""SELECT s.project_id p, {IF} f, COUNT(*) n FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1 AND NOT EXISTS (
              SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id
-             WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY s.project_id""", "ready")
+             WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY 1, 2""", "ready")
     for st, key in (("review", "review"), ("queued", "queued"), ("uploading", "queued"), ("failed", "failed")):
-        for r in db.q("""SELECT v.project_id p, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id WHERE p.status=? GROUP BY v.project_id""", (st,)):
-            out.setdefault(r["p"], {})[key] = out.get(r["p"], {}).get(key, 0) + r["n"]
-    add("""SELECT v.project_id p, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id
-           WHERE p.status='done' AND p.updated_at>=? GROUP BY v.project_id""", "done", (since,))
+        add(f"""SELECT v.project_id p, {VF} f, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id WHERE p.status=? GROUP BY 1, 2""",
+            key, (st,))
+    add(f"""SELECT v.project_id p, {VF} f, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id
+           WHERE p.status='done' AND p.updated_at>=? GROUP BY 1, 2""", "done", (since,))
     nxt = db.q("""SELECT v.project_id p, MIN(p.scheduled_at) t FROM posts p JOIN videos v ON v.id=p.video_id
                   WHERE p.status='queued' AND p.scheduled_at>=? GROUP BY v.project_id""", (_now(),))
     for r in nxt:

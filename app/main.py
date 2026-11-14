@@ -331,7 +331,7 @@ def dashboard():
 
 def _posts(where, order, limit, args=()):
     return db.q(f"""SELECT p.*, a.platform, a.name account_name, v.title, v.original_name, v.lang, v.project_id,
-                   pr.name project_name, pr.color FROM posts p JOIN accounts a ON a.id=p.account_id
+                   pr.name project_name, pr.color, {db.fmt_sql('v')} fmt FROM posts p JOIN accounts a ON a.id=p.account_id
                    JOIN videos v ON v.id=p.video_id LEFT JOIN projects pr ON pr.id=v.project_id
                    WHERE {where} ORDER BY {order} LIMIT {int(limit)}""", args)
 
@@ -1511,9 +1511,9 @@ def videos_import(data: dict = Body(...)):
 
 
 @app.get("/api/videos")
-def videos(project_id: int = 0, lang: str = "", status: str = ""):
-    sql = """SELECT v.*, (SELECT GROUP_CONCAT(a.platform || ':' || p.status) FROM posts p JOIN accounts a ON a.id=p.account_id
-             WHERE p.video_id=v.id) posts FROM videos v WHERE 1=1"""
+def videos(project_id: int = 0, lang: str = "", status: str = "", fmt: str = ""):
+    sql = f"""SELECT v.*, (SELECT GROUP_CONCAT(a.platform || ':' || p.status) FROM posts p JOIN accounts a ON a.id=p.account_id
+             WHERE p.video_id=v.id) posts, {db.fmt_sql('v')} fmt FROM videos v WHERE 1=1"""
     args = []
     if project_id:
         sql += " AND v.project_id=?"
@@ -1522,6 +1522,8 @@ def videos(project_id: int = 0, lang: str = "", status: str = ""):
         sql += " AND v.lang=?"
         args.append(lang)
     rows = db.q(sql + " ORDER BY v.id DESC", args)
+    if fmt in ("short", "long"):
+        rows = [r for r in rows if r["fmt"] == fmt]
     if status == "unposted":
         rows = [r for r in rows if not r["posts"]]
     return rows
@@ -1815,9 +1817,9 @@ def schedule(data: dict = Body(...)):
 
 # ---------------- Kontrola pred zverejnením ----------------
 def _review_rows():
-    return db.q("""SELECT p.id post_id, p.scheduled_at, a.platform, a.name account, v.id video_id, v.lang, v.title,
+    return db.q(f"""SELECT p.id post_id, p.scheduled_at, a.platform, a.name account, v.id video_id, v.lang, v.title,
                           v.caption, v.hashtags, CASE WHEN COALESCE(v.removed,0)=1 THEN COALESCE(v.preview_path,'') ELSE v.file_path END file_path,
-                          v.project_id, v.original_name, s.idea_id, s.is_source, COALESCE(p.stash_id,'') stash_id
+                          v.project_id, v.original_name, s.idea_id, s.is_source, COALESCE(p.stash_id,'') stash_id, {db.fmt_sql('v')} fmt
                    FROM posts p JOIN videos v ON v.id=p.video_id JOIN accounts a ON a.id=p.account_id
                    LEFT JOIN scripts s ON s.id=v.script_id WHERE p.status='review' ORDER BY p.scheduled_at""")
 
@@ -1828,7 +1830,7 @@ def review_list():
     groups = {}
     for r in _review_rows():
         key = f"i{r['idea_id']}" if r["idea_id"] else f"v{r['video_id']}"
-        g = groups.setdefault(key, {"key": key, "project_id": r["project_id"], "first": r["scheduled_at"],
+        g = groups.setdefault(key, {"key": key, "project_id": r["project_id"], "first": r["scheduled_at"], "fmt": r["fmt"],
                                     "langs": {}, "accounts": set(), "posts": 0, "platforms": set()})
         g["posts"] += 1
         g["accounts"].add(r["account"])
@@ -1842,7 +1844,7 @@ def review_list():
     out = []
     for g in groups.values():
         langs = sorted(g["langs"].values(), key=lambda x: (not x["source"], x["lang"] or ""))
-        out.append({"key": g["key"], "project_id": g["project_id"], "first": g["first"], "posts": g["posts"],
+        out.append({"key": g["key"], "project_id": g["project_id"], "first": g["first"], "posts": g["posts"], "fmt": g["fmt"],
                     "accounts": len(g["accounts"]), "platforms": sorted(g["platforms"]), "langs": langs,
                     "title": langs[0]["title"]})
     return out
