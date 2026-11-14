@@ -1108,6 +1108,9 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
         if v.get("k") == "mech":  # réžia: dĺžka scény a úvodný záber „kde to je“ len pri prvom výskyte stroja
             v = dict(v, _dur=round(t1 - t0, 2), **({} if v.get("m") in seen_mech else {"_in": 1}), **({"_first": 1} if i == 0 else {}))
             seen_mech.add(v.get("m"))
+            fs = auto_visual.shots(v, [w for w in words if t0 - .05 <= w["s"] < t1], t0)
+            if fs:   # hlas v scéne prejde cez viac častí: kamera ide za ním
+                v = dict(v, fs=fs)
             if v.get("m") in auto_visual.PRECISE and not v.get("c"):   # číslo, ktoré hlas povie, naskočí pri modeli
                 c = auto_visual.callout(sc.get("onscreen"), [w for w in words if t0 - .05 <= w["s"] < t1], t0)
                 if c:

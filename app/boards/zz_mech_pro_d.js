@@ -1,7 +1,7 @@
 // Presné modely 4 – teplo: tepelné čerpadlo vzduch–voda v reze. Točí sa len ventilátor a kompresor; chladivo, vzduch a voda tečú.
 // Farba chladiva ukazuje jeho stav: studená zmes → chladný plyn → horúci stlačený plyn → teplá kvapalina. Hustota bodiek sedí s hustotou látky.
 {
-const K=window.KIT,PRO=K.PRO,{mix,rgba,ez,hatch,dot,HS,STG,camAt,stamp,callout,LBL,tag,meter,cams,CTX,INTRO,lead,badge}=K;
+const K=window.KIT,PRO=K.PRO,{mix,rgba,ez,hatch,dot,HS,STG,camAt,stamp,callout,LBL,tag,meter,cams,shot,CTX,INTRO,lead,badge}=K;
 const TAU=Math.PI*2,N=v=>{v=parseFloat(v);return isFinite(v)?v:0};
 const COLD='#2f86ff',GASL='#a9dcff',HOT='#ff4a2e',WARM='#ffb040',WAT0='#4aa8e8',WAT1='#ff7a3a',AIR0='#d6ebff',AIR1='#5c9dff';
 // lomená dráha: bod v pomere u (0..1) jej dĺžky
@@ -16,7 +16,7 @@ const pill=(S,s,px,py,col,k)=>{const x=S.x;x.save();x.translate(px,py);x.scale(k
 // ---------- tepelné čerpadlo: výparník berie teplo zo vzduchu, kompresor chladivo stlačí (zohreje), kondenzátor odovzdá teplo vode, ventil tlak uvoľní ----------
 // l = [výparník, kompresor, kondenzátor, expanzný ventil]; f = evap | comp | cond | valve | run (celý okruh beží, kamera pomaly ide bližšie)
 PRO.heatpump=(v,d)=>{const S=STG(v),x=S.x,A=D.acc,LN=LBL(d),EN=LN.length>0,DUR=N(d._dur)||9,F=String(d.f||'');
-const zf=Math.min(S.w/955,S.h/610)*.98,FULL=[472,286,zf],FV={evap:[222,330,zf*1.5],comp:[540,132,zf*2.2],cond:[806,305,zf*1.6],valve:[516,490,zf*2.5]},ORD=['evap','comp','cond','valve'],KF=cams(d,FULL,FV,ORD,DUR);
+const zf=Math.min(S.w/955,S.h/(WIDE?700:610))*.98,FULL=[472,WIDE?322:286,zf],FV={evap:[222,330,zf*1.5],comp:[540,132,zf*2.2],cond:[806,305,zf*1.6],valve:[516,490,zf*2.5]},ORD=['evap','comp','cond','valve'],KF=cams(d,FULL,FV,ORD,DUR);
 const CC=[540,150],RC=62,RH=80,EC=14,RR=RC-EC,WC=4.2,FAN=[150,330],FR=108,NP=118,NA=46,NW=30;
 const COILP=[];for(let k=0;k<8;k++){const y=470-40*k;COILP.push(k%2?[246,y]:[304,y],k%2?[304,y]:[246,y])}
 // úseky okruhu: T = ako dlho v nich chladivo je (pomalá kvapalina = husté bodky, rýchly plyn = riedke)
@@ -86,20 +86,24 @@ dot(x,[P[0]+(g.mist?(HS(i,5)-.5)*7:0),P[1]+(g.mist?(HS(i,6)-.5)*7:0)],g.r[0]+(g.
 // voda do domu: vo výmenníku sa ohreje
 for(let i=0;i<NW;i++){const u=(t/5.2+i/NW)%1,P=WP.at(u),k=cl((u*WP.T-129)/210);dot(x,P,4.4,mix(WAT0,WAT1,k),cl(u/.04)*cl((1-u)/.04),true)}
 // popisky pri celkovom pohľade, teploty pri priblížení
-x.globalAlpha=p*sp*(1-zi);lead(S,LN[0],196,530,262,494);lead(S,LN[1],652,258,596,206);lead(S,LN[2],650,330,735,330);lead(S,LN[3],440,406,494,468);tag(S,EN?'+3 kW FROM AIR':'+3 kW',154,148,'center',A,21);
+x.globalAlpha=p*sp*(1-zi);lead(S,LN[0],128,482,232,468);lead(S,LN[1],652,258,596,206);lead(S,LN[2],650,330,735,330);lead(S,LN[3],440,406,494,468);tag(S,EN?'+3 kW FROM AIR':'+3 kW',154,148,'center',A,21);
 PILLS.forEach(q=>{const w=Math.max(...q[4].map(k=>cl(1.5-Math.hypot(cm[0]-FV[k][0],cm[1]-FV[k][1])/120)));if(w>.01){x.globalAlpha=p*sp*zi*w;pill(S,q[0],q[1],q[2],q[3],pk)}});
 x.restore();
 // z 1 kW elektriny sú 4 kW tepla
-const fi=ORD.indexOf(F),a=cl((t-.6)/.4);x.globalAlpha=p;
-if(fi>=0&&t>.35)stamp(S,fi,LN[fi]||'',4,t-.35,A);
+const [FN,ts]=shot(KF,d,t),fi=ORD.indexOf(FN),a=cl((t-.6)/.4);x.globalAlpha=p;
+if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||'',4,ts-.35,A);
 meter(S,'1',EN?'kW IN':'kW',A,a,fi>=0);badge(S,d._first?(1+3*ez((t-.9)/2.4)).toFixed(1):'4.0',EN?'kW HEAT':'kW',A,a);
 callout(S,d,t,A);x.globalAlpha=1}};
 
 // ---------- úvod: dom s vonkajšou jednotkou (stojí; točí sa len ventilátor a prúdi vzduch) ----------
-const HOUSE=(x,t,hot,A,pulse)=>{const dim='rgba(255,255,255,.34)',on=hot=='unit';x.lineJoin='round';
+const HOUSE=(x,t,hot,A,pulse,pv)=>{const dim='rgba(255,255,255,.34)',on=hot=='unit';x.lineJoin='round';
 x.beginPath();x.moveTo(190,0);x.lineTo(190,-150);x.lineTo(168,-150);x.lineTo(330,-264);x.lineTo(492,-150);x.lineTo(470,-150);x.lineTo(470,0);x.closePath();x.fillStyle='rgba(255,255,255,.045)';x.fill();
 {const g=x.createRadialGradient(330,-64,10,330,-64,180);g.addColorStop(0,'rgba(255,138,58,.26)');g.addColorStop(1,'rgba(255,138,58,0)');x.fillStyle=g;x.fill()}x.strokeStyle='#fff';x.lineWidth=3;x.stroke();
 x.strokeStyle=dim;x.lineWidth=2.2;[222,384].forEach(X=>{x.strokeRect(X,-120,54,54);x.beginPath();x.moveTo(X+27,-120);x.lineTo(X+27,-66);x.moveTo(X,-93);x.lineTo(X+54,-93);x.stroke()});x.strokeRect(308,-86,44,86);
+// solárne panely na streche (len vo videu o nich)
+if(pv){const sun=hot=='roof';x.save();x.lineCap='round';x.strokeStyle=sun?A:dim;x.lineWidth=sun?9:5;if(sun){x.shadowColor=A;x.shadowBlur=16+10*pulse}x.beginPath();x.moveTo(356,-253);x.lineTo(462,-178);x.stroke();x.restore();
+if(sun){for(let j=0;j<6;j++){const u=(t*.6+j/6)%1;x.fillStyle=`rgba(255,216,74,${(.9*Math.sin(Math.PI*u)).toFixed(3)})`;x.beginPath();x.arc(300+j*26+u*52,-420+u*150+j*9,3.5,0,TAU);x.fill()}x.beginPath();x.arc(409,-216,58+16*pulse,0,TAU);x.strokeStyle=rgba(A,.75*(1-pulse));x.lineWidth=3;x.stroke()}}
+if(pv)return;
 // teplá voda do podlahy
 x.strokeStyle='rgba(255,138,58,.85)';x.lineWidth=3;x.beginPath();x.moveTo(130,-34);x.lineTo(204,-34);x.lineTo(204,-12);for(let X=204;X<452;X+=24){x.lineTo(X+12,-12);x.lineTo(X+12,-22);x.lineTo(X+24,-22);x.lineTo(X+24,-12)}x.stroke();
 for(let j=0;j<5;j++){const u=(t*.45+j/5)%1;x.fillStyle=`rgba(255,160,90,${.8*Math.sin(Math.PI*u)})`;x.beginPath();x.arc(132+u*72,-34,3.5,0,TAU);x.fill()}
@@ -112,5 +116,6 @@ x.beginPath();x.arc(85,-44,27,0,TAU);x.fillStyle='rgba(0,0,0,.55)';x.fill();x.st
 x.lineWidth=5;x.lineCap='round';for(let b=0;b<3;b++){const a=t*6+b*TAU/3;x.beginPath();x.moveTo(85+5*Math.cos(a),-44+5*Math.sin(a));x.quadraticCurveTo(85+18*Math.cos(a+.5),-44+18*Math.sin(a+.5),85+23*Math.cos(a+.9),-44+23*Math.sin(a+.9));x.stroke()}x.lineCap='butt';
 if(on){x.beginPath();x.arc(85,-44,58+16*pulse,0,TAU);x.strokeStyle=rgba(A,.75*(1-pulse));x.lineWidth=3;x.stroke()}};
 INTRO.house={hot:{unit:[85,-44]},still:1,draw:HOUSE};
+INTRO.roof={hot:{roof:[409,-216]},still:1,draw:(x,t,hot,A,pulse)=>HOUSE(x,t,hot,A,pulse,true)};
 CTX.heatpump=['house','unit'];
 }

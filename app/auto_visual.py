@@ -34,8 +34,8 @@ RULES = [
     (r"oil well|drilling|drill rig|derrick|fracking", "drill", ["Derrick", "Drill bit", "Oil reservoir"]),
     (r"canal lock|lock chamber|panama canal", "canal_lock", ["Upper water", "Lock chamber", "Lower water"]),
     (r"\bdams?\b|hydroelectric|hydropower|reservoir", "dam", ["Reservoir", "Turbine", "Grid"]),
-    (r"wind turbine|wind power|wind farm|wind energy", "wind_turbine", ["Wind", "Power"]),
-    (r"solar (panel|cell|power|energy)|photovoltaic", "solar", ["Sunlight", "Solar cell", "Load"]),
+    (r"wind turbine|wind power|wind farm|wind energy", "wind_turbine", ["Rotor", "Gearbox", "Generator", "Tower"]),
+    (r"solar (panel|cell|power|energy)|photovoltaic", "solar", ["Sunlight", "P-N junction", "Current"]),
     (r"heat pump|wärmepumpe|tepeln\w+ čerpad|tepeln\w+ čerpad|pompa ciepła|hőszivattyú|refrigerant", "heatpump",
      ["Evaporator", "Compressor", "Condenser", "Expansion valve"]),
     (r"air ?condition|\bac unit", "aircon", ["Compressor", "Cooling", "Heat outside"]),
@@ -93,14 +93,28 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
                      ("turn", r"corner|\bbend|inner wheel|outer wheel|inside wheel|outside wheel|different speeds?|faster|slower|speeds up|slows down")],
     "heatpump": [("valve", r"expansion|\bvalve|pressure drops?|throttl|expanz|škrtiac|drossel|rozpręż"),   # aj v jazykoch N2N
                  ("comp", r"compress|squeez|kompres|verdicht|sprężark"),
-                 ("cond", r"condens|kondenz|verflüssig|skraplacz|heat exchanger|plate|to the water|heats? (the |your )?water|radiator|underfloor|floor heating|hot water"),
+                 ("cond", r"condens|gives? (up |off )?its heat|hands? (over )?its heat|releases? (its |the )?heat|back into (a )?liquid|kondenz|verflüssig|skraplacz|heat exchanger|plate|to the water|heats? (the |your )?water|radiator|underfloor|floor heating|hot water"),
                  ("evap", r"evaporat|výparn|verdampf|parownik|outdoor (air|coil)|outside air|from the air|\bfan\b|\bcoil\b|absorb|boil")],
+    "wind_turbine": [("gearbox", r"gearbox|\bgears?\b|speeds? (it )?up|\bratio|times faster"),
+                     ("generator", r"generator|magnet|\bcoils?\b|copper|electric|current|\bgrid\b|volt|megawatt"),
+                     ("rotor", r"\bblades?\b|\brotor\b|\bhub\b|\blift\b|main shaft|sweep|the wind (hits|pushes|turns)")],
+    "solar": [("junction", r"junction|silicon|knock|electric field|n-type|p-type|\blayers?\b|\bholes?\b|free electrons?"),
+              ("circuit", r"circuit|\bwires?\b|current|\bflows?\b|\bload\b|bulb|lamp|inverter|\bgrid\b|battery|\bvolts?\b|power your"),
+              ("light", r"sunlight|photons?|\bsun\b|light (hits|strikes)|\brays?\b")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
                   ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
 }
 FOCUS = {m: [(f, re.compile(r, re.I)) for f, r in _STROKES] for m in ("piston", "wankel", "rotary")}
 FOCUS.update({m: [(f, re.compile(r, re.I)) for f, r in v] for m, v in _PARTS.items()})
-RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump")   # modely, ktoré vedia záber „beží naplno“
+RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump", "wind_turbine")
+# zábery, ktoré len posunú kameru (stav stroja nemenia): v rámci jednej scény môže kamera prejsť z jedného na druhý
+CAM_ONLY = {"turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "valve", "belt"}, "car_brake": {"caliper", "disc"},
+            "gearbox": {"input", "gears", "collar", "output"}, "differential": {"pinion", "spider"},
+            "heatpump": {"evap", "comp", "cond", "valve"}, "wind_turbine": {"rotor", "gearbox", "generator"},
+            "solar": {"light", "junction", "circuit"}}
+# tenké schémy, ktoré v krátkom videu o stroji nahradí model (grafy s číslami ostávajú)
+SOFT = {"flow", "cycle", "steps", "network", "tree", "layers", "split", "stack", "level", "zoom", "size", "sim", "forces", "myth", "dots",
+        "funnel", "venn", "house", "crack", "clock", "matrix"}   # modely, ktoré vedia záber „beží naplno“
 WEAK = ("hero", "icons", "scene", "draw", "text", "list")
 # ikony, ktoré sa naozaj točia; ostatné sa nemajú otáčať (otáčajúca sa značka motora pôsobí lacno)
 SPINS = set("gear wheel tyre saw_blade flywheel impeller propeller ship_propeller sprocket ball_bearing roller_bearing brake_disc vinyl film_reel roulette ship_wheel".split())
@@ -118,9 +132,11 @@ _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": 
             "gears": r"\bteeth\b|\btooth\b|\bmesh|\bratio", "turbo": r"turbine|compressor|\bboost|exhaust gas|intercooler|\bspool",
             "camshaft": r"\blobes?\b|\bvalves?\b|timing|\bcams?\b", "car_brake": r"caliper|\bpads?\b|\bdis[ck]s?\b|friction|brake fluid|pedal",
             "gearbox": r"\bgears?\b|\bshift|clutch|\bratio|synchro|\bshafts?\b", "differential": r"\bwheels?\b|corner|axle|spider|pinion|ring gear|\bturns?\b",
+            "solar": r"photons?|electrons?|silicon|junction|sunlight|\bcells?\b|inverter|\bvolts?\b|current",
+            "wind_turbine": r"\bblades?\b|nacelle|\brotor\b|gearbox|generator|\byaw|\bpitch|megawatt|\bMW\b|\btower",
             "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
 # model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
-_NEEDS = {"heatpump": 2}
+_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3}
 
 
 def topic(full, title="", strict=False):
@@ -149,7 +165,7 @@ def _topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump"}
+NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
@@ -249,6 +265,9 @@ def sound_events(sc_data):
                 hits = [(0.5236 + j * 2.0944) / w for j in range(60)]
             elif f in ("intake", "exhaust"):
                 kind, hits = {"intake": "air", "exhaust": "hiss"}[f], [.5]
+        elif m == "wind_turbine":
+            if f in ("", "rotor", "run"):
+                kind, hits = "air", [.5]
         elif m == "heatpump":   # ventilátor ženie vzduch, za ventilom chladivo zasyčí
             if f in ("", "evap", "valve"):
                 kind, hits = ("hiss" if f == "valve" else "air"), [.5]
@@ -259,6 +278,34 @@ def sound_events(sc_data):
             if True:
                 ev.append((kind, t0 + sh + h))
     return sorted(ev, key=lambda e: e[1])
+
+
+def shots(v, words, t0):
+    """Kamera za hlasom: [[časť, čas od začiatku scény], …], keď hlas v jednej scéne hovorí postupne o viacerých častiach. Inak None.
+    Berú sa len zábery, ktoré menia iba kameru (CAM_ONLY); na jednej časti kamera ostane aspoň 2 s."""
+    m, f0 = v.get("m"), v.get("f") or ""
+    cam = CAM_ONLY.get(m)
+    if v.get("k") != "mech" or not cam or (f0 and f0 not in cam):
+        return None
+    text, starts = "", []
+    for w in words:
+        starts.append((len(text), float(w.get("s") or 0)))
+        text += str(w.get("w") or "") + " "
+    ev = []
+    for f, rx in FOCUS.get(m, ()):
+        if f in cam:
+            for mt in rx.finditer(text):
+                at = [s for o, s in starts if o <= mt.start()]
+                ev.append((round(max(0.0, (at[-1] if at else t0) - t0), 2), f))
+    ev.sort()
+    # poradie určuje hlas; záber z nadpisu (f0) ide prvý len vtedy, keď hlas o prvej časti prehovorí až neskôr
+    seq = [[f0, 0.0]] if f0 and (not ev or ev[0][0] > 2.4) else []
+    for t, f in ev:
+        if not seq:
+            seq.append([f, 0.0 if t <= 2.4 else t])
+        elif seq[-1][0] != f and t - seq[-1][1] >= 2.0:
+            seq.append([f, t])
+    return seq if len(seq) >= 2 or (seq and not f0) else None
 
 
 def calm_draw(d):
@@ -292,7 +339,7 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
     na to, o čom scéna hovorí. Mimo témy videa sa model doplní, len keď scéna sama hovorí o stroji s presným modelom."""
     d = calm_draw(d)
     texts = (scene.get("onscreen") or "", scene.get("visual") or "", spoken or "")
-    if topic and (d.get("k") == "svg" or (d.get("k") == "count" and not long) or (d.get("k") == "mech" and d.get("m") not in PRECISE)):
+    if topic and (d.get("k") == "svg" or (not long and d.get("k") in SOFT | {"count"}) or (d.get("k") == "mech" and d.get("m") not in PRECISE)):
         d = {"k": "text"}   # kresba od AI, stará hrubá schéma alebo (v krátkom videu) samotné číslo: ukáže sa presný model, číslo naskočí pri ňom
     if d.get("k") == "mech":
         if d.get("m") in FOCUS and not d.get("f"):
