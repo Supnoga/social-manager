@@ -180,7 +180,7 @@ def verify_file(fname: str):
 
 # ---------------- Dlhé úlohy na pozadí (prehliadač sa len pýta na stav, spojenie sa nepreruší) ----------------
 JOBS = {}
-nightly.BUSY = lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"]  # Mac nezaspí počas ručnej výroby
+nightly.BUSY = lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or MPROD["running"]  # Mac nezaspí počas ručnej výroby
 
 
 @app.post("/api/job")
@@ -1263,6 +1263,160 @@ def month_plan_build(data: dict = Body(default={})):
     from . import monthplan
     monthplan.build(data.get("project_ids") or None, data.get("start") or None, data.get("days") or 30)
     return monthplan.get(int(data["project_ids"][0]) if data.get("project_ids") and len(data["project_ids"]) == 1 else 0)
+
+
+# ---------- Výroba podľa mesačného plánu (1.66.1) ----------
+# Ide v poradí zverejnenia: dlhé video dňa a potom jeho 3 krátke. Dlhé, ktoré neprejde kontrolou obrazu,
+# ostane zadržané a na jeho miesto ide ďalšia téma kanála. Nič sa nenahráva ani neplánuje.
+MPROD = {"running": False, "stop": False, "step": [], "log": [], "done": {"long": 0, "short": 0}, "failed": {}, "first": {}}
+
+
+def _mp_ok(r):
+    return bool((r or {}).get("qa") and r["qa"].get("ok"))
+
+
+def _mp_long(slot, tried):
+    from . import monthplan
+    pid, iid = slot["pid"], slot["idea"]
+    for _ in range(4):
+        if MPROD["stop"]:
+            return None
+        if iid in tried:   # téma už išla ako náhrada za iný deň
+            iid = 0
+        if not iid:
+            cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and monthplan._cover(r["title"] or "")[0] != "gap"]
+            cand.sort(key=lambda r: (monthplan._cover(r["title"] or "")[0] != "model", not r["has_script"], -r["score"]))
+            if not cand:
+                return None
+            iid = cand[0]["id"]
+        tried.add(iid)
+        try:
+            if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
+                content.run_task("scripts", {"idea_ids": [iid]})
+            r = idea_produce_first(iid, {})
+            if _mp_ok(r):
+                return iid
+            why = "; ".join((r.get("qa") or {}).get("why") or [])[:200]
+        except Exception as e:
+            why = str(e)[:200]
+        MPROD["failed"].setdefault(str(pid), []).append({"idea": iid, "why": why})
+        MPROD["log"].append(f"kanál {pid}: dlhé {iid} neprešlo ({why})")
+        iid = 0
+    return None
+
+
+def _mp_short(pid, lid):
+    from . import monthplan
+    for attempt in range(3):
+        if MPROD["stop"]:
+            return False
+        kids = monthplan._children(lid)
+        if not kids:
+            if attempt == 2:
+                return False
+            try:
+                content.run_task("teasers", {"idea_id": lid, "count": 3})
+            except Exception as e:
+                MPROD["log"].append(f"kanál {pid}: krátke z {lid} sa nepodarili ({str(e)[:120]})")
+                return False
+            continue
+        k = kids[0]
+        try:
+            if not k["has_script"]:
+                content.run_task("scripts", {"idea_ids": [k["id"]]})
+            if _mp_ok(idea_produce_first(k["id"], {})):
+                return True
+            MPROD["log"].append(f"kanál {pid}: krátke {k['id']} neprešlo kontrolou")
+        except Exception as e:
+            MPROD["log"].append(f"kanál {pid}: krátke {k['id']}: {str(e)[:120]}")
+    return False
+
+
+def _mp_run(workers, until):
+    from . import monthplan
+    plan = monthplan.get()
+    tasks = []   # (dátum, 0=dlhé/1=krátke, poradie, slot)
+    for p in plan["projects"]:
+        slot = None
+        for d in p["days"]:
+            if until and d["date"] > until:
+                break
+            if d.get("long"):
+                slot = {"pid": p["id"], "idea": d["long"]["idea_id"], "state": "wait", "final": 0, "date": d["date"]}
+                tasks.append((d["date"], 0, p["id"], slot))
+            if d.get("short") and slot:
+                tasks.append((d["date"], 1, p["id"], slot))
+    tasks.sort(key=lambda t: t[:3])
+    lock, tried = threading.Lock(), {}
+    MPROD.update(running=True, stop=False, total=len(tasks), left=len(tasks))
+
+    def take():
+        with lock:
+            for n, t in enumerate(tasks):
+                if t[1] == 0 or t[3]["state"] in ("ok", "bad"):
+                    if t[1] == 0:
+                        t[3]["state"] = "busy"
+                    return tasks.pop(n)
+            return "wait" if tasks else None
+
+    def work():
+        while not MPROD["stop"]:
+            t = take()
+            if t is None:
+                return
+            if t == "wait":
+                time.sleep(15)
+                continue
+            date, kind, pid, slot = t
+            MPROD["step"].append(f"{date} kanál {pid} {'dlhé' if kind == 0 else 'krátke'}")
+            try:
+                if kind == 0:
+                    fin = _mp_long(slot, tried.setdefault(pid, set()))
+                    slot["final"], slot["state"] = fin or 0, "ok" if fin else "bad"
+                    if fin:
+                        MPROD["done"]["long"] += 1
+                        MPROD["first"].setdefault(str(pid), date)
+                elif slot["state"] == "ok" and _mp_short(pid, slot["final"]):
+                    MPROD["done"]["short"] += 1
+            except Exception as e:
+                MPROD["log"].append(f"{date} kanál {pid}: {str(e)[:150]}")
+                if kind == 0:
+                    slot["state"] = "bad"
+            finally:
+                MPROD["left"] = len(tasks)
+                MPROD["step"] = [x for x in MPROD["step"] if not x.startswith(f"{date} kanál {pid} ")]
+
+    try:
+        ths = [threading.Thread(target=work, daemon=True) for _ in range(max(1, min(6, workers)))]
+        for th in ths:
+            th.start()
+            time.sleep(5)
+        for th in ths:
+            th.join()
+    finally:
+        MPROD["running"] = False
+        MPROD["log"].append(f"{dt_now()} koniec: {MPROD['done']['long']} dlhých, {MPROD['done']['short']} krátkych")
+
+
+@app.post("/api/month-plan/produce")
+def month_plan_produce(data: dict = Body(default={})):
+    """Vyrobí videá v poradí mesačného plánu (s kontrolou obrazu). Nič nenahráva ani neplánuje."""
+    if MPROD["running"]:
+        return {"running": True}
+    MPROD.update(log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[])
+    threading.Thread(target=_mp_run, args=(int(data.get("workers") or 3), data.get("until") or ""), daemon=True).start()
+    return {"started": True}
+
+
+@app.get("/api/month-plan/produce")
+def month_plan_produce_status():
+    return {k: v for k, v in MPROD.items()} | {"log": MPROD["log"][-30:]}
+
+
+@app.post("/api/month-plan/produce/stop")
+def month_plan_produce_stop():
+    MPROD["stop"] = True
+    return {"ok": True}
 
 
 @app.get("/api/models/demand")
