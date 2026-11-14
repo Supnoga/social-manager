@@ -609,9 +609,10 @@ def loop():
     last_hk = 0
     while True:
         try:
-            if not db.get_setting("paused", False):
-                on = db.get_setting("radar_enabled", True)
-                if time.time() - last_hk > 3600:
+            paused = db.get_setting("paused", False)
+            if True:  # čísla a štatistiky (len čítanie) bežia aj keď je výroba pozastavená
+                on = db.get_setting("radar_enabled", True) and not paused
+                if not paused and time.time() - last_hk > 3600:
                     last_hk = time.time()
                     _housekeeping()
                 for name in JOBS:
