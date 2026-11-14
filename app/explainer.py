@@ -57,6 +57,7 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons (any simple English noun works, the app has 1000+ line icons; e.g.): %ICONS% |
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
 {"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"} |
+{"k":"svg","svg":"<g>...</g>"} = CUTAWAY MADE FOR THIS SCENE: inline SVG (viewBox 864x560, no <svg> tag) that shows the inside of the thing and how it moves: real shapes (housing, rotor, piston, valves, pipes, layers, fluid), moving with SMIL <animate>/<animateTransform>/<animateMotion> (dur 2-4s, repeatCount="indefinite"; gas/fluid as dots moving along a path; heat as colour change). Style: black background, white strokes 3-4 px, fills #111/#222, ONE accent colour written as ACC for the moving/important part, 2-4 labels <text font-size="26"> in CAPS inside the frame, parts sized and placed like the real machine (moving parts touch what they push), colour only the part that is working right now, fill 70% of the frame, no gradients/filters/images, max 2500 chars. Use it for the 1-3 key "how it works" scenes when no ready "mech" fits |
 {"k":"hero","i":"icon","w":"2-4 words","s":"optional short second line"} (one big animated picture of the thing we talk about; use it for story, everyday comparisons and scenes without numbers)
 {"k":"draw","e":[...max 14 elements]} = your own animated line drawing on a 432x280 canvas (x right, y down). Use it when the viewer should SEE the thing happen instead of reading about it (example: a 2-blade, a 3-blade and a 4-blade wind turbine side by side, the 2-blade one shaking). Elements:
 {"s":"turbine","p":[xCenter,yGround,height],"n":blades,"l":"label"} | {"s":"line","p":[x1,y1,x2,y2]} | {"s":"arrow","p":[x1,y1,x2,y2]} | {"s":"circle","p":[cx,cy,r]} | {"s":"rect","p":[x,y,w,h]} | {"s":"text","p":[x,y],"t":"1-3 words"} | {"s":"icon","i":"icon name","p":[xCenter,yCenter,size]}.
@@ -66,7 +67,7 @@ Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Neve
 {"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
 {"k":"map","c":["EG","SD"],"p":["Cairo"],"r":[["Cairo","Aswan"]],"v":"Nile","l":"optional 1-3 word tag"} = real animated map: the globe turns and zooms in, countries light up with their flags. c = ISO 2-letter codes (first = main) or a region (EU, Middle East, Africa, Balkans...), p = max 4 real cities, r = routes: ["Cairo","London"] is a straight flight line; a ship route lists sea waypoints between the ports, e.g. ["Shanghai","South China Sea","Singapore Strait","Sri Lanka South","Bab el Mandeb","Red Sea","Suez Canal","Crete South","Sicily Channel","Strait of Gibraltar","Cape Finisterre","English Channel","Rotterdam"] (other points: Strait of Malacca, Hormuz, Persian Gulf, Cape of Good Hope, Panama Canal, Caribbean, Atlantic, Pacific, Bosporus, Black Sea, Danish Straits, Baltic Sea, North Sea, Taiwan Strait), v = river or canal. Only real places, all fields except c optional. Use "map" EVERY time the voice names a country, region, city, river, sea route or border: it beats all other rules.
 {"k":"timeline","i":[["1869","Suez Canal opens"],...max 5]} (history, dates) | {"k":"line","u":"unit","i":[["2000",12],["2010",30],...max 10]} (change over time)
-"scene" and "draw" are the DEFAULT, together at least 3 of every 5 scenes: "scene" for things connected by flows, "draw" only to place the same kind of object side by side for comparison (like the turbines) or to point at one object with arrows. Use the number diagrams only when the voice says a number, and "hero"/"text" only for the hook or the closing line.
+PRIORITY: the picture must SHOW what the voice says at that moment. A machine, device or process being explained -> "mech" (ready animated cutaway) when one fits, otherwise "svg" (a cutaway you draw for this scene); a place -> "map"; a spoken number -> a number diagram; things passing something to each other -> "scene"; "draw" only to compare objects side by side; "hero"/"text" only for the hook or the closing line. Never just a spinning icon of the thing.
 Labels max 4 words, numbers as numbers."""
 
 
@@ -352,6 +353,8 @@ def board_of(scene):
     d = from_old(a, scene.get("onscreen", "")) if isinstance(a, dict) else None
     if not d or d.get("k") not in KINDS:
         d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
+    if d.get("k") == "svg" and not clean_svg(d.get("svg")):
+        d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
     if d.get("k") == "draw":
         # voľná kresba len z hotových dielov: bez krivých čiar od AI a aspoň jeden skutočný objekt, inak radšej jednoduchý diagram
         els = [e for e in (d.get("e") or []) if isinstance(e, dict) and e.get("s") != "path"]
@@ -386,8 +389,31 @@ def auto_map(scene, d):
     return m or d
 
 
+_SVG_BAD = re.compile(r"(?is)<\s*(script|foreignObject|iframe|image|use|style)\b.*?(</\s*\1\s*>|/>)|\son\w+\s*=\s*(\"[^\"]*\"|'[^']*')|(xlink:)?href\s*=\s*[\"'](?!#)[^\"']*[\"']|javascript:|url\((?!#)[^)]*\)")
+
+
+def clean_svg(src):
+    """Rez na mieru od AI: len čisté SVG tvary a animácie (bez skriptov, odkazov, obrázkov); pokazené = None."""
+    s = str(src or "").strip()
+    if not (40 < len(s) < 9000):
+        return None
+    s = re.sub(r"(?is)^\s*<svg[^>]*>|</svg>\s*$", "", s)
+    s = _SVG_BAD.sub("", s)
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring('<svg xmlns="http://www.w3.org/2000/svg">' + s + "</svg>")
+    except Exception:
+        return None
+    if len(list(root.iter())) < 4 or not any(e.tag.split("}")[-1].startswith("animate") for e in root.iter()):
+        return None  # bez pohybu to nie je animácia, radšej iný obraz
+    return s
+
+
 def prepare(v, lang="en"):
     """Pred renderom: mapa dostane overené súradnice a vlajky, stĺpce vlajky krajín. Čo sa nenájde, ostane bez mapy."""
+    if v.get("k") == "svg":
+        c = clean_svg(v.get("svg"))
+        return dict(v, svg=c) if c else {"k": "text", "w": str(v.get("w") or v.get("l") or "")}
     if v.get("k") == "map":
         from . import geo
         r = geo.resolve(v, lang)
@@ -998,9 +1024,13 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     total = media.duration(voice) or 10
     words = media.word_times(voice, text)
     times = timeline(scenes, words, total)
-    sc_data, pcache = [], {}
+    sc_data, pcache, used, prev = [], {}, {}, None
+    from . import auto_visual
     for sc, (t0, t1) in zip(scenes, times):
-        v = prepare(board_of(sc), lang)
+        spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
+        v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12)
+        prev = v.get("m") if v.get("k") == "mech" else None
+        v = prepare(v, lang)
         h = (sc.get("onscreen") or "").strip()
         v = with_product(h, v, products, pcache)
         if v.get("k") == "text" and re.sub(r"\W", "", str(v.get("w", "")).lower()) == re.sub(r"\W", "", h.lower()):
