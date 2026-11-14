@@ -850,7 +850,8 @@ def script_to_video(sid: int, data: dict = Body(default={})):
                            logo=brand.logo_data_uri(lg, 680, 176) if lg and bo["logo_corner"] else None,
                            logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
                            products=brand.product_images(s["project_id"]), wide=wide,
-                           thumb=out.with_suffix(".jpg") if wide else None, title=s.get("title") or "", **_thumb_opts(s))
+                           thumb=out.with_suffix(".jpg") if wide else None, title=s.get("title") or "",
+                           guide=bool(db.get_setting("guide", False)), **_thumb_opts(s))   # guide = sprievodca (robot pri titulkoch), zapína sa nastavením
             done = logo_in = True
         except Exception as e:
             print("animované video:", e)

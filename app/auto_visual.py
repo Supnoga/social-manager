@@ -205,7 +205,7 @@ def sound_events(sc_data):
             continue
         dur, f, m, sh = t1 - t0, v.get("f") or "", v.get("m"), 0.0
         if v.get("_in"):
-            IN = max(1.7, min(2.8, dur * .3))
+            IN = 1.15 if v.get("_first") else max(1.7, min(2.8, dur * .3))
             sh = IN * .78
             ev.append(("zoom", t0 + IN * .55))
         if (v.get("c") or {}).get("t") is not None:
@@ -260,6 +260,8 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
     na to, o čom scéna hovorí. Mimo témy videa sa model doplní, len keď scéna sama hovorí o stroji s presným modelom."""
     d = calm_draw(d)
     texts = (scene.get("onscreen") or "", scene.get("visual") or "", spoken or "")
+    if topic and (d.get("k") == "svg" or (d.get("k") == "mech" and d.get("m") not in PRECISE)):
+        d = {"k": "text"}   # kresba od AI alebo stará hrubá schéma vo videu o stroji s presným modelom: ukáže sa presný model
     if d.get("k") == "mech":
         if d.get("m") in FOCUS and not d.get("f"):
             f = focus(d["m"], *texts)
