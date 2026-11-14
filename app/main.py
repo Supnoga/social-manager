@@ -1,4 +1,6 @@
 """Social Manager - hlavný server. Spúšťa sa cez start.bat / start.command."""
+import re
+import sys
 import json
 import os
 import random
@@ -269,6 +271,7 @@ def api_meta():
         "anim": __import__("app.anim", fromlist=["status"]).status(),
         "review_count": db.one("SELECT COUNT(*) n FROM posts WHERE status='review'")["n"],
         "night": nightly.status(),
+        "render": _render_status(),
     }
 
 
@@ -1926,6 +1929,34 @@ def update_check():
     except Exception as e:
         r = {"error": str(e)}
     return dict(r, version=updater.version(), repo=db.get_setting("update_repo", "") or updater.DEFAULT_REPO)
+
+
+def _render_status():
+    """Zaťaženie Macu pri skladaní videí (na postupné zvyšovanie render_parallel)."""
+    from . import explainer
+    out = {"active": explainer._lock.active, "limit": explainer._lock.limit(), "cpus": os.cpu_count()}
+    try:
+        out["load"] = [round(x, 2) for x in os.getloadavg()]
+    except Exception:
+        pass
+    try:
+        import subprocess as sp
+        if sys.platform == "darwin":
+            r = sp.run(["memory_pressure", "-Q"], capture_output=True, text=True, timeout=5, stdin=sp.DEVNULL).stdout
+            m = re.search(r"(\d+)%", r)
+            if m:
+                out["mem_free_pct"] = int(m.group(1))
+            t = sp.run(["pmset", "-g", "therm"], capture_output=True, text=True, timeout=5, stdin=sp.DEVNULL).stdout
+            m = re.search(r"CPU_Speed_Limit\s*=\s*(\d+)", t)
+            if m:
+                out["cpu_speed_limit"] = int(m.group(1))
+        else:
+            mi = open("/proc/meminfo").read()
+            tot = int(re.search(r"MemTotal:\s+(\d+)", mi).group(1)); av = int(re.search(r"MemAvailable:\s+(\d+)", mi).group(1))
+            out["mem_free_pct"] = round(100 * av / tot)
+    except Exception:
+        pass
+    return out
 
 
 @app.post("/api/update/github")
