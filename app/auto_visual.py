@@ -6,9 +6,10 @@ import re
 RULES = [
     (r"jet engine|turbofan|turbojet|jet turbine", "jet", ["Intake", "Compressor", "Combustion", "Exhaust"]),
     (r"rotary engine|wankel|rotor housing|apex seal|triangular rotor", "wankel", ["Intake", "Compression", "Power", "Exhaust"]),
+    (r"turbo(charger|charged|charging)?s?\b|turbo lag|wastegate|boost pressure", "turbo", ["Exhaust in", "Turbine", "Compressor", "Air to engine"]),
     (r"four[- ]stroke|piston|cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engine",
      "piston", ["Intake", "Compression", "Power", "Exhaust"]),
-    (r"camshaft|valve timing|valves? open", "camshaft", ["Camshaft", "Valve spring", "Valve"]),
+    (r"camshaft|valve timing|valves? open|valve ?train|timing (belt|chain)|cam lobe", "camshaft", ["Camshaft", "Valve", "Timing belt"]),
     (r"differential", "differential", ["Inner wheel", "Differential", "Outer wheel"]),
     (r"gearbox|transmission|gear ratio|shift(ing)? gears?", "gearbox", ["Engine", "Wheels"]),
     (r"\bbrake|braking|brake disc|brake pad", "car_brake", ["Brake disc", "Caliper", "Brake pads"]),
@@ -73,8 +74,17 @@ _STROKES = [("intake", r"intake|air (and fuel )?(in\b|enters|rushes)|(pulls?|suc
             ("compression", r"compress|squeez|squash"),
             ("power", r"power stroke|\bpower\b|spark|ignit|\bburn|combust|explo|expand|bang\b|pushes? the (piston|rotor)"),
             ("exhaust", r"exhaust|used gas|burnt gas|burned gas|swept out|pushed out")]
+_PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_mech_pro_b.js)
+    "camshaft": [("cam", r"cam lobe|\blobes?\b|camshaft|\bcams?\b|egg[- ]shaped"), ("valve", r"valve|spring|\bport\b|air and fuel|mixture"),
+                 ("belt", r"timing (belt|chain)|\bbelt\b|\bchain\b|crankshaft|half (the )?speed|twice|in sync")],
+    "turbo": [("turbine", r"turbine|exhaust (gas|gases|side)|hot side|waste energy"), ("shaft", r"\bshaft|bearing|\boil\b"),
+              ("compressor", r"compressor|compress|fresh air|more air|cold side|\bboost|pack(s|ed)? (more )?air|intake")],
+    "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
+                  ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
+}
 FOCUS = {m: [(f, re.compile(r, re.I)) for f, r in _STROKES] for m in ("piston", "wankel", "rotary")}
-RUNS = ("piston", "wankel", "rotary")   # modely, ktoré vedia záber „beží naplno“
+FOCUS.update({m: [(f, re.compile(r, re.I)) for f, r in v] for m, v in _PARTS.items()})
+RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft")   # modely, ktoré vedia záber „beží naplno“
 WEAK = ("hero", "icons", "scene", "draw", "text", "list")
 # ikony, ktoré sa naozaj točia; ostatné sa nemajú otáčať (otáčajúca sa značka motora pôsobí lacno)
 SPINS = set("gear wheel tyre saw_blade flywheel impeller propeller ship_propeller sprocket ball_bearing roller_bearing brake_disc vinyl film_reel roulette ship_wheel".split())
@@ -89,7 +99,8 @@ def find(text):
 
 # slová, ktoré tému len podporujú (samy model nespustia): pomáhajú spoznať, o ktorom stroji je celé video
 _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": r"crankshaft|\bstrokes?\b|\bvalves?\b|connecting rod",
-            "gears": r"\bteeth\b|\btooth\b|\bmesh|\bratio"}
+            "gears": r"\bteeth\b|\btooth\b|\bmesh|\bratio", "turbo": r"turbine|compressor|\bboost|exhaust gas|intercooler|\bspool",
+            "camshaft": r"\blobes?\b|\bvalves?\b|timing|\bcams?\b", "car_brake": r"caliper|\bpads?\b|\bdis[ck]s?\b|friction|brake fluid|pedal"}
 
 
 def topic(full, title=""):
@@ -110,7 +121,7 @@ def topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears"}
+NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
@@ -121,9 +132,19 @@ def other(topic, *texts):
         if not t or not _CMP.search(t):
             continue
         for rx, m, _ in _RX:
-            if m in RUNS and m in PRECISE and m not in (topic, same) and rx.search(t):
+            if m in ("piston", "wankel") and topic in ("piston", "wankel", "rotary") and m in PRECISE and m not in (topic, same) and rx.search(t):
                 return m
     return None
+
+
+def focuses(m, *texts):
+    """Všetky časti stroja, o ktorých scéna hovorí (v poradí, ako zaznejú), bez opakovania."""
+    out = []
+    for t in texts:
+        for _, f in sorted((mt.start(), f) for f, rx in FOCUS.get(m, ()) for mt in [rx.search(t or "")] if mt):
+            if f not in out:
+                out.append(f)
+    return out
 
 
 def focus(m, *texts):
@@ -255,8 +276,11 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
                 return d   # v dlhom videu nie dva celkové pohľady po sebe
             f = "run" if topic in RUNS and used.get("_ov", 0) % 2 else ""
             used["_ov"] = used.get("_ov", 0) + 1
-        if prev == topic and used.get("_last") == (topic, f):
-            return d       # nikdy ten istý záber dvakrát po sebe
+        if prev == topic and used.get("_last") == (topic, f):   # nikdy ten istý záber dvakrát po sebe: iná časť, beh naplno alebo celok
+            alt = [g for g in focuses(topic, *texts) + (["run"] if topic in RUNS else []) + [""] if (topic, g) != used.get("_last")]
+            if long or not alt:
+                return d
+            f = alt[0]
         used["_last"] = (topic, f)
         out = {"k": "mech", "m": topic}
         if f:

@@ -14,6 +14,9 @@ from pathlib import Path
 
 from . import db
 
+# plátna sa kreslia bez grafickej karty: na Macu sa inak plátno samo vynulovalo a model ostal malý v rohu
+CANVAS_ARGS = ["--disable-accelerated-2d-canvas"]
+
 CACHE = db.MEDIA_DIR / "anim"
 CACHE.mkdir(parents=True, exist_ok=True)
 TYPES = ("counter", "bars", "list", "compare", "kinetic", "board")
@@ -130,7 +133,7 @@ def render(kind, data, accent="#FF6B00", dur=3.0, fps=30, font=None):
     with _render_lock, tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
         import os
         exe = os.environ.get("SM_CHROMIUM")
-        b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
+        b = pw.chromium.launch(executable_path=exe, args=CANVAS_ARGS) if exe else pw.chromium.launch(args=CANVAS_ARGS)
         try:
             pg = b.new_page(viewport={"width": 1080, "height": 1920}, device_scale_factor=1)
             pg.set_content(html(kind, data, accent, font))

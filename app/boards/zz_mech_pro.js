@@ -89,8 +89,10 @@ const metal=(x,x0,x1)=>{const g=x.createLinearGradient(x0,0,x1,0);g.addColorStop
 
 // ---------- veľké plátno a kamera ----------
 // plátno presahuje bežnú plochu schémy, aby model vyplnil obrazovku; okraje sa strácajú do pozadia
-const STG=v=>{const w=WIDE?900:980,h=WIDE?640:760,R=2,c=el('canvas','',`position:absolute;left:${(864-w)/2}px;top:${(560-h)/2}px;width:${w}px;height:${h}px`);c.width=w*R;c.height=h*R;v.append(c);const x=c.getContext('2d');x.scale(R,R);x.lineCap='round';x.lineJoin='round';
-c.style.cssText+=';-webkit-mask-image:linear-gradient(transparent 0,#000 6%,#000 94%,transparent 100%),linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%);-webkit-mask-composite:source-in;mask-composite:intersect';const FT=(getComputedStyle(document.documentElement).getPropertyValue('--f')||'').trim()||'Helvetica Neue,Arial,sans-serif';return {x,w,h,FT}};
+const STG=v=>{const w=WIDE?900:980,h=WIDE?640:760,R=2,c=el('canvas','',`position:absolute;left:${(864-w)/2}px;top:${(560-h)/2}px;width:${w}px;height:${h}px`);c.width=w*R;c.height=h*R;v.append(c);const x=c.getContext('2d',{willReadFrequently:true});x.scale(R,R);x.lineCap='round';x.lineJoin='round';
+// každá snímka začína z čistého stavu: plátno sa na niektorých počítačoch (grafická karta) samo vynuluje a kresba by ostala malá v rohu
+const begin=()=>{x.setTransform(R,0,0,R,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.shadowBlur=0;x.shadowColor='rgba(0,0,0,0)';x.setLineDash([]);x.lineCap='round';x.lineJoin='round';x.clearRect(0,0,w,h)};
+c.style.cssText+=';-webkit-mask-image:linear-gradient(transparent 0,#000 6%,#000 94%,transparent 100%),linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%);-webkit-mask-composite:source-in;mask-composite:intersect';const FT=(getComputedStyle(document.documentElement).getPropertyValue('--f')||'').trim()||'Helvetica Neue,Arial,sans-serif';return {x,w,h,FT,begin}};
 // kamera po kľúčových záberoch [čas, [cx,cy,zoom]]: plynulý prelet (tr sekúnd) na každý ďalší záber
 const camAt=(KF,t,tr)=>{let c=KF[0][1];for(let i=1;i<KF.length;i++){if(t<KF[i][0])break;c=lerp(c,KF[i][1],ez((t-KF[i][0])/(KF[i][2]||tr||.7)))}return c};
 // veľký názov práve prebiehajúcej doby (číslo + text) s bodkami priebehu
@@ -125,7 +127,7 @@ x.strokeStyle='#c2c6ca';x.lineWidth=2.5;x.beginPath();const y0=TOP-26+lift,y1=TO
 x.fillStyle='#e8eaec';x.fillRect(vx-13,TOP-32+lift,26,5)};
 // priebeh cyklu: prvý cyklus pomaly (dá sa sledovať), potom sa motor rozbehne
 const phase=t=>{if(RUN)return 2+t*4.2/T1;if(FSEL!=null){const n=Math.floor(t/PF),u=t/PF-n;return n+(u<.74?(FSEL+u/.74)/4:(FSEL+1+(u-.74)/.26*3)/4)}if(t<=T1)return t/T1;const u=t-T1,k=Math.min(1,u/1.6),I=u+3.2*(k<1?1.6*(k*k*k-k*k*k*k/2):.8+(u-1.6));return 1+I/T1};
-return (t,st)=>{const p=E(st(0,1));x.clearRect(0,0,S.w,S.h);x.globalAlpha=p;const ph=phase(t),cyc=((ph%1)+1)%1,th=cyc*2*TAU,stg=Math.min(3,Math.floor(cyc*4)),q=cyc*4-stg,fast=FSEL==null&&ph>1.02;
+return (t,st)=>{const p=E(st(0,1));S.begin();x.globalAlpha=p;const ph=phase(t),cyc=((ph%1)+1)%1,th=cyc*2*TAU,stg=Math.min(3,Math.floor(cyc*4)),q=cyc*4-stg,fast=FSEL==null&&ph>1.02;
 const K=G.crank(th,r,l),wy=CY-r-l+K.drop,crown=wy-PIN,pinX=CX+K.px,pinY=CY+K.py,top=DECK+2,hgt=Math.max(0,crown-top);
 const home=(o,i,amp,spd)=>{const w=wob(i,t,amp,spd);return [Math.max(CX-B+8,Math.min(CX+B-8,CX+(o.gx-.5)*2*(B-14)+w[0])),Math.max(top+5,Math.min(crown-5,top+7+o.gy*Math.max(2,hgt-14)+w[1]*Math.min(1,hgt/70)))]};
 const chamber=()=>x.rect(CX-B+2,top,2*B-4,hgt);
@@ -190,7 +192,7 @@ const ports=()=>{[1,-1].forEach(s=>{x.fillStyle='#050607';x.fillRect(CX+s*PX-PW/
 const CP=[...Array(NC)].map((_,i)=>({s:.07+.86*((i%10)+.15+.7*HS(i,61))/10,dp:.14+.72*(Math.floor(i/10)+.15+.7*HS(i,62))/3,fuel:HS(i,63)<.27,ein:.04+.68*HS(i,64),eex:.12+.58*HS(i,65),rr:.8+.5*HS(i,66)}));
 const sy=CY+R-e0,MIN=[CX+PX,yIn+8],MEX=[CX-PX,yIn+8],SPK=[CX,sy-10];
 const tag=(s,px,py,al,col)=>{if(!s)return;x.font=`800 25px ${S.FT}`;x.textAlign=al;x.textBaseline='middle';x.fillStyle=col||'#e9ecef';x.fillText(s,px,py)};
-return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));x.clearRect(0,0,S.w,S.h);x.globalAlpha=p;const fi=t*(RUN?1.9:.72),c=W.center(fi);
+return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const fi=t*(RUN?1.9:.72),c=W.center(fi);
 let sk=0;for(let k=0;k<3;k++){const psi=(((fi+TAU*k/3+Math.PI/3)%TAU)+TAU)%TAU,dd=psi-Math.PI/2;if(dd>-.05&&dd<.3)sk=Math.max(sk,dd<0?1+dd/.05:1-dd/.3)}
 const cm=camAt(KF,t,.9);x.save();x.translate(S.w/2+Math.sin(t*93)*5*sk,S.h/2+Math.cos(t*71)*4*sk);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);
 {const g=x.createRadialGradient(CX,CY,20,CX,CY,420);g.addColorStop(0,'rgba(86,118,160,.22)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(CX-430,CY-430,860,860)}
@@ -260,7 +262,7 @@ const CTX={piston:['car','engine'],wankel:['car','engine'],rotary:['car','engine
 // obalí model: auto príde, diel sa rozsvieti, kamera doň vletí a prelne sa do rezu
 const withIntro=(v,d,ctx,base)=>{const vm=el('div','','position:absolute;left:0;top:0;width:864px;height:560px;transform-origin:50% 50%;opacity:0');v.append(vm);const upd=base(vm,d);
 const S=STG(v),x=S.x;x.canvas.style.cssText+=';-webkit-mask-image:radial-gradient(ellipse 56% 56% at 50% 50%,#000 74%,transparent 100%);-webkit-mask-composite:source-over;mask-composite:add';const A=D.acc,IN=Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)),SC=WIDE?1.5:1.62,OX=(S.w-520*SC)/2,OY=S.h/2+150,_sh=(d._sh=IN*.78),h=CARHOT[ctx[1]],H=[OX+h[0]*SC,OY+h[1]*SC];
-return (t,st)=>{x.clearRect(0,0,S.w,S.h);const u=t/IN;if(u<1.02){const drive=1-ez(u/.42),dx=-drive*drive*700,zo=ez((u-.6)/.4),z=1+zo*zo*8.5,P=lerp(H,[S.w/2,S.h/2],ez((u-.6)/.34));
+return (t,st)=>{S.begin();const u=t/IN;if(u<1.02){const drive=1-ez(u/.42),dx=-drive*drive*700,zo=ez((u-.6)/.4),z=1+zo*zo*8.5,P=lerp(H,[S.w/2,S.h/2],ez((u-.6)/.34));
 x.save();x.globalAlpha=(d._first?1:E(u/.12))*(1-ez((u-.74)/.2));x.translate(P[0],P[1]);x.scale(z,z);x.translate(-H[0],-H[1]);
 {const g=x.createRadialGradient(S.w/2,OY-120,20,S.w/2,OY-120,460);g.addColorStop(0,'rgba(86,118,160,.2)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(0,0,S.w,S.h)}
 x.strokeStyle='rgba(255,255,255,.22)';x.lineWidth=2;x.beginPath();x.moveTo(-200,OY);x.lineTo(S.w+200,OY);x.stroke();
