@@ -60,7 +60,66 @@ def project_plan(pid):
     if not pp or not pp.get("days") or not (pp.get("hours") or pp.get("long_hours")):
         return None
     return {"days": [int(d) for d in pp["days"]], "hours": sorted(int(h) for h in pp.get("hours") or []),
-            "long_hours": sorted(int(h) for h in pp.get("long_hours") or [])}
+            "long_hours": sorted(int(h) for h in pp.get("long_hours") or []),
+            "long_every": int(pp.get("long_every") or 0), "offset": int(pp.get("offset") or 0)}
+
+
+def long_day(own, day):
+    """Striedanie (Oliver 14.11.): dlhé video len každý long_every-ty deň, kanály posunuté o offset."""
+    return not own.get("long_every") or (day.toordinal() + own.get("offset", 0)) % own["long_every"] == 0
+
+
+def _plan_rot(a, own, cand, days, now, status, jit, dry):
+    """Každý deň 1 krátke video, dlhé každý long_every-ty deň (najprv dlhé, krátke až po ňom).
+    Krátke patria k poslednému dlhému videu účtu: 3 krátke = 3 dni, kým nepríde ďalšie dlhé."""
+    lh = (own["long_hours"] or [14])[0]
+    sh = (own["hours"] or [18])[0]
+    last = db.one("""SELECT s.idea_id FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
+                     JOIN ideas i ON i.id=s.idea_id WHERE p.account_id=? AND p.status IN ('queued','review','uploading','done')
+                     AND i.format='long' AND p.scheduled_at<=? ORDER BY p.scheduled_at DESC LIMIT 1""", (a["id"], _fmt(now)))
+    cur = last["idea_id"] if last else None
+    n = total = 0
+    for d in range(days + 1):
+        day = (now + dt.timedelta(days=d)).date()
+        if day.weekday() not in own["days"]:
+            continue
+        iso = day.isoformat()
+        there = db.q("""SELECT p.scheduled_at, s.idea_id, COALESCE(i.format,'short') fmt FROM posts p JOIN videos v ON v.id=p.video_id
+                        LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
+                        WHERE p.account_id=? AND p.status IN ('queued','review','uploading','done') AND substr(p.scheduled_at,1,10)=?""",
+                     (a["id"], iso))
+        has_long = next((r["idea_id"] for r in there if r["fmt"] == "long"), None)
+        has_short = any(r["fmt"] != "long" for r in there)
+        if has_long:
+            cur = has_long
+        slots = ([("long", lh)] if long_day(own, day) and not has_long else []) + ([("short", sh)] if not has_short else [])
+        for kind, h in slots:
+            if dt.datetime.combine(day, dt.time(h)) <= now + dt.timedelta(minutes=20):
+                continue
+            total += 1
+            if kind == "long":
+                pool = [v for v in cand if v["fmt"] == "long" and (not v["due"] or v["due"] == iso)]
+                kids = {}
+                for v in cand:
+                    if v["fmt"] != "long" and v["parent"]:
+                        kids[v["parent"]] = kids.get(v["parent"], 0) + 1
+                pool.sort(key=lambda v: (v["due"] != iso, -min(kids.get(v["idea_id"], 0), 3)))
+            else:
+                pool = [v for v in cand if v["fmt"] != "long" and cur and v["parent"] == cur]
+                if not pool:   # krátke k inému dlhému, ktoré už na účte bolo; inak hocijaké hotové krátke
+                    pool = [v for v in cand if v["fmt"] != "long" and not (v["due"] and v["due"] != iso)]
+            if not pool:
+                continue
+            v = pool[0]
+            cand.remove(v)
+            if kind == "long":
+                cur = v["idea_id"]
+            when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
+            if not dry:
+                db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
+                       (v["id"], a["id"], _fmt(when), "public", status))
+            n += 1
+    return n, total
 
 
 def _plan_own(a, own, cand, days, now, status, jit, dry):
@@ -144,7 +203,7 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
             cand = [v for v in cand if v["project_id"] in project_ids]
         own = project_plan(a["project_id"])
         if own:  # projekt má vlastné dni a hodiny
-            n, slots_total = _plan_own(a, own, cand, days, now, status, jit, dry)
+            n, slots_total = (_plan_rot if own.get("long_every") else _plan_own)(a, own, cand, days, now, status, jit, dry)
             created += n
             per_acc.append({"account": a["name"], "platform": a["platform"], "posts": n,
                             "hours": sorted(own["hours"] + own["long_hours"]), "how": "plán projektu"})
