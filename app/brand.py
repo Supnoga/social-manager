@@ -208,6 +208,14 @@ def _logo_dark(im):
     return bool(px) and sum(_lum(p) for p in px) / len(px) < 85
 
 
+def _needs_plate(logo_path):
+    """Biela podložka len pre priehľadné tmavé logo (inak by na čiernom nebolo vidieť); logo s vlastným pozadím ju nedostane."""
+    from PIL import Image
+    im = Image.open(logo_path).convert("RGBA")
+    transparent = im.getchannel("A").getextrema()[0] < 200
+    return transparent and _logo_dark(im)
+
+
 def _logo_layer(logo_path, max_w, max_h, plate=None):
     """Logo zmenšené do rámčeka; tmavé logo dostane bielu podložku, aby bolo vidieť na tmavom zábere."""
     from PIL import Image, ImageDraw
@@ -357,10 +365,16 @@ def decorate(pid, video):
         tmp = Path(tmp)
         inputs, chain, last = [], "", "[0:v]"
         if o["logo_corner"]:
-            lay = _logo_layer(logo["path"], int(230 * k), int(110 * k))
+            # rovnaké miesto a veľkosť ako logo v animovanom videe (explainer #lg), aby nikdy nezakrylo nadpis
+            if W > H:   # na šírku: 280x64 vľavo hore nad nadpisom
+                s = H / 1080
+                box, pos = (int(280 * s), int(64 * s)), (int(150 * s), int(72 * s))
+            else:       # na výšku: 313x81 nad nadpisom, v bezpečnej zóne Shorts
+                box, pos = (int(313 * k), int(81 * k)), (int(96 * k), int(270 * H / 1920))
+            lay = _logo_layer(logo["path"], *box, plate=_needs_plate(logo["path"]))
             fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
             lay.putalpha(lay.getchannel("A").point(lambda v: int(v * 0.92)))
-            fr.alpha_composite(lay, (int(56 * k), int(190 * H / 1920)))
+            fr.alpha_composite(lay, pos)
             fr.save(tmp / "corner.png")
             inputs += ["-loop", "1", "-i", str(tmp / "corner.png")]
             n = len(inputs) // 4
@@ -369,7 +383,7 @@ def decorate(pid, video):
             last = "[c]"
         if end_len:
             fr = Image.new("RGBA", (W, H), (0, 0, 0, 255))
-            lay = _logo_layer(logo["path"], int(620 * k), int(340 * k))
+            lay = _logo_layer(logo["path"], int(620 * min(k, H / 1080)), int(340 * min(k, H / 1080)), plate=_needs_plate(logo["path"]))
             fr.alpha_composite(lay, ((W - lay.size[0]) // 2, (H - lay.size[1]) // 2))
             fr.save(tmp / "end.png")
             inputs += ["-loop", "1", "-i", str(tmp / "end.png")]
@@ -788,3 +802,122 @@ def relogo_api(data: dict = Body(default={})):
     left = {p: len(_relogo_pending(p)) for p in pids}
     relogo(pids)
     return {"pending": left}
+
+
+# ---------- oprava videí so zlým dodatočným logom (1.53.8) ----------
+# Do 1.53.7 dávalo dodatočné logo (relogo) aj do dlhých videí rozloženie pre výšku: obrovské logo cez nadpis.
+# Tu sa také videá, ktoré ešte nie sú verejné, podržia, zložia nanovo (len Mac, bez AI) a nahrajú znova.
+_fix_busy = threading.Lock()
+_fix_state = {"running": False, "done": [], "errors": [], "current": None}
+
+
+def _relogoed_ids():
+    ids = set()
+    for r in db.q("SELECT key, value FROM settings WHERE key LIKE 'relogo_done_%'"):
+        try:
+            ids |= {int(x) for x in json.loads(r["value"] or "[]")}
+        except Exception:
+            pass
+    return ids
+
+
+def _is_public(p):
+    return p["status"] == "done" and (p.get("scheduled_at") or "") <= dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def fixlogo_report():
+    pub, todo, fixed = [], [], set(db.get_setting("fixlogo_done", []) or [])
+    for vid in sorted(_relogoed_ids()):
+        v = db.one("SELECT id, project_id, title, script_id FROM videos WHERE id=?", (vid,))
+        if not v or vid in fixed:
+            continue
+        posts = db.q("""SELECT p.*, a.platform FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.video_id=?""", (vid,))
+        row = {"video_id": vid, "project_id": v["project_id"], "title": v["title"], "fmt": (db.one(
+            f"SELECT {db.fmt_sql('v')} f FROM videos v WHERE v.id=?", (vid,)) or {}).get("f"),
+            "posts": [{"id": p["id"], "status": p["status"], "at": p["scheduled_at"], "url": p.get("url") or "",
+                       "yt": p.get("external_id") or p.get("stash_id") or ""} for p in posts]}
+        (pub if any(_is_public(p) for p in posts) else todo).append(row)
+    todo.sort(key=lambda r: min([p["at"] or "9" for p in r["posts"]] or ["9"]))  # najbližšie zverejnenie prvé
+    return {"public": pub, "todo": todo, "fixed": sorted(fixed), "state": _fix_state}
+
+
+RENDER = None  # main.script_to_video (main beží ako __main__, preto ho main sem dá sám)
+
+
+def _fix_one(vid):
+    from .platforms import youtube
+    v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+    if not v or not v["script_id"]:
+        raise RuntimeError("video bez scenára")
+    keep = db.get_setting("fixlogo_hold", {}) or {}
+    # 1) súkromné/naplánované kópie na YouTube zmazať (ešte nie sú verejné)
+    for p in db.q("SELECT p.*, a.platform FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.video_id=?", (vid,)):
+        if _is_public(p):
+            raise RuntimeError("medzitým sa zverejnilo")
+        yid = p.get("external_id") or p.get("stash_id") or ""
+        if yid and p["platform"] == "youtube":
+            acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
+            youtube.delete_video(acc, yid)
+            db.run("UPDATE posts SET stash_id='', external_id='', url='' WHERE id=?", (p["id"],))
+    # 2) zložiť nanovo (hlas aj scenár ostávajú, logo už v obraze na správnom mieste)
+    r = RENDER(int(v["script_id"]), {})
+    new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
+    old = Path(v["file_path"] or "")
+    db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0 WHERE id=?",
+           (new["file_path"], new["size"], new["duration"], vid))
+    db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+    for f in (old, old.with_suffix(".jpg")):
+        if str(f) and f != Path(new["file_path"]) and f.exists():
+            try:
+                f.unlink()
+            except Exception:
+                pass
+    # 3) posty späť do pôvodného stavu (verejné hneď neboli, takže 'done' = naplánované → znova nahrať)
+    for p in db.q("SELECT id FROM posts WHERE video_id=? AND status='hold'", (vid,)):
+        st = keep.get(str(p["id"]), "queued")
+        db.run("UPDATE posts SET status=?, error='', attempts=0 WHERE id=?", ("review" if st == "review" else "queued", p["id"]))
+
+
+def fixlogo(apply=True):
+    rep = fixlogo_report()
+    if not apply:
+        return rep
+    keep = db.get_setting("fixlogo_hold", {}) or {}
+    for row in rep["todo"]:  # hneď podržať, nech sa nič nenahrá ani nezverejní, kým nie je nové video
+        for p in row["posts"]:
+            if p["status"] != "hold":
+                keep[str(p["id"])] = p["status"]
+        db.run("UPDATE posts SET status='hold' WHERE video_id=? AND status IN ('review','queued','done','failed')", (row["video_id"],))
+    db.set_setting("fixlogo_hold", keep)
+
+    def run():
+        if not _fix_busy.acquire(blocking=False):
+            return
+        _fix_state["running"] = True
+        try:
+            for row in rep["todo"]:
+                _fix_state["current"] = row["video_id"]
+                try:
+                    _fix_one(row["video_id"])
+                    db.set_setting("fixlogo_done", (db.get_setting("fixlogo_done", []) or []) + [row["video_id"]])
+                    _fix_state["done"].append(row["video_id"])
+                except Exception as e:
+                    _fix_state["errors"].append([row["video_id"], str(e)[:300]])
+                    print("oprava loga:", row["video_id"], e)
+        finally:
+            _fix_state["running"] = False
+            _fix_state["current"] = None
+            _fix_busy.release()
+
+    threading.Thread(target=run, daemon=True).start()
+    return dict(rep, started=len(rep["todo"]))
+
+
+@router.get("/api/brand/fixlogo")
+def fixlogo_get():
+    return fixlogo_report()
+
+
+@router.post("/api/brand/fixlogo")
+def fixlogo_post(data: dict = Body(default={})):
+    return fixlogo(bool(data.get("apply", True)))
