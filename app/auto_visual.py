@@ -88,6 +88,7 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
                 ("g3", r"top gear|high(er|est)? gear|(third|fourth|fifth|sixth) gear|motorway|highway|cruis")],
     "differential": [("pinion", r"pinion|ring gear|crown wheel|driveshaft|prop ?shaft|from the (engine|gearbox)|ninety|90"),
                      ("spider", r"spider|small gears|side gears?|\bcage\b|carrier|\binside\b|planet"),
+                     ("hold", r"hold(s|ing)? one wheel|\bheld\b|one wheel (is )?(stopped|stuck|locked|stops)|stand(s|ing)? still|twice as fast|\bice\b|\bmud\b|wheel ?spin|(loses?|no|without) grip|spins? freely|open diff"),
                      ("straight", r"straight|same speed|turn together|as one (block|piece|unit)|do(es)? not spin|nothing spins"),
                      ("turn", r"corner|\bbend|inner wheel|outer wheel|inside wheel|outside wheel|different speeds?|faster|slower|speeds up|slows down")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
@@ -254,27 +255,40 @@ def calm_draw(d):
     return dict(d, e=els)
 
 
+def _state(out, used):
+    """Diferenciál: keď video drží jedno koleso, drží ho aj v ďalších záberoch (kým nepríde jazda rovno alebo zákruta)."""
+    if out.get("m") == "differential":
+        f = out.get("f") or ""
+        if f == "hold":
+            used["_hold"] = 1
+        elif f in ("straight", "turn"):
+            used["_hold"] = 0
+        elif used.get("_hold"):
+            out = dict(out, h=1)
+    return out
+
+
 def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", topic=None, last=False):
     """d = diagram scény. Vráti diagram, ktorý sa naozaj ukáže.
     topic = stroj, o ktorom je celé video: slabé scény (ikony, text) vtedy ukazujú jeho presný model a kamera ide
     na to, o čom scéna hovorí. Mimo témy videa sa model doplní, len keď scéna sama hovorí o stroji s presným modelom."""
     d = calm_draw(d)
     texts = (scene.get("onscreen") or "", scene.get("visual") or "", spoken or "")
-    if topic and (d.get("k") == "svg" or (d.get("k") == "mech" and d.get("m") not in PRECISE)):
-        d = {"k": "text"}   # kresba od AI alebo stará hrubá schéma vo videu o stroji s presným modelom: ukáže sa presný model
+    if topic and (d.get("k") == "svg" or (d.get("k") == "count" and not long) or (d.get("k") == "mech" and d.get("m") not in PRECISE)):
+        d = {"k": "text"}   # kresba od AI, stará hrubá schéma alebo (v krátkom videu) samotné číslo: ukáže sa presný model, číslo naskočí pri ňom
     if d.get("k") == "mech":
         if d.get("m") in FOCUS and not d.get("f"):
             f = focus(d["m"], *texts)
             if f and used.get("_last") != (d["m"], f):
                 d = dict(d, f=f)
         used["_last"] = (d.get("m"), d.get("f") or "")
-        return d
+        return _state(d, used)
     if d.get("k") not in WEAK:
         return d
     if topic and last:   # záverečná výzva: stroj beží ďalej, text výzvy je v nadpise scény
         f = "run" if topic in RUNS and used.get("_last") != (topic, "run") else ""
         used["_last"] = (topic, f)
-        return dict({"k": "mech", "m": topic}, **({"f": f} if f else {}), **({"l": _LABELS[topic]} if _LABELS.get(topic) and lang == "en" else {}))
+        return _state(dict({"k": "mech", "m": topic}, **({"f": f} if f else {}), **({"l": _LABELS[topic]} if _LABELS.get(topic) and lang == "en" else {})), used)
     if topic:
         o = other(topic, *texts)
         if o and not used.get("_vs"):   # scéna porovnáva s iným strojom: oba bežia vedľa seba (raz za video)
@@ -301,7 +315,7 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
             out["f"] = f
         if _LABELS.get(topic) and lang == "en":
             out["l"] = _LABELS[topic]
-        return out
+        return _state(out, used)
     # radšej žiadny model než nesúvisiaci: stroj musí byť v nadpise/opise scény, alebo ho hlas spomína a video je o ňom
     hit = find(f"{texts[0]} . {texts[1]}")
     if not hit:
