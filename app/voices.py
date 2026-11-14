@@ -1,7 +1,7 @@
 """Hlasy: Google Chirp 3 HD (najprirodzenejšie, 1 mil. znakov/mesiac zadarmo s poistkou limitu),
-Microsoft Edge neural (zadarmo bez registrácie) a Google gTTS ako posledná záloha.
+lokálny hlas Kokoro (angličtina, beží na tomto počítači, zadarmo bez limitu), Microsoft Edge neural (zadarmo bez registrácie) a Google gTTS ako posledná záloha.
 
-ID hlasu: "google:sk-SK-Chirp3-HD-Aoede", "edge:sk-SK-ViktoriaNeural", "auto" (najlepší dostupný)."""
+ID hlasu: "google:sk-SK-Chirp3-HD-Aoede", "local:af_heart", "edge:sk-SK-ViktoriaNeural", "auto" (najlepší dostupný)."""
 import asyncio
 import base64
 import datetime
@@ -398,6 +398,119 @@ def _google_tts(text, voice_name, out_path, rate=1.0, lang=""):
     Path(str(out_path) + ".words.json").write_text(json.dumps(words, ensure_ascii=False))
 
 
+# ---------- Lokálny hlas (Kokoro): beží na tomto počítači, zadarmo a bez limitu; kvalitný len v angličtine ----------
+LOCAL_DIR = db.DATA_DIR / "kokoro"
+LOCAL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+LOCAL_FILES = {"kokoro-v1.0.onnx": 300_000_000, "voices-v1.0.bin": 20_000_000}   # názov: najmenšia veľkosť hotového súboru
+LOCAL_VOICES = [("af_heart", "F", "teplý, prirodzený", "en-us"), ("af_bella", "F", "živý, energický", "en-us"),
+                ("am_michael", "M", "pokojný rozprávač", "en-us"), ("am_fenrir", "M", "hlbší, rázny", "en-us"),
+                ("am_puck", "M", "mladší, svižný", "en-us"), ("bf_emma", "F", "britský, jemný", "en-gb"),
+                ("bm_george", "M", "britský rozprávač", "en-gb")]
+LOCAL = {"installing": False, "error": "", "k": None}
+_local_lock = threading.Lock()
+
+
+def local_ready():
+    try:
+        import kokoro_onnx  # noqa
+    except Exception:
+        return False
+    return all((LOCAL_DIR / f).exists() and (LOCAL_DIR / f).stat().st_size >= n for f, n in LOCAL_FILES.items())
+
+
+def local_ensure(wait=False):
+    """Raz na pozadí doinštaluje lokálny hlas a stiahne jeho model (asi 350 MB, zadarmo)."""
+    if local_ready() or LOCAL["installing"]:
+        return
+
+    def go():
+        LOCAL["installing"] = True
+        try:
+            try:
+                import kokoro_onnx  # noqa
+            except Exception:
+                subprocess.run([sys.executable, "-m", "pip", "install", "-q", "kokoro-onnx>=0.4.9"], capture_output=True,
+                               stdin=subprocess.DEVNULL, start_new_session=True, timeout=1800)
+            LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+            for f, n in LOCAL_FILES.items():
+                dest = LOCAL_DIR / f
+                if dest.exists() and dest.stat().st_size >= n:
+                    continue
+                part = dest.with_suffix(dest.suffix + ".part")
+                with httpx.stream("GET", LOCAL_URL + f, follow_redirects=True, timeout=120) as r:
+                    r.raise_for_status()
+                    with open(part, "wb") as out:
+                        for chunk in r.iter_bytes(1 << 20):
+                            out.write(chunk)
+                if part.stat().st_size < n:
+                    raise RuntimeError("model sa nestiahol celý")
+                part.replace(dest)
+            LOCAL["error"] = "" if local_ready() else "lokálny hlas sa nepodarilo nainštalovať"
+        except Exception as e:
+            LOCAL["error"] = str(e)[:200]
+        finally:
+            LOCAL["installing"] = False
+    if wait:
+        go()
+    else:
+        threading.Thread(target=go, daemon=True).start()
+
+
+def local_status():
+    return {"ready": local_ready(), "installing": LOCAL["installing"], "error": LOCAL["error"]}
+
+
+def _local_tts(text, voice, out_path, rate=1.0, lang="en"):
+    """Lokálny hlas po vetách (rovnako ako Google): poznáme čas každej vety, titulky a obraz sedia s hlasom."""
+    if lang != "en":
+        raise RuntimeError("Lokálny hlas vie dobre len po anglicky")
+    if not local_ready():
+        local_ensure()
+        raise RuntimeError("Lokálny hlas sa ešte pripravuje (sťahuje sa raz, asi 350 MB)")
+    loc = {v: l for v, _, _, l in LOCAL_VOICES}.get(voice)
+    if not loc:
+        raise RuntimeError("Neznámy lokálny hlas " + voice)
+    parts = split_sentences(text)
+    verbal.ensure([(lang, p) for p in parts])
+    spoken = []
+    for p in parts:
+        sp, maps = spoken_form(p, lang)
+        if sp.strip():
+            spoken.append((p, sp, maps))
+    if not spoken:
+        raise RuntimeError("Prázdny text pre hlas")
+    import numpy as np
+    with _local_lock:   # model sa načíta raz a ostáva v pamäti; hovorí vždy len jedno video naraz
+        if LOCAL["k"] is None:
+            from kokoro_onnx import Kokoro
+            LOCAL["k"] = Kokoro(str(LOCAL_DIR / "kokoro-v1.0.onnx"), str(LOCAL_DIR / "voices-v1.0.bin"))
+        clips = []
+        for _, sp, _ in spoken:
+            smp, sr = LOCAL["k"].create(sp, voice=voice, speed=max(0.7, min(1.4, rate or 1.0)), lang=loc)
+            clips.append((array("h", (np.clip(smp, -1, 1) * 32767).astype("<i2").tobytes()), int(sr)))
+    sr = clips[0][1]
+    pause = 1 / max(0.8, rate or 1.0) ** 0.5
+    pcm, words = array("h", bytes(2 * int(sr * 0.04))), []
+    for (orig, sp, spans), (a, _) in zip(spoken, clips):
+        if sys.byteorder == "big":
+            a.byteswap()
+        a, gaps = _tidy(a, sr)
+        if not len(a):
+            continue
+        t0, dur = len(pcm) / sr, len(a) / sr
+        toks = sp.split()
+        ws = [{"w": t, "s": round(t0 + s, 3), "e": round(t0 + e, 3)} for t, (s, e) in zip(toks, _times(toks, dur, gaps))]
+        words += unmap(ws, sp, spans, orig)
+        pcm.extend(a)
+        end = sp.rstrip()[-1:]
+        gap = (0.36 if end in "?!" else 0.42 if end == "…" else 0.30) * pause
+        pcm.extend(array("h", bytes(2 * int(sr * gap))))
+    if not words:
+        raise RuntimeError("Lokálny hlas nevrátil zvuk")
+    _save_voice(pcm, sr, out_path)
+    Path(str(out_path) + ".words.json").write_text(json.dumps(words, ensure_ascii=False))
+
+
 # ---------- Microsoft Edge ----------
 def _run(coro):
     try:
@@ -470,6 +583,9 @@ def catalog(lang):
             for n, g, desc in CHIRP:
                 out.append({"id": f"google:{loc2}-Chirp3-HD-{n}", "name": n, "gender": g, "engine": "google",
                             "label": f"{n} · {desc} · {tag}", "best": True})
+    if lang == "en":
+        for n, g, desc, loc2 in LOCAL_VOICES:
+            out.append({"id": "local:" + n, "name": n, "gender": g, "engine": "local", "label": f"{n.split('_')[1].title()} · {desc}"})
     seen = set()
     f, m = languages.voice(lang, "F"), languages.voice(lang, "M")
     prefix = {"no": "nb-"}.get(lang, lang + "-")
@@ -516,9 +632,10 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None, fres
     if not voice_id or voice_id == "auto":
         voice_id = default_voice(lang, gender)
     chain = [voice_id]
-    if not voice_id.startswith("edge:"):
-        chain.append("edge:" + languages.voice(lang, gender))
-    chain.append("gtts")
+    if not voice_id.startswith("local:"):   # lokálny hlas nemá náhradu: Oliver nechce videá s iným hlasom (radšej počkať)
+        if not voice_id.startswith("edge:"):
+            chain.append("edge:" + languages.voice(lang, gender))
+        chain.append("gtts")
     errors = []
     for vid in chain:
         path = Path(out_path or VOICE_DIR / f"{lang}_{hashlib.md5((VOICE_VER + vid + str(rate) + text).encode()).hexdigest()[:12]}.mp3")
@@ -529,6 +646,8 @@ def synth(text, lang, voice_id="auto", gender="F", rate=1.0, out_path=None, fres
             Path(str(path) + ".words.json").unlink(missing_ok=True)
             if vid.startswith("google:"):
                 _google_tts(orig, vid[7:], path, rate, lang)
+            elif vid.startswith("local:"):
+                _local_tts(orig, vid[6:], path, rate, lang)
             elif vid.startswith("edge:"):
                 _edge_tts(text, vid[5:], path, rate, spans, orig)
             else:

@@ -372,7 +372,7 @@ function pProjectForm(m, p) {
     const d = await voicesFor(l), sel = $(`[data-vl=${l}]`); if (!sel) return;
     const cur = (p.voices || {})[l] || 'auto';
     const grp = (t, list) => list.length ? `<optgroup label="${t}">${list.map(v => `<option value="${v.id}" ${v.id === cur ? 'selected' : ''}>${esc(v.label)} (${v.gender === 'F' ? 'žena' : 'muž'})</option>`).join('')}</optgroup>` : '';
-    sel.innerHTML = `<option value="auto">Automaticky (najlepší dostupný)</option>` + grp('Google HD – najprirodzenejšie', d.voices.filter(v => v.engine === 'google')) + grp('Microsoft – zadarmo bez kľúča', d.voices.filter(v => v.engine === 'edge'));
+    sel.innerHTML = `<option value="auto">Automaticky (najlepší dostupný)</option>` + grp('Google HD – najprirodzenejšie', d.voices.filter(v => v.engine === 'google')) + grp('Lokálny – zadarmo a bez limitu (beží na tomto počítači)', d.voices.filter(v => v.engine === 'local')) + grp('Microsoft – zadarmo bez kľúča', d.voices.filter(v => v.engine === 'edge'));
   });
   if (p.id && typeof brandCard === 'function') brandCard(p.id);
   if (p.id) tagCard(p.id).catch(() => { });
@@ -678,7 +678,7 @@ async function tLibrary(b, p) {
     <select style="width:auto" onchange="S.vLang=this.value;render()"><option value="">Všetky jazyky</option>${p.languages.map(l => `<option value="${l}" ${S.vLang === l ? 'selected' : ''}>${langName(l)}</option>`).join('')}</select>
     <button class="btn sm" onclick="scheduleDialog(${p.id})">${I('calendar', 's')}Naplánovať vybrané</button><button class="btn sec sm" onclick="bulkAI()">${I('sparkles', 's')}AI popisy</button><button class="btn sec sm" onclick="bulkLang()">${I('globe', 's')}Jazyk</button><button class="btn bad sm" onclick="bulkDel()">${I('trash', 's')}</button></div>
   ${vids.length ? `<table><tr><th style="width:30px"><input type="checkbox" onclick="$$('.vchk').forEach(c=>c.checked=this.checked)"></th><th>Video</th><th>Jazyk</th><th>Dĺžka</th><th>Siete</th><th></th></tr>
-  ${vids.map(v => `<tr><td><input type="checkbox" class="vchk" value="${v.id}"></td><td>${FMT(v.fmt)} <b>${esc(v.title || v.original_name)}</b><div class="small dim">${esc(v.original_name)} · ${(v.size / 1048576).toFixed(1)} MB</div></td>
+  ${vids.map(v => `<tr><td><input type="checkbox" class="vchk" value="${v.id}"></td><td>${FMT(v.fmt)} <b>${esc(v.title || v.original_name)}</b>${v.status === 'hold' ? ` <span class="chip bad" title="Neprešlo kontrolou pred zverejnením, plánovač ho nevezme">Zadržané</span>` : ''}<div class="small dim">${esc(v.original_name)} · ${(v.size / 1048576).toFixed(1)} MB</div>${v.status === 'hold' ? `<div class="small" style="color:var(--bad,#ff6b6b)">${esc(holdWhy(v))} <a href="#" onclick="releaseVideo(${v.id});return false">Pustiť aj tak</a></div>` : ''}</td>
     <td>${langName(v.lang)}</td><td class="muted">${v.duration ? Math.round(v.duration) + ' s' : '—'}</td>
     <td>${(v.posts || '').split(',').filter(Boolean).map(x => { const [pl, st] = x.split(':'); return `<span class="chip ${ST[st]?.[1]}">${I(pl, 's')}</span>`; }).join(' ') || '<span class="dim small">—</span>'}</td>
     <td><button class="btn ghost sm" onclick="editVideo(${v.id})">${I('pencil', 's')}</button></td></tr>`).join('')}</table>` : empty('film', 'Knižnica je prázdna.')}</div>`;
@@ -705,6 +705,8 @@ function editVideo(id) {
   <label class="l">Popis (YouTube)</label><textarea id="vD">${esc(v.description)}</textarea>
   <button class="btn" style="margin-top:14px" onclick="saveVideo(${id})">${I('check')}Uložiť</button>`);
 }
+function holdWhy(v) { try { return (JSON.parse(v.qa || '{}').why || []).join(' · '); } catch (e) { return ''; } }
+async function releaseVideo(id) { await api('/api/videos/' + id + '/release', { method: 'POST' }); toast('Video je uvoľnené na plánovanie'); render(); }
 async function saveVideo(id) { await api('/api/videos/' + id, { method: 'PUT', body: { title: $('#vT').value, description: $('#vD').value, caption: $('#vC').value, hashtags: $('#vH').value, lang: $('#vL').value } }); closeModal(); render(); }
 function scheduleDialog(pid) {
   const ids = selVids(); if (!ids.length) return toast('Najprv zaškrtni videá', true);
@@ -961,7 +963,7 @@ async function playVoice(lang, voice, btn) {
 async function loadVoiceList() {
   const lang = $('#tL').value, box = $('#vList'); box.innerHTML = '<span class="small dim">Načítavam…</span>';
   const d = await voicesFor(lang);
-  box.innerHTML = d.voices.map(v => `<div class="vrow"><button class="btn sec sm ic" onclick="playVoice('${lang}','${v.id}',this)">${I('play', 's')}</button><span style="flex:1">${esc(v.label)}</span><span class="tag ${v.engine === 'google' ? 'acc' : ''}">${v.engine === 'google' ? 'Google HD' : 'Microsoft'}</span><span class="small dim">${v.gender === 'F' ? 'žena' : 'muž'}</span></div>`).join('');
+  box.innerHTML = d.voices.map(v => `<div class="vrow"><button class="btn sec sm ic" onclick="playVoice('${lang}','${v.id}',this)">${I('play', 's')}</button><span style="flex:1">${esc(v.label)}</span><span class="tag ${v.engine === 'google' ? 'acc' : ''}">${v.engine === 'google' ? 'Google HD' : v.engine === 'local' ? 'Lokálny' : 'Microsoft'}</span><span class="small dim">${v.gender === 'F' ? 'žena' : 'muž'}</span></div>`).join('');
 }
 // ----- výslovnosť (vlastné slová pre hlas) -----
 let PR = [];
