@@ -4,9 +4,9 @@
 const K=window.KIT,PRO=K.PRO,{G,GEARPRO,HS,rgba,mix,ez,lerp,wob,dot,flame,spark,metal,hatch,STG,camAt,stamp,callout,AIR,FUEL,SMOKE,FIRE,WATER,CTX}=K;
 const TAU=Math.PI*2,N=v=>{v=parseFloat(v);return isFinite(v)?v:0};
 const LBL=d=>(Array.isArray(d.l)?d.l:[]).map(s=>String(s==null?'':s).toUpperCase());
-const tag=(S,s,px,py,al,col,fs)=>{if(!s)return;const x=S.x;x.font=`800 ${fs||24}px ${S.FT}`;x.textAlign=al||'center';x.textBaseline='middle';x.lineJoin='round';x.strokeStyle='rgba(0,0,0,.8)';x.lineWidth=7;x.strokeText(s,px,py);x.fillStyle=col||'#e9ecef';x.fillText(s,px,py)};
+const tag=(S,s,px,py,al,col,fs)=>{if(!s)return 0;const x=S.x;x.font=`800 ${fs||24}px ${S.FT}`;const a=K.tagA(S,s,px,py,al||'center',fs||24);if(a<=.02)return 0;x.save();x.globalAlpha*=a;x.textAlign=al||'center';x.textBaseline='middle';x.lineJoin='round';x.strokeStyle='rgba(0,0,0,.8)';x.lineWidth=7;x.strokeText(s,px,py);x.fillStyle=col||'#e9ecef';x.fillText(s,px,py);x.restore();return a};
 // veľké číslo s jednotkou vľavo dole (otáčky, tlak, teplota) – hodnota sa počíta z pohybu modelu
-const meter=(S,val,unit,A,a,top)=>{const x=S.x,X=40,Y=top?118:S.h-70;x.save();x.globalAlpha*=a;x.textAlign='left';x.textBaseline='alphabetic';x.font=`900 64px ${S.FT}`;const w=x.measureText(val).width;x.fillStyle='rgba(0,0,0,.8)';x.beginPath();x.roundRect(X-14,Y-62,w+x.measureText(unit).width*.5+70,84,16);x.fill();x.fillStyle='#fff';x.fillText(val,X,Y);x.font=`800 30px ${S.FT}`;x.fillStyle=A;x.fillText(unit,X+w+12,Y);x.restore()};
+const meter=(S,val,unit,A,a,top)=>{const x=S.hx;x.save();x.font=`900 60px ${S.FT}`;const w=x.measureText(val).width;x.font=`800 26px ${S.FT}`;const wu=x.measureText(unit).width;x.restore();S.put(top?'meter':'meterL',w+12+wu,70,a*S.x.globalAlpha,x=>{x.textAlign='left';x.textBaseline='alphabetic';x.font=`900 60px ${S.FT}`;x.fillStyle='#fff';x.fillText(val,0,57);x.font=`800 26px ${S.FT}`;x.fillStyle=A;x.fillText(unit,w+12,57)})};
 // kamera modelu: celok → zábery na časti → celok; f = jeden záber; run = pomalý nájazd
 const cams=(d,FULL,FV0,tour,DUR)=>{const f=String(d.f||''),PZ=WIDE?1:1.2,FV={};for(const k in FV0)FV[k]=[FV0[k][0],FV0[k][1],FV0[k][2]*PZ];   // na výšku idú zábery na časti bližšie, nech diel zaberie celú šírku
 // fs = [[časť, čas v scéne], …]: kamera ide za hlasom – na každú časť príde chvíľu predtým, než o nej zaznie slovo
@@ -34,7 +34,7 @@ if(k>.05){x.save();x.globalAlpha*=.22*k;x.strokeStyle='#fff';x.lineWidth=3;for(l
 const PT=[...Array(NP)].map((_,i)=>({o:HS(i,81),lat:HS(i,82),a:(-Math.PI/2)+(.16+.8*((i%12)+HS(i,83))/12)*TAU,k:.8+.4*HS(i,84),rr:.8+.5*HS(i,85)}));
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const th=ang(t),w=spd(t),k=(w-1.4)/(W1-1.4),cm=camAt(KF,t,.8);
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);
-{const g=x.createRadialGradient(432,280,20,432,280,470);g.addColorStop(0,'rgba(86,118,160,.2)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(-60,-200,980,960)}
+
 // stredová skriňa s ložiskami a olejom, hriadeľ spája obe kolesá
 x.beginPath();x.rect(T[0]+70,T[1]-36,C[0]-T[0]-140,72);x.lineWidth=8;x.strokeStyle='#fff';x.stroke();x.fillStyle='#24272b';x.fill();hatch(x,()=>x.rect(T[0]+70,T[1]-36,C[0]-T[0]-140,72));
 x.fillStyle='#5a3d12';x.fillRect(T[0]+70,T[1]-17,C[0]-T[0]-140,34);for(let j=0;j<10;j++){const u=(t*.5+HS(j,90))%1;dot(x,[T[0]+130+u*(C[0]-T[0]-260),T[1]+(HS(j,91)-.5)*26],2.4,'#e0a13a',.8*Math.sin(Math.PI*u),false)}
@@ -80,7 +80,7 @@ const ppt=(u,lat)=>{u=cl(u);if(u<.5)return [720-94*(u/.5),322+lat];const q=(u-.5
 const PT=[...Array(NP)].map((_,i)=>({o:(i+HS(i,101))/NP,lat:(HS(i,102)-.5)*34,sd:HS(i,103)<.5?-1:1,k:.9+.2*HS(i,104),gx:HS(i,105),gy:HS(i,106),fuel:HS(i,107)<.24,rr:.8+.5*HS(i,108)}));
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const th=th0+W*t,L=lift(th),yT=C1[1]+Rb+L,cm=camAt(KF,t,.8);
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);
-{const g=x.createRadialGradient(440,290,20,440,290,470);g.addColorStop(0,'rgba(86,118,160,.2)');g.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=g;x.fillRect(-60,-200,980,960)}
+
 // rozvod vzadu: remeň a dve kolesá (kľuka 2 otáčky = vačka 1 otáčka)
 x.save();x.globalAlpha=p*.8;x.beginPath();BP.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]));x.strokeStyle='#fff';x.lineWidth=17;x.stroke();x.strokeStyle='#23262a';x.lineWidth=11;x.stroke();
 for(let s0=0;s0<LEN;s0+=17){const q=bpt(s0+W*t*R1);dot(x,q,2.6,'#8f959c',1,false)}
@@ -123,7 +123,7 @@ const app=t=>ez((t-tA)/(tB-tA))*(1-ez((t-tS-.5)/.6)),temp=t=>t<tB?0:t<tS?1-Math.
 const heat=k=>k<.5?mix('#2a2d31','#b3260a',k/.5,.0+.9*k*2):mix('#b3260a','#ffb347',(k-.5)/.5,.9);
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const tt=t%(TC+2.2),th=an(tt),w=om(tt),a=app(tt),K=temp(tt),g=5*(1-a),cm=camAt(KF,t,.8),braking=tt>tB&&w>0;
 x.save();x.translate(S.w/2+(braking?Math.sin(t*90)*1.2:0),S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);
-{const gg=x.createRadialGradient(432,290,20,432,290,480);gg.addColorStop(0,'rgba(86,118,160,.2)');gg.addColorStop(1,'rgba(86,118,160,0)');x.fillStyle=gg;x.fillRect(-60,-200,980,960)}
+
 // kotúč spredu: vetracie otvory ukazujú otáčanie, trecia plocha sa rozžeraví
 x.save();x.translate(DC[0],DC[1]);x.save();x.rotate(th);x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=16;x.beginPath();x.arc(0,0,R,0,TAU);const dg=x.createRadialGradient(-40,-50,20,0,0,R);dg.addColorStop(0,'#aab0b6');dg.addColorStop(1,'#5b6066');x.fillStyle=dg;x.fill();x.shadowBlur=0;x.strokeStyle='#fff';x.lineWidth=4;x.stroke();
 for(let i=0;i<24;i++){const aa=i*TAU/24,rr=[108,124,138][i%3];x.beginPath();x.arc(rr*Math.cos(aa),rr*Math.sin(aa),4.2,0,TAU);x.fillStyle='#16181a';x.fill()}
@@ -155,7 +155,7 @@ x.globalAlpha=p*sp*(1-ez((cm[2]/zf-1)/.22));tag(S,LN[0],DC[0],DC[1]+R+34,'center
 x.restore();x.globalAlpha=p;
 const [FN,ts]=shot(KF,d,t),fi=['disc','caliper'].indexOf(FN);if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||'',2,ts-.35,A);
 meter(S,String(Math.round(w/W0*100)),'KM/H',A,cl((t-.6)/.4),fi>=0);
-if(K>.03){x.save();x.globalAlpha=p*Math.min(1,K*3);x.textAlign='right';x.textBaseline='alphabetic';x.font=`900 54px ${S.FT}`;x.lineJoin='round';x.strokeStyle='rgba(0,0,0,.8)';x.lineWidth=10;const s2=Math.round(40+460*K)+' °C';x.strokeText(s2,S.w-44,S.h-74);x.fillStyle=K>.5?'#ffb347':'#ff6a3a';x.fillText(s2,S.w-44,S.h-74);x.restore()}
+if(K>.03){x.globalAlpha=p*Math.min(1,K*3);window.KIT.badge(S,String(Math.round(40+460*K)),'°C',K>.5?'#ffb347':'#ff6a3a',1);x.globalAlpha=p}
 callout(S,d,t,A);x.globalAlpha=1}};
 // pomôcky pre ďalšie súbory s modelmi (zz_mech_pro_c.js)
 Object.assign(K,{LBL,tag,meter,cams,shot});

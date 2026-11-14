@@ -582,7 +582,7 @@ html,body{width:1080px;height:1920px;background:#000;overflow:hidden;font-family
 .ttl{position:absolute;left:72px;top:318px;width:860px;z-index:3;text-shadow:0 4px 26px #000,0 0 8px rgba(0,0,0,.8);font-size:82px;line-height:1.02;font-weight:800;text-transform:uppercase;letter-spacing:-1px;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word}
 .ttl .w{display:inline-block;overflow:hidden;vertical-align:top;padding-bottom:.08em;margin-bottom:-.08em}
 .ttl .w>span{display:inline-block}
-.viz{position:absolute;left:72px;top:735px;width:864px;height:560px}
+.viz{position:absolute;left:72px;top:719px;width:864px;height:560px}
 .lab{position:absolute;font-size:26px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#bdbdbd;line-height:1.2}
 .lab.a{color:var(--acc)}
 .txt{position:absolute;font-family:var(--ft);font-size:38px;line-height:1.2;color:#fff}
@@ -590,7 +590,7 @@ html,body{width:1080px;height:1920px;background:#000;overflow:hidden;font-family
 .card{position:absolute;border:1.5px solid rgba(255,255,255,.16);background:#0d0d0d;border-radius:14px}
 svg{position:absolute;left:0;top:0;overflow:visible}
 svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
-#cap{position:absolute;left:72px;width:864px;top:1385px;text-align:center;font-family:var(--ft);font-size:60px;font-weight:700;line-height:1.2;color:#fff;text-shadow:0 4px 24px #000;text-wrap:balance}
+#cap{position:absolute;left:72px;width:864px;top:1480px;text-align:center;font-family:var(--ft);font-size:60px;font-weight:700;line-height:1.2;color:#fff;text-shadow:0 4px 24px #000;text-wrap:balance}
 #cap span{color:rgba(255,255,255,.42)}#cap span.on{color:#fff}#cap span.k{color:var(--acc)}
 #lg{position:absolute;left:72px;top:196px;max-width:340px;max-height:88px;display:none}
 #end{position:absolute;inset:0;display:none;background:#000}
@@ -600,6 +600,7 @@ svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
 #bar{position:absolute;left:0;top:1906px;height:14px;background:var(--acc);width:0}
 #bg{position:absolute;left:0;top:0}
 /* bezpečná zóna na výšku: vpravo tlačidlá, dole popis a názov kanála, hore lišta aplikácie */
+.notext .ttl,.notext .kick,.notext #cap,.notext #lg,.notext #gdc,.notext #bg{visibility:hidden!important}
 #stage{position:absolute;inset:0;transform-origin:72px 196px;transform:translate(8px,-56px) scale(.97)}
 .viz{transform-origin:center}
 body.wide,html.wide{width:1920px;height:1080px}
@@ -608,8 +609,8 @@ body.wide,html.wide{width:1920px;height:1080px}
 .wide #lg{left:150px;top:72px;max-width:280px;max-height:64px}
 .wide .kick{display:block;left:150px;top:166px;font-size:22px}
 .wide .ttl{left:150px;top:200px;width:1620px}
-.wide .viz{left:528px;top:322px}
-.wide #cap{left:260px;width:1400px;top:902px;font-size:44px}
+.wide .viz{left:528px;top:345px}
+.wide #cap{left:260px;width:1400px;top:975px;font-size:44px}
 .wide #end .gl{left:310px;top:-110px}
 .wide #end .ln{top:760px}
 .wide #bar{top:1068px;height:12px}
@@ -749,7 +750,8 @@ V.temp=(v,d)=>{const A=d.a||['',0],B=d.b||['',0],u=d.u||'°C';const va=N(A[1]),v
 const th=(x,col)=>`<path d="M${x-22} 60 A22 22 0 0 1 ${x+22} 60 V430 A38 38 0 1 1 ${x-22} 430 Z" stroke="#fff" stroke-width="3" fill="none"/><circle cx="${x}" cy="462" r="26" fill="${col}"/>`;
 const s=svg(864,560,th(220,'#a9a9a9')+th(644,'var(--acc)')+`<rect class="fa" x="208" width="24" fill="#a9a9a9"/><rect class="fb" x="632" width="24" fill="var(--acc)"/><path class="dt" d="" stroke="#fff" stroke-width="3" stroke-dasharray="8 8" fill="none"/>`);v.append(s);
 const la=el('div','lab',`left:20px;top:0;width:180px;text-align:right`,esc(A[0])),lb=el('div','lab a',`left:684px;top:0;width:180px`,esc(B[0])),na=el('div','big',`left:0;top:${Y(va)-30}px;width:176px;text-align:right;font-size:48px;color:#a9a9a9`),nb=el('div','big',`left:684px;top:${Y(vb)-30}px;width:180px;font-size:48px;color:var(--acc)`),
-dl=el('div','big',`left:270px;top:${(Y(va)+Y(vb))/2-34}px;width:324px;text-align:center;font-size:56px`);v.append(la,lb,na,nb,dl);fit(la,24,16,60);fit(lb,24,16,60);
+dl=el('div','big',`left:270px;top:${(Y(va)+Y(vb))/2-34}px;width:324px;text-align:center;font-size:56px`);v.append(la,lb,na,nb,dl);fit(la,24,16,60);fit(lb,24,16,60);na.style.top=Math.max(Y(va)-30,la.offsetHeight+6)+'px';nb.style.top=Math.max(Y(vb)-30,lb.offsetHeight+6)+'px';   // číslo nikdy neleží cez názov nad ním
+
 return (t,st)=>{const p=E(st(.2,1.2)),q=E(st(1,1.2));const ya=440+(Y(va)-440)*p,yb=440+(Y(vb)-440)*q;const fa=s.querySelector('.fa'),fb=s.querySelector('.fb');
 fa.setAttribute('y',ya);fa.setAttribute('height',Math.max(0,462-ya));fb.setAttribute('y',yb);fb.setAttribute('height',Math.max(0,462-yb));
 show(la,st(0,.5),0);show(lb,st(.8,.5),0);na.textContent=NF(va*p,0)+' '+u;nb.textContent=NF(vb*q,0)+' '+u;na.style.opacity=st(.2,.3);nb.style.opacity=st(1,.3);
@@ -853,15 +855,15 @@ const root=document.getElementById('root');const SC=D.scenes.map((sc,i)=>{const 
 const row=Math.floor(i/COLS),kk=i%COLS,col=row%2?COLS-1-kk:kk;const X0=col*(PW+GAP),Y0=row*(PH+GAP);w.style.left=X0+'px';w.style.top=Y0+'px';w.style.width=PW+'px';w.style.height=PH+'px';const fr=el('div','fr');w.append(fr);
 const k=el('div','kick','',`<b>${String(i+1).padStart(2,'0')}</b>${D.kicker?' · '+esc(D.kicker):''} · ${i+1}/${D.scenes.length}`);
 const tt=el('div','ttl');tt.lang=D.lang;tt.innerHTML=String(sc.h||'').split(/\s+/).filter(Boolean).map(x=>`<span class="w"><span>${esc(x)}</span></span>`).join(' ');w.append(k,tt);
-const intro=i==0;if(WIDE)fit(tt,intro?66:58,34,76,1620);else fit(tt,intro?104:82,44,intro?330:270,860);const th=tt.offsetHeight;const vz=el('div','viz');if(!WIDE)vz.style.top=Math.max(646,318+th+90)+'px';w.append(vz);
+const intro=i==0;if(WIDE)fit(tt,intro?66:58,30,76,1620);else fit(tt,intro?104:82,36,212,860);const vz=el('div','viz');w.append(vz);
 let upd=()=>{};try{upd=(V[sc.v.k]||V.text)(vz,sc.v)||(()=>{})}catch(e){vz.textContent=''}
 w.style.display='none';
-return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0,fast:i==0&&sc.v.k=='mech'&&!!(window.MECHPRO&&MECHPRO[sc.v.m])}});
+const pro=sc.v.k=='mech'&&!!(window.MECHPRO&&MECHPRO[sc.v.m]);return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0,pro,fast:i==0&&pro}});
 const CAP=document.getElementById('cap'),BAR=document.getElementById('bar'),GLOW=document.getElementById('glow'),LG=document.getElementById('lg'),END=document.getElementById('end');let lastCap=-1;
 const EIMG=END.querySelector('img'),ELN=END.querySelector('.ln'),EGL=END.querySelector('.gl');const TAIL=D.tail||0;
 // sprievodca: líška (maskot) pri titulkoch – „hovorí“ ich, ukazuje hore na stroj a reaguje na čísla (len na výšku, keď je D.guide)
-const GD=(()=>{if(!D.guide||WIDE)return null;const R=2,w=210,h=250,c=el('canvas','','position:absolute;left:36px;top:1338px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(1.2)');c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
-CAP.style.left='272px';CAP.style.width='672px';CAP.style.textAlign='left';return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
+const GD=(()=>{if(!D.guide||WIDE)return null;const R=2,w=210,h=250,c=el('canvas','','position:absolute;left:36px;top:1474px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(1.2)');c.id='gdc';c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
+CAP.style.left='300px';CAP.style.width='644px';CAP.style.textAlign='left';return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
 function drawGuide(t,cur,talk,ending){const {x,R,w,h}=GD,A=D.acc,T2=Math.PI*2;x.setTransform(R,0,0,R,0,0);x.clearRect(0,0,w,h);const sc=D.scenes[cur]||{},v=sc.v||{},lt=t-(sc.t0||0),pt=v.k=='mech'?E((lt-.45)/.4):0;
 let ex=0,ek=0;if(v.c&&v.c.t!=null){ek=lt-v.c.t;if(ek>=0&&ek<1.3)ex=Math.exp(-ek*3.2)}
 const a=E((t-.15)/.45)*(ending?0:1);if(a<=0)return;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,bob=Math.sin(t*2.1)*5-ex*24*Math.abs(Math.sin(ek*12)),blink=((t+.7)%3.3)<.11&&ex<.2;
@@ -895,20 +897,22 @@ const PT=Array.from({length:WIDE?46:38},()=>({x:rnd(),y:rnd(),r:1.2+rnd()*2.6,v:
 function drawBg(t,ending){CX.clearRect(0,0,PW,PH);if(ending)return;const g=120,off=(t*9)%g;CX.strokeStyle='rgba(255,255,255,.035)';CX.lineWidth=1;CX.beginPath();
 for(let x=-g+off;x<PW+g;x+=g){CX.moveTo(x,0);CX.lineTo(x,PH)}for(let y=-g+off*.6;y<PH+g;y+=g){CX.moveTo(0,y);CX.lineTo(PW,y)}CX.stroke();
 PT.forEach(p=>{const y=((p.y-t*p.v)%1+1)%1*PH,x=p.x*PW+Math.sin(t*.5+p.ph)*26;const al=(.10+.10*Math.sin(t*.9+p.ph))*(p.a?1.9:1);CX.fillStyle=p.a?D.acc:'#fff';CX.globalAlpha=Math.max(0,al);CX.beginPath();CX.arc(x,y,p.r,0,6.3);CX.fill()});CX.globalAlpha=1}
-function renderAt(t){let cur=SC.length-1;for(let i=0;i<SC.length;i++){if(t<SC[i].t1){cur=i;break}}
+function renderAt(t){let cur=SC.length-1;for(let i=0;i<SC.length;i++){if(t<SC[i].t1){cur=i;break}}window._cur=cur;
 const ending=TAIL>0&&t>=D.total,et=t-D.total;
 const MV=.8,LD=SC.length?SC[SC.length-1].t1-SC[SC.length-1].t0:0,ZO=NS>2&&!D.loop?Math.min(3.2,Math.max(1.8,LD*.5)):0;const zo=ZO?EI((t-(D.total-ZO))/(ZO*.75)):0;
-let cx=SC[cur].c[0],cy=SC[cur].c[1],zs=1;if(cur>0){const p=EI((t-SC[cur].t0)/MV);if(p<1){const b=SC[cur-1].c;cx=b[0]+(cx-b[0])*p;cy=b[1]+(cy-b[1])*p;zs=1-.14*Math.sin(Math.PI*p)}}
+// prechod: stará scéna odíde doľava a nová príde sprava – vždy vodorovne, takže obraz ani nadpis nikdy neprejdú cez titulky
+let cx=SC[cur].c[0],cy=SC[cur].c[1],zs=1,tr=null;if(cur>0){const p=EI((t-SC[cur].t0)/MV);if(p<1){tr=[cur-1,cur,p];zs=1-.14*Math.sin(Math.PI*p)}}
 // slučka: na konci krátkeho videa kamera preletí späť na prvú scénu v jej úvodnom stave, takže koniec plynulo nadviaže na začiatok
-const lp=D.loop&&NS>1&&cur>0?EI((t-(D.len-.6))/.5):0;if(lp>0){const b=SC[0].c;cx+=(b[0]-cx)*lp;cy+=(b[1]-cy)*lp;zs=1-.14*Math.sin(Math.PI*lp)}
+const lp=D.loop&&NS>1&&cur>0?EI((t-(D.len-.6))/.5):0;if(lp>0){tr=[cur,0,lp];zs=1-.14*Math.sin(Math.PI*lp)}
 let sx=PW/2,sy=PH/2;if(zo>0){const AW=WIDE?1700:864,AH=WIDE?790:1150,fs=Math.min(AW/WW,AH/WH);cx+=(WW/2-cx)*zo;cy+=(WH/2-cy)*zo;zs=1+(fs-1)*zo;sx+=((WIDE?960:504)-sx)*zo;sy+=((WIDE?465:750)-sy)*zo}
 root.style.transform=`translate(${sx-cx*zs}px,${sy-cy*zs}px) scale(${zs})`;root.style.opacity=ending?1-cl(et/.3):1;
 SC.forEach((s,i)=>{const home=lp>0&&i==0,lt=home?0:t-s.t0,dur=s.t1-s.t0;const vis=home||(!(ending&&et>.3)&&(zo>0?i<=cur:(i==cur||(i==cur-1&&t-SC[cur].t0<MV))));s.w.style.display=vis?'block':'none';if(!vis)return;
+s.w.style.transform=tr&&!zo&&(i==tr[0]||i==tr[1])?`translate(${SC[cur].c[0]-s.c[0]+(i==tr[1]?1-tr[2]:-tr[2])*(PW+GAP)}px,${SC[cur].c[1]-s.c[1]}px)`:'';
 s.fr.style.opacity=zo;if(i!=cur&&!home)return;
 const l2=i==0?lt:lt-.12;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
 const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>s.fast?1:E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=`translateY(${s.fast?0:(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.28:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=s.pro?`scale(${WIDE?1.28:1.1})`:`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.16:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
 SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
@@ -920,16 +924,36 @@ let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e)
 if(GD)drawGuide(t,cur,ci>=0,ending);
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
-const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,30,112,1400);else fit(CAP,GD?54:60,36,150,GD?672:864);lastCap=ci}}
+const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,24,58,1400);else fit(CAP,GD?54:60,30,150,GD?644:864);lastCap=ci}}
 // náhľadový obrázok dlhého videa: veľký text vľavo, hlavný obraz vpravo, bez titulkov a lišty
 window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(Math.max(s.t0+.1,s.t1-.2));
 CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;
-const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';
-s.vz.style.opacity=1;s.vz.style.left=(WIDE?930:108)+'px';s.vz.style.top=(WIDE?250:980)+'px';s.vz.style.transform=`scale(${WIDE?1.42:1.25})`;
+const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';s.vz.querySelectorAll('.phud').forEach(e=>e.style.display='none');
 GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';
 const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?820:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
 T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length-1?'var(--acc)':'#fff'}">${esc(w)}</span>`).join(' ');s.w.append(T);
-fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}};
+fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}
+// obraz dostane miesto, ktoré ostalo vedľa textu (na šírku) alebo pod ním (na výšku), a zmenší sa tak, aby sa doň zmestil celý
+const Z=s.pro&&window.KIT?KIT.ZN:{l:0,t:0,w:864,h:560},rg=document.createRange();rg.selectNodeContents(T);const tr=rg.getBoundingClientRect(),wr=s.w.getBoundingClientRect(),kx=wr.width/PW;
+const x0=WIDE?(tr.right-wr.left)/kx+44:60,x1=WIDE?1880:1020,y0=WIDE?70:(tr.bottom-wr.top)/kx+40,y1=WIDE?1010:1790,sc=Math.min(WIDE?1.42:1.25,(x1-x0)/Z.w,(y1-y0)/Z.h);
+s.vz.style.opacity=1;s.vz.style.transform=`scale(${sc})`;s.vz.style.left=((x0+x1)/2-432-(Z.l+Z.w/2-432)*sc)+'px';s.vz.style.top=((y0+y1)/2-280-(Z.t+Z.h/2-280)*sc)+'px'};
+// kontrola prekrývania (bez AI) pre práve vykreslenú snímku: čo leží cez čo, hoci nemá. Vráti aj miesta textov, aby sa dalo overiť, že pod nimi nie je obraz.
+window.ovl=function(){const s=SC[window._cur||0],bad=new Set(),B=e=>{const b=e.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom]},U=q=>q.length?[Math.min(...q.map(b=>b.left)),Math.min(...q.map(b=>b.top)),Math.max(...q.map(b=>b.right)),Math.max(...q.map(b=>b.bottom))]:null,
+TX=e=>{const r=document.createRange();r.selectNodeContents(e);return U([...r.getClientRects()].filter(b=>b.width>1&&b.height>1))},
+hit=(a,b,m)=>!!a&&!!b&&Math.min(a[2],b[2])-Math.max(a[0],b[0])>m&&Math.min(a[3],b[3])-Math.max(a[1],b[1])>m,
+op=e=>{let o=1;for(;e&&e.style;e=e.parentElement){const c=getComputedStyle(e);if(c.display=='none'||c.visibility=='hidden')return 0;o*=+c.opacity}return o};
+const T={},cb=CAP.getBoundingClientRect(),k=cb.width/(CAP.offsetWidth||1);T.titulky=[cb.left,cb.top,cb.right,cb.top+(WIDE?58:150)*k];
+T.nadpis=U([...s.tt.querySelectorAll('.w')].map(e=>e.getBoundingClientRect()));if(LG.offsetWidth&&op(LG)>.3)T.logo=B(LG);if(WIDE&&op(s.k)>.3)T['číslo scény']=TX(s.k);
+const G=GD&&op(GD.x.canvas)>.3?B(GD.x.canvas):null,ks=Object.keys(T);
+ks.forEach((a,i)=>ks.slice(i+1).forEach(b=>{if(hit(T[a],T[b],2))bad.add(a+' × '+b)}));if(G&&hit(G,TX(CAP),4))bad.add('sprievodca × titulky');
+s.vz.querySelectorAll('canvas.pmod,canvas.phud').forEach(c=>{if(op(c)<.3)return;const r=B(c),nm=c.classList.contains('pmod')?'obraz stroja':'čísla pri stroji';ks.forEach(a=>{if(hit(T[a],r,3))bad.add(a+' × '+nm)});if(G&&hit(G,r,3))bad.add('sprievodca × '+nm);
+const S=c._S;if(!S)return;if(c.classList.contains('pmod')){const hc=[...s.vz.querySelectorAll('canvas.phud')].find(h=>h._S===S);if(hc&&hit(r,B(hc),2))bad.add('čísla pri stroji × obraz stroja');
+const tg=S.tags.filter(u=>u[4]>.5);tg.forEach((a,i)=>tg.slice(i+1).forEach(b=>{if(hit(a,b,2))bad.add('názvy v modeli cez seba')}))}
+else{const hd=S.hud.filter(u=>u[5]>.5).map(u=>[u[1],u[2],u[1]+u[3],u[2]+u[4]]);hd.forEach((a,i)=>hd.slice(i+1).forEach(b=>{if(hit(a,b,2))bad.add('čísla pri stroji cez seba')}))}});
+const lv=[...s.vz.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType==3&&n.textContent.trim())&&op(e)>.5).map(e=>[e,TX(e)]).filter(q=>q[1]);
+lv.forEach((a,i)=>{ks.forEach(b=>{if(hit(T[b],a[1],3))bad.add(b+' × popis v obraze')});lv.slice(i+1).forEach(b=>{if(!a[0].contains(b[0])&&!b[0].contains(a[0])&&hit(a[1],b[1],4)&&Math.min(a[1][3],b[1][3])-Math.max(a[1][1],b[1][1])>.3*Math.min(a[1][3]-a[1][1],b[1][3]-b[1][1]))bad.add('popisy v obraze cez seba')})});   // riadky textu sa smú dotýkať, nie ležať cez seba
+
+return {bad:[...bad],zones:T}};
 window.READY=true;
 </script></body></html>"""
 
@@ -1057,7 +1081,7 @@ def _coverage(jpg, wide):
         import io
         from PIL import Image
         im = Image.open(io.BytesIO(jpg)).convert("L")
-        box = (400, 240, 1520, 965) if wide else (30, 700, 1050, 1400)
+        box = (400, 290, 1520, 960) if wide else (30, 560, 1050, 1290)
         im = im.crop(box).resize((204, 140))
         px = im.getdata()
         return sum(1 for v in px if v > 70) / len(px)
@@ -1065,7 +1089,37 @@ def _coverage(jpg, wide):
         return 1.0
 
 
-def check(sc_data, cover):
+OVER_MAX = 0.002   # v mieste nadpisu či titulkov smie byť (po skrytí textu a pozadia) najviac toľko „hrán“ obrazu; prázdne miesto má 0
+
+
+def _overlap(pg, over, k):
+    """Kontrola jednej snímky bez AI: (1) miesta textov a obrazu sa nesmú pretínať, (2) po skrytí textov musí byť pod nimi prázdno."""
+    try:
+        import io
+        from PIL import Image, ImageFilter
+        info = pg.evaluate("window.ovl()")
+        bad = set(info.get("bad") or [])
+        pg.evaluate("document.body.classList.add('notext')")
+        try:
+            im = Image.open(io.BytesIO(pg.screenshot(type="png"))).convert("L")
+        finally:
+            pg.evaluate("document.body.classList.remove('notext')")
+        for name, r in (info.get("zones") or {}).items():
+            if not r:
+                continue
+            box = (max(0, int(r[0]) - 4), max(0, int(r[1]) - 4), min(im.width, int(r[2]) + 4), min(im.height, int(r[3]) + 4))
+            if box[2] - box[0] < 8 or box[3] - box[1] < 8:
+                continue
+            px = im.crop(box).filter(ImageFilter.FIND_EDGES).crop((1, 1, box[2] - box[0] - 1, box[3] - box[1] - 1)).getdata()
+            if sum(1 for v in px if v > 40) > max(80, OVER_MAX * len(px)):
+                bad.add(name + " × obraz")
+        if bad:
+            over.setdefault(k, set()).update(bad)
+    except Exception as e:
+        print("kontrola prekrývania:", e)
+
+
+def check(sc_data, cover, over=None):
     """Kontrola pred zverejnením. Vráti {"ok", "why": [dôvody po slovensky], ...}.
     Neprejde: prázdna scéna, stroj bez presného modelu, priveľa scén len s ikonami či textom."""
     from . import auto_visual
@@ -1079,6 +1133,8 @@ def check(sc_data, cover):
         why.append("Prázdna scéna: " + ", ".join(map(str, empty)))
     if crude:
         why.append("Stroj bez presného modelu: " + ", ".join(crude))
+    for k, bad in sorted((over or {}).items()):
+        why.append(f"Prekrývanie v scéne {k + 1}: " + ", ".join(sorted(bad)))
     if body and len(weak) / len(body) > WEAK_MAX:
         why.append(f"Slabý obraz (len ikony alebo text) v {len(weak)} z {len(body)} scén")
     return {"ok": not why, "why": why, "scenes": len(sc_data), "weak": len(weak),
@@ -1086,7 +1142,7 @@ def check(sc_data, cover):
 
 
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title="", guide=False, detail=1):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title="", guide=False, detail=1, check_only=False):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -1094,8 +1150,13 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     from . import anim, media
     if not anim.available():
         raise RuntimeError("Animácie sa ešte pripravujú (Chromium sa sťahuje)")
-    total = media.duration(voice) or 10
-    words = media.word_times(voice, text)
+    if check_only and not voice:   # rýchla kontrola scenára bez hlasu a bez skladania videa: len kontrolné snímky, vráti výsledok kontroly
+        ws = (text or "").split() or ["."]
+        total = max(10.0, len(ws) / 2.7)
+        words = [{"w": w, "s": i * total / len(ws), "e": (i + .8) * total / len(ws)} for i, w in enumerate(ws)]
+    else:
+        total = media.duration(voice) or 10
+        words = media.word_times(voice, text)
     times = timeline(scenes, words, total)
     sc_data, pcache, used, prev = [], {}, {}, None
     seen_mech = set()
@@ -1152,9 +1213,9 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     with _lock, sync_playwright() as pw:
         exe = os.environ.get("SM_CHROMIUM")
         b = pw.chromium.launch(executable_path=exe, args=CANVAS_ARGS) if exe else pw.chromium.launch(args=CANVAS_ARGS)
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+        proc = None if check_only else subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
+            if thumb and not check_only:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
                 tp = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)  # vlastná stránka, video ostane čisté
                 try:
                     tp.set_content(html)
@@ -1173,23 +1234,32 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)
             probe = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .7) * fps)): k for k, d in enumerate(sc_data)}
-            cover = {}
+            probe2 = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .32) * fps)): k for k, d in enumerate(sc_data)}
+            cover, over = {}, {}
             for i in range(n):
+                if check_only and i not in probe and i not in probe2:
+                    continue
                 pg.evaluate(f"renderAt({i / fps:.4f})")
                 shot = pg.screenshot(type="jpeg", quality=90)
                 if i in probe:   # jedna snímka z každej scény na kontrolu pred zverejnením
                     cover[probe[i]] = _coverage(shot, wide)
-                proc.stdin.write(shot)
-            proc.stdin.close()
-            err = proc.stderr.read().decode(errors="ignore")
-            if proc.wait() != 0:
-                raise RuntimeError("ffmpeg: " + err[-400:])
+                if i in probe or i in probe2:   # dve snímky z každej scény: neleží niečo cez seba?
+                    _overlap(pg, over, probe.get(i, probe2.get(i)))
+                if proc:
+                    proc.stdin.write(shot)
+            if proc:
+                proc.stdin.close()
+                err = proc.stderr.read().decode(errors="ignore")
+                if proc.wait() != 0:
+                    raise RuntimeError("ffmpeg: " + err[-400:])
         finally:
-            if proc.poll() is None:
+            if proc and proc.poll() is None:
                 proc.kill()
             b.close()
+    if check_only:
+        return check(sc_data, cover, over)
     EVENTS[str(out)] = auto_visual.sound_events(sc_data)   # zvuky k obrazu (domieša audio.finish)
-    QA[str(out)] = check(sc_data, cover)
+    QA[str(out)] = check(sc_data, cover, over)
     if _all_black(out, length):
         raise RuntimeError("Video vyšlo celé čierne, skús ho vyrobiť znova")
     return str(out)
