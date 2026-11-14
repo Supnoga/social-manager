@@ -7,7 +7,8 @@ RULES = [
     (r"jet engine|turbofan|turbojet|jet turbine", "jet", ["Intake", "Compressor", "Combustion", "Exhaust"]),
     (r"rotary engine|wankel|rotor housing|apex seal|triangular rotor", "wankel", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"turbo(charger|charged|charging)?s?\b|turbo lag|wastegate|boost pressure", "turbo", ["Exhaust in", "Turbine", "Compressor", "Air to engine"]),
-    (r"four[- ]stroke|piston|cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engine",
+    (r"four[- ]stroke|piston|cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engine"
+     r"|(petrol|gasoline|inline[- ]?(four|six|4|6)|straight[- ](four|six)|boxer) engines?|\bv(6|8|10|12)\b|crankshaft|spark plugs?|engine knock",
      "piston", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"camshaft|valve timing|valves? open|valve ?train|timing (belt|chain)|cam lobe", "camshaft", ["Camshaft", "Valve", "Timing belt"]),
     (r"differential|\bdiffs?\b|spider gears?|ring gear", "differential", ["Drive pinion", "Ring gear", "Spider gears", "Axle shaft"]),
