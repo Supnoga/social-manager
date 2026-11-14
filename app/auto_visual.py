@@ -10,8 +10,8 @@ RULES = [
     (r"four[- ]stroke|piston|cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engine",
      "piston", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"camshaft|valve timing|valves? open|valve ?train|timing (belt|chain)|cam lobe", "camshaft", ["Camshaft", "Valve", "Timing belt"]),
-    (r"differential", "differential", ["Inner wheel", "Differential", "Outer wheel"]),
-    (r"gearbox|transmission|gear ratio|shift(ing)? gears?", "gearbox", ["Engine", "Wheels"]),
+    (r"differential|\bdiffs?\b|spider gears?|ring gear", "differential", ["Drive pinion", "Ring gear", "Spider gears", "Axle shaft"]),
+    (r"gearbox|transmission|gear ratio|shift(ing|s)? gears?|\bsynchro|layshaft|first gear|top gear", "gearbox", ["Input shaft", "Gear pairs", "Selector", "Output shaft"]),
     (r"\bbrake|braking|brake disc|brake pad", "car_brake", ["Brake disc", "Caliper", "Brake pads"]),
     (r"helicopter|main rotor|tail rotor", "rotor", ["Main rotor", "Tail rotor", "Torque"]),
     (r"\bwing|airfoil|aerofoil|\blift\b(?! shaft)|how planes? fl", "wing", ["Lift", "Airflow"]),
@@ -79,12 +79,22 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
                  ("belt", r"timing (belt|chain)|\bbelt\b|\bchain\b|crankshaft|half (the )?speed|twice|in sync")],
     "turbo": [("turbine", r"turbine|exhaust (gas|gases|side)|hot side|waste energy"), ("shaft", r"\bshaft|bearing|\boil\b"),
               ("compressor", r"compressor|compress|fresh air|more air|cold side|\bboost|pack(s|ed)? (more )?air|intake")],
+    "gearbox": [("collar", r"selector|synchro|collar|\bdog\b|\bfork|\block(s|ed)?\b|shift|gear (stick|lever)|engage"),
+                ("input", r"input shaft|clutch|from the engine|engine (turns|spins|drives)|crankshaft"),
+                ("output", r"output shaft|to the wheels|wheels|driveshaft|prop ?shaft"),
+                ("gears", r"gear pairs?|\bratio|layshaft|countershaft|big(ger)? gear|small(er)? gear|\bteeth"),
+                ("g1", r"first gear|1st gear|low(est)? gear|pull(ing)? away|from a stop"), ("g2", r"second gear|2nd gear"),
+                ("g3", r"top gear|high(er|est)? gear|(third|fourth|fifth|sixth) gear|motorway|highway|cruis")],
+    "differential": [("pinion", r"pinion|ring gear|crown wheel|driveshaft|prop ?shaft|from the (engine|gearbox)|ninety|90"),
+                     ("spider", r"spider|small gears|side gears?|\bcage\b|carrier|\binside\b|planet"),
+                     ("straight", r"straight|same speed|turn together|as one (block|piece|unit)|do(es)? not spin|nothing spins"),
+                     ("turn", r"corner|\bbend|inner wheel|outer wheel|inside wheel|outside wheel|different speeds?|faster|slower|speeds up|slows down")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
                   ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
 }
 FOCUS = {m: [(f, re.compile(r, re.I)) for f, r in _STROKES] for m in ("piston", "wankel", "rotary")}
 FOCUS.update({m: [(f, re.compile(r, re.I)) for f, r in v] for m, v in _PARTS.items()})
-RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft")   # modely, ktoré vedia záber „beží naplno“
+RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox")   # modely, ktoré vedia záber „beží naplno“
 WEAK = ("hero", "icons", "scene", "draw", "text", "list")
 # ikony, ktoré sa naozaj točia; ostatné sa nemajú otáčať (otáčajúca sa značka motora pôsobí lacno)
 SPINS = set("gear wheel tyre saw_blade flywheel impeller propeller ship_propeller sprocket ball_bearing roller_bearing brake_disc vinyl film_reel roulette ship_wheel".split())
@@ -100,7 +110,8 @@ def find(text):
 # slová, ktoré tému len podporujú (samy model nespustia): pomáhajú spoznať, o ktorom stroji je celé video
 _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": r"crankshaft|\bstrokes?\b|\bvalves?\b|connecting rod",
             "gears": r"\bteeth\b|\btooth\b|\bmesh|\bratio", "turbo": r"turbine|compressor|\bboost|exhaust gas|intercooler|\bspool",
-            "camshaft": r"\blobes?\b|\bvalves?\b|timing|\bcams?\b", "car_brake": r"caliper|\bpads?\b|\bdis[ck]s?\b|friction|brake fluid|pedal"}
+            "camshaft": r"\blobes?\b|\bvalves?\b|timing|\bcams?\b", "car_brake": r"caliper|\bpads?\b|\bdis[ck]s?\b|friction|brake fluid|pedal",
+            "gearbox": r"\bgears?\b|\bshift|clutch|\bratio|synchro|\bshafts?\b", "differential": r"\bwheels?\b|corner|axle|spider|pinion|ring gear|\bturns?\b"}
 
 
 def topic(full, title=""):
@@ -121,7 +132,7 @@ def topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake"}
+NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 

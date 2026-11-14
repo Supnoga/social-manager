@@ -151,4 +151,6 @@ const fi=['disc','caliper'].indexOf(String(d.f||''));if(fi>=0&&t>.35)stamp(S,fi,
 meter(S,String(Math.round(w/W0*100)),'KM/H',A,cl((t-.6)/.4),fi>=0);
 if(K>.03){x.save();x.globalAlpha=p*Math.min(1,K*3);x.textAlign='right';x.textBaseline='alphabetic';x.font=`900 54px ${S.FT}`;x.lineJoin='round';x.strokeStyle='rgba(0,0,0,.8)';x.lineWidth=10;const s2=Math.round(40+460*K)+' °C';x.strokeText(s2,S.w-44,S.h-74);x.fillStyle=K>.5?'#ffb347':'#ff6a3a';x.fillText(s2,S.w-44,S.h-74);x.restore()}
 callout(S,d,t,A);x.globalAlpha=1}};
+// pomôcky pre ďalšie súbory s modelmi (zz_mech_pro_c.js)
+Object.assign(K,{LBL,tag,meter,cams});
 }

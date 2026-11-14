@@ -1561,6 +1561,14 @@ def video_release(vid: int):
     return {"ok": True}
 
 
+@app.post("/api/videos/{vid}/hold")
+def video_hold(vid: int, data: dict = Body(default={})):
+    """Zadrží hotové video (napr. skúšobné), aby ho plánovač nezobral; dôvod sa ukáže v knižnici."""
+    why = str((data or {}).get("why") or "Zadržané ručne").strip()[:200]
+    db.run("UPDATE videos SET status='hold', qa=? WHERE id=? AND status='ready'", (json.dumps({"ok": False, "why": [why]}, ensure_ascii=False), vid))
+    return {"ok": True}
+
+
 @app.get("/api/videos")
 def videos(project_id: int = 0, lang: str = "", status: str = "", fmt: str = ""):
     sql = f"""SELECT v.*, (SELECT GROUP_CONCAT(a.platform || ':' || p.status) FROM posts p JOIN accounts a ON a.id=p.account_id
