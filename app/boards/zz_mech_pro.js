@@ -59,7 +59,10 @@ place(L[0],Math.max(0,c1-w1/2),cy+Math.max(r1,r2)+m+22,w1,'center');place(L[1],M
 const big=el('div','big',`left:232px;top:${cy+Math.max(r1,r2)+m+62}px;width:400px;text-align:center;font-size:44px;opacity:0;color:#fff`,`${z1} : ${z2}`);v.append(big);
 const arr=(cx,r,s,c)=>{const Rr=r+m+14,a0=-Math.PI/2-.45,a1=-Math.PI/2+.45;x.strokeStyle=c;x.lineWidth=3;x.beginPath();x.arc(cx,cy,Rr,a0,a1);x.stroke();const e=s>0?a1:a0,tx=-Math.sin(e)*s,ty=Math.cos(e)*s,px=cx+Math.cos(e)*Rr,py=cy+Math.sin(e)*Rr;x.beginPath();x.moveTo(px-tx*12-Math.cos(e)*7,py-ty*12-Math.sin(e)*7);x.lineTo(px,py);x.lineTo(px-tx*12+Math.cos(e)*7,py-ty*12+Math.sin(e)*7);x.stroke()};
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));x.clearRect(0,0,864,560);x.globalAlpha=p;const w=t*1.1*Math.min(1,14/z1+.45);
-GEARPRO(x,c1,cy,r1,z1,w,'#fff');GEARPRO(x,c2,cy,r2,z2,G.meshRot(w,z1,z2,0),A);x.globalAlpha=p*sp;arr(c1,r1,1,'#fff');arr(c2,r2,-1,A);x.globalAlpha=1;
+const zz=1+.07*ez(t/3.5);x.save();x.translate(c1+r1,cy);x.scale(zz,zz);x.translate(-(c1+r1),-cy);
+GEARPRO(x,c1,cy,r1,z1,w,'#fff');GEARPRO(x,c2,cy,r2,z2,G.meshRot(w,z1,z2,0),A);
+{const gg=x.createRadialGradient(c1+r1,cy,0,c1+r1,cy,m*4.2);gg.addColorStop(0,rgba(A,.55+.2*Math.sin(t*z1*1.1)));gg.addColorStop(1,rgba(A,0));x.fillStyle=gg;x.fillRect(c1+r1-m*5,cy-m*5,m*10,m*10)}
+x.globalAlpha=p*sp;arr(c1,r1,1,'#fff');arr(c2,r2,-1,A);x.restore();x.globalAlpha=1;
 L.forEach(e=>e.style.opacity=e._on?sp:0);big.style.opacity=E(st(1,.6))}};
 
 // ---------- efekty: prirodzené čiastočky, plameň, dym (všetko je funkcia času, takže video vyjde vždy rovnako) ----------
@@ -84,8 +87,9 @@ const metal=(x,x0,x1)=>{const g=x.createLinearGradient(x0,0,x1,0);g.addColorStop
 
 // ---------- štvortaktný motor v reze: l = názvy 4 dôb ----------
 PRO.piston=(v,d)=>{const x=cv2(v,864,560),A=D.acc,L=labs(v,d,4),any=L.some(e=>e._on);
-const CX=any?290:432,B=92,TOP=36,DECK=96,r=56,l=176,PH=84,PIN=46,CL=12,CY=DECK+CL+PIN+r+l,Ri=104,LB=306,T=6.4,NP=48;
+const CX=any?290:432,B=92,TOP=36,DECK=96,r=56,l=176,PH=84,PIN=46,CL=12,CY=DECK+CL+PIN+r+l,Ri=104,LB=306,T=Math.max(4.8,Math.min(7.2,(N(d._dur)||7)-.6)),NP=48;
 L.forEach((e,i)=>place(e,CX+250,138+i*74,864-(CX+250)-6,'left'));
+const FOC=[[CX-46,92,1.22],[CX,150,1.1],[CX,132,1.24],[CX+46,92,1.22]],FSEL={intake:0,compression:1,power:2,exhaust:3}[String(d.f||'')];x.canvas.style.webkitMaskImage='linear-gradient(#000 0,#000 92%,transparent 100%)';
 const num=L.map((e,i)=>{const n=el('div','big',`left:${CX+196}px;top:${130+i*74}px;width:44px;text-align:center;font-size:34px;opacity:0`,String(i+1));v.append(n);return n});
 const PT=[...Array(NP)].map((_,i)=>({gx:((i%8)+.12+.76*HS(i,11))/8,gy:(Math.floor(i/8)+.12+.76*HS(i,12))/6,fuel:HS(i,13)<.27,ein:.04+.7*HS(i,14),eex:.04+.7*HS(i,16),sd:HS(i,15)<.5?-1:1,lat:(HS(i,17)-.5)*22,rr:.8+.5*HS(i,18)}));
 const outer=()=>{x.rect(CX-B-24,TOP,2*B+48,LB-TOP+40);x.moveTo(CX+Ri+16,CY);x.arc(CX,CY,Ri+16,0,TAU)};
@@ -99,6 +103,9 @@ x.beginPath();x.moveTo(vx-27,y+3);x.lineTo(vx+27,y+3);x.lineTo(vx+15,y-9);x.line
 x.strokeStyle='#bdbdbd';x.lineWidth=2.5;x.beginPath();const y0=TOP-26+lift,y1=TOP-3,n=5;for(let i=0;i<=n;i++){const yy=y0+(y1-y0)*i/n;x.lineTo(vx+(i%2?10:-10),yy)}x.stroke();
 x.fillStyle='#e8e8e8';x.fillRect(vx-13,TOP-32+lift,26,5)};
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));x.clearRect(0,0,864,560);x.globalAlpha=p;const cyc=((t/T)%1+1)%1,th=cyc*2*TAU,stg=Math.min(3,Math.floor(cyc*4)),q=cyc*4-stg;
+// kamera: plynulo sa presúva na miesto, kde sa práve niečo deje, pri zážihu sa zatrasie
+let cf;if(FSEL!=null)cf=[FOC[FSEL][0],FOC[FSEL][1],1.4];else{const a=FOC[(stg+3)%4],b=FOC[stg],f=ez(q/.4);cf=[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f]}
+const zz=1+(cf[2]-1)*ez((t-.6)/1.4),shk=stg==2&&q<.16?1-q/.16:0;x.save();x.translate(cf[0]+Math.sin(t*93)*5*shk,cf[1]+Math.cos(t*71)*4*shk);x.scale(zz,zz);x.translate(-cf[0],-cf[1]);
 const K=G.crank(th,r,l),wy=CY-r-l+K.drop,crown=wy-PIN,pinX=CX+K.px,pinY=CY+K.py,top=DECK+2,hgt=Math.max(0,crown-top);
 const home=(o,i,amp,spd)=>{const w=wob(i,t,amp,spd);return [Math.max(CX-B+8,Math.min(CX+B-8,CX+(o.gx-.5)*2*(B-14)+w[0])),Math.max(top+5,Math.min(crown-5,top+7+o.gy*Math.max(2,hgt-14)+w[1]*Math.min(1,hgt/70)))]};
 const chamber=()=>x.rect(CX-B+2,top,2*B-4,hgt);
@@ -142,7 +149,7 @@ x.beginPath();x.arc(CX,wy,13,0,TAU);x.fillStyle='#5a5a5a';x.fill();x.strokeStyle
 const lin=stg==0?Math.sin(Math.PI*q)*18:0,lex=stg==3?Math.sin(Math.PI*q)*18:0;valve(-1,lin);valve(1,lex);
 x.fillStyle='#e8e8e8';x.fillRect(CX-9,TOP-24,18,DECK-TOP+22);x.fillStyle='#8a8a8a';x.fillRect(CX-13,TOP-10,26,12);x.strokeStyle='#e8e8e8';x.lineWidth=3;x.beginPath();x.moveTo(CX,DECK-2);x.lineTo(CX,DECK+7);x.stroke();
 spark(x,PLUG,stg==2&&q<.2?1-q/.2:(stg==1&&q>.95?(q-.95)/.05:0),A,p,t);
-x.globalAlpha=1;L.forEach((e,i)=>{e.style.opacity=e._on?(i==stg?1:.32)*sp:0;e.style.color=i==stg?A:'#cfcfcf';num[i].style.opacity=e._on?(i==stg?1:.32)*sp:0;num[i].style.color=i==stg?A:'#cfcfcf'})}};
+x.restore();x.globalAlpha=1;L.forEach((e,i)=>{e.style.opacity=e._on?(i==stg?1:.32)*sp:0;e.style.color=i==stg?A:'#cfcfcf';num[i].style.opacity=e._on?(i==stg?1:.32)*sp:0;num[i].style.color=i==stg?A:'#cfcfcf'})}};
 
 // ---------- rotačný (Wankelov) motor v reze: l = sanie, kompresia, expanzia, výfuk ----------
 PRO.wankel=(v,d)=>{const x=cv2(v,864,560),A=D.acc,L=labs(v,d,4),e0=27,R=190,W=G.wankel(R,e0),CX=432,CY=292,mm=4.5,TH=24,NC=30;
@@ -154,6 +161,8 @@ const ports=()=>{[1,-1].forEach(s=>{x.fillStyle='#000';x.fillRect(CX+s*PX-PW/2,7
 const CP=[...Array(NC)].map((_,i)=>({s:.07+.86*((i%10)+.15+.7*HS(i,61))/10,dp:.14+.72*(Math.floor(i/10)+.15+.7*HS(i,62))/3,fuel:HS(i,63)<.27,ein:.04+.68*HS(i,64),eex:.12+.58*HS(i,65),rr:.8+.5*HS(i,66)}));
 const sy=CY+R-e0,MIN=[CX+PX,yIn+8],MEX=[CX-PX,yIn+8],SPK=[CX,sy-10];
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));x.clearRect(0,0,864,560);x.globalAlpha=p;const fi=t*.72,c=W.center(fi);
+let sk=0;for(let k=0;k<3;k++){const psi=(((fi+TAU*k/3+Math.PI/3)%TAU)+TAU)%TAU,dd=psi-Math.PI/2;if(dd>-.05&&dd<.3)sk=Math.max(sk,dd<0?1+dd/.05:1-dd/.3)}
+const zz=1+.09*ez(t/3.5);x.save();x.translate(CX+Math.sin(t*93)*4*sk,CY+Math.cos(t*71)*3*sk);x.scale(zz,zz);x.translate(-CX,-CY);
 // skriňa v reze
 x.beginPath();hp(TH);x.lineWidth=8;x.strokeStyle='#fff';x.stroke();x.fillStyle=WALL;x.fill();hatch(x,()=>hp(TH));
 x.beginPath();hp(0);x.lineWidth=8;x.stroke();x.fillStyle='#000';x.fill();ports();
@@ -186,11 +195,38 @@ x.strokeStyle=A;x.lineWidth=9;x.beginPath();x.moveTo(CX,CY);x.lineTo(CX+c[0],CY+
 for(let k=0;k<3;k++){const a=W.apex(fi,k);dot(x,[CX+a[0]-Math.cos(fi+TAU*k/3)*5,CY+a[1]-Math.sin(fi+TAU*k/3)*5],5,'#fff',1,false)}
 // sviečka dole + iskra, keď je komora najmenšia
 x.fillStyle='#e8e8e8';x.fillRect(CX-8,sy-4,16,TH+26);x.fillStyle='#8a8a8a';x.fillRect(CX-12,sy+TH+2,24,10);
-let sk=0;for(let k=0;k<3;k++){const psi=(((fi+TAU*k/3+Math.PI/3)%TAU)+TAU)%TAU,dd=psi-Math.PI/2;if(dd>-.05&&dd<.3)sk=Math.max(sk,dd<0?1+dd/.05:1-dd/.3)}
-spark(x,SPK,sk,A,p,t);
+spark(x,SPK,sk,A,p,t);x.restore();
 x.globalAlpha=1;L.forEach(e=>e.style.opacity=e._on?sp:0)}};
 PRO.rotary=PRO.wankel;
 
+// ---------- réžia: úvodný záber „kde to v aute je“ a zoom dnu ----------
+// auto z boku (miestne súradnice: zem y=0, dĺžka 520), priehľadné, s pohonom; hot = diel, ktorý svieti
+const CARHOT={engine:[430,-78],gearbox:[370,-70],diff:[105,-44],brake:[410,-44]};
+const CAR=(x,roll,hot,A,pulse)=>{const dim='rgba(255,255,255,.34)';x.lineJoin='round';
+// karoséria
+x.beginPath();x.moveTo(18,-34);x.bezierCurveTo(10,-60,14,-84,30,-96);x.lineTo(78,-112);x.bezierCurveTo(110,-150,150,-170,196,-172);x.lineTo(286,-172);x.bezierCurveTo(320,-170,350,-140,372,-116);x.bezierCurveTo(420,-110,470,-104,498,-88);x.bezierCurveTo(512,-78,514,-52,508,-34);
+x.lineTo(460,-30);x.arc(410,-44,52,.273,Math.PI-.273,true);x.lineTo(155,-30);x.arc(105,-44,52,.273,Math.PI-.273,true);x.closePath();x.fillStyle='rgba(255,255,255,.045)';x.fill();x.strokeStyle='#fff';x.lineWidth=3;x.stroke();
+x.beginPath();x.moveTo(122,-118);x.bezierCurveTo(140,-146,160,-160,198,-162);x.lineTo(284,-162);x.bezierCurveTo(310,-160,334,-140,352,-118);x.closePath();x.moveTo(240,-162);x.lineTo(240,-118);x.strokeStyle=dim;x.lineWidth=2.2;x.stroke();
+x.beginPath();x.moveTo(240,-118);x.lineTo(240,-40);x.moveTo(130,-112);x.lineTo(126,-60);x.moveTo(352,-118);x.lineTo(356,-60);x.stroke();
+x.fillStyle='#fff';x.fillRect(494,-84,12,7);x.fillStyle=A;x.fillRect(16,-88,7,12);
+// pohon: motor, prevodovka, hriadeľ, rozvodovka
+const part=(k,fn)=>{const on=hot==k;x.beginPath();fn();x.fillStyle=on?A:'rgba(255,255,255,.06)';x.strokeStyle=on?'#fff':dim;x.lineWidth=on?2.6:2;if(on){x.save();x.shadowColor=A;x.shadowBlur=18+10*pulse;x.fill();x.restore()}else x.fill();x.stroke()};
+x.strokeStyle=dim;x.lineWidth=4;x.beginPath();x.moveTo(350,-70);x.lineTo(122,-46);x.stroke();
+part('engine',()=>{x.rect(392,-106,76,56);x.rect(402,-118,56,12)});part('gearbox',()=>{x.moveTo(392,-98);x.lineTo(350,-86);x.lineTo(350,-56);x.lineTo(392,-52);x.closePath()});
+// kolesá
+[105,410].forEach(cx=>{x.beginPath();x.arc(cx,-44,44,0,TAU);x.fillStyle='#0a0a0a';x.fill();x.strokeStyle='#fff';x.lineWidth=3;x.stroke();x.beginPath();x.arc(cx,-44,27,0,TAU);x.strokeStyle=dim;x.lineWidth=2.2;x.stroke();
+for(let k=0;k<5;k++){const a=roll+k*TAU/5;x.beginPath();x.moveTo(cx+Math.cos(a)*7,-44+Math.sin(a)*7);x.lineTo(cx+Math.cos(a)*27,-44+Math.sin(a)*27);x.stroke()}});
+part('diff',()=>{x.arc(105,-44,15,0,TAU)});part('brake',()=>{x.arc(410,-44,22,0,TAU)});
+if(hot&&CARHOT[hot]){const h=CARHOT[hot];x.beginPath();x.arc(h[0],h[1],58+16*pulse,0,TAU);x.strokeStyle=rgba(A,.75*(1-pulse));x.lineWidth=3;x.stroke()}};
+const CTX={piston:['car','engine'],wankel:['car','engine'],rotary:['car','engine'],camshaft:['car','engine'],gearbox:['car','gearbox'],differential:['car','diff'],car_brake:['car','brake']};
+// obalí model: auto príde, diel sa rozsvieti, kamera doň vletí a prelne sa do rezu
+const withIntro=(v,d,ctx,base)=>{const vm=el('div','','position:absolute;left:0;top:0;width:864px;height:560px;transform-origin:50% 50%;opacity:0');v.append(vm);const upd=base(vm,d);
+const x=cv2(v,864,560);x.canvas.style.webkitMaskImage='radial-gradient(ellipse 52% 54% at 50% 50%,#000 72%,transparent 100%)';const A=D.acc,IN=Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)),S=1.4,OX=68,OY=420,h=CARHOT[ctx[1]],H=[OX+h[0]*S,OY+h[1]*S];
+return (t,st)=>{x.clearRect(0,0,864,560);const u=t/IN;if(u<1.02){const drive=1-ez(u/.42),dx=-drive*drive*620,zo=ez((u-.6)/.4),z=1+zo*zo*8.5,P=lerp(H,[432,280],ez((u-.6)/.34));
+x.save();x.globalAlpha=E(u/.12)*(1-ez((u-.74)/.2));x.translate(P[0],P[1]);x.scale(z,z);x.translate(-H[0],-H[1]);
+x.strokeStyle='rgba(255,255,255,.22)';x.lineWidth=2;x.beginPath();x.moveTo(-200,OY);x.lineTo(1064,OY);x.stroke();
+x.translate(OX+dx,OY);x.scale(S,S);CAR(x,dx/(44*S),u>.36?ctx[1]:null,A,((t*1.5)%1));x.restore()}
+const ma=ez((u-.76)/.24);vm.style.opacity=ma;vm.style.transform=`scale(${(.3+.7*ez((u-.68)/.32)).toFixed(4)})`;if(ma>0)upd(Math.max(0,t-IN*.78),st)}};
 window.MECHPRO=PRO;
-const _m3=V.mech;V.mech=(v,d)=>PRO[d&&d.m]?PRO[d.m](v,d):_m3(v,d);
+const _m3=V.mech;V.mech=(v,d)=>{const base=PRO[d&&d.m]?PRO[d.m]:_m3,c=d&&d._in&&CTX[d.m];return c?withIntro(v,d,c,base):base(v,d)};
 }

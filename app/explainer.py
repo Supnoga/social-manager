@@ -1026,12 +1026,16 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     words = media.word_times(voice, text)
     times = timeline(scenes, words, total)
     sc_data, pcache, used, prev = [], {}, {}, None
+    seen_mech = set()
     from . import auto_visual
     for sc, (t0, t1) in zip(scenes, times):
         spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
         v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text)
         prev = v.get("m") if v.get("k") == "mech" else None
         v = prepare(v, lang)
+        if v.get("k") == "mech":  # réžia: dĺžka scény a úvodný záber „kde to je“ len pri prvom výskyte stroja
+            v = dict(v, _dur=round(t1 - t0, 2), **({} if v.get("m") in seen_mech else {"_in": 1}))
+            seen_mech.add(v.get("m"))
         h = (sc.get("onscreen") or "").strip()
         v = with_product(h, v, products, pcache)
         if v.get("k") == "text" and re.sub(r"\W", "", str(v.get("w", "")).lower()) == re.sub(r"\W", "", h.lower()):
