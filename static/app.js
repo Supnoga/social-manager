@@ -204,7 +204,7 @@ async function pHome(m) {
   m.innerHTML = `<div class="top"><div><h1>Prehľad</h1><p class="sub">Všetky projekty a publikovanie na jednom mieste.</p></div><div class="sp"></div>
     <a class="btn" href="#/novy">${I('plus')}Nový projekt</a></div>
   <div class="grid" style="margin-bottom:14px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))">
-    ${tile('folder', d.projects, 'projektov')}${tile('bulb', d.ideas, 'nápadov v práci')}${tile('film', d.videos, 'videí')}
+    ${tile('folder', d.projects, 'projektov')}${tile('bulb', d.ideas, 'nápadov v práci')}${tile('file', ((d.scripts || {}).short || 0) + ((d.scripts || {}).long || 0), `scenárov pripravených<br><span class="dim">${(d.scripts || {}).short || 0} krátkych · ${(d.scripts || {}).long || 0} dlhých</span>`)}${tile('film', d.videos, 'videí')}
     ${tile('clock', d.posts.queued || 0, 'naplánovaných')}${tile('check', d.posts.done || 0, 'zverejnených')}
     ${tile('bot', ((d.ai.day.inp + d.ai.day.outp) / 1000).toFixed(1) + 'k', 'AI tokenov za 24 h')}
   </div>

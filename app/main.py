@@ -316,6 +316,10 @@ def dashboard():
         "videos": db.one("SELECT COUNT(*) n FROM videos")["n"],
         "ideas": db.one("SELECT COUNT(*) n FROM ideas WHERE status IN ('new','approved')")["n"],
         "accounts": db.one("SELECT COUNT(*) n FROM accounts")["n"],
+        "scripts": {r["f"]: r["n"] for r in db.q("""SELECT CASE WHEN i.format='long' THEN 'long' ELSE 'short' END f, COUNT(*) n
+                   FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1 AND NOT EXISTS (
+                   SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id
+                   WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY f""")},
         "posts": c,
         "upcoming": _posts("p.status IN ('queued','uploading','review')", "p.scheduled_at", 12),
         "recent": _posts("p.status IN ('done','failed')", "p.updated_at DESC", 12),
