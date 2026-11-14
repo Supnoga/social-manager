@@ -9,8 +9,13 @@ const tag=(S,s,px,py,al,col,fs)=>{if(!s)return;const x=S.x;x.font=`800 ${fs||24}
 const meter=(S,val,unit,A,a,top)=>{const x=S.x,X=40,Y=top?118:S.h-70;x.save();x.globalAlpha*=a;x.textAlign='left';x.textBaseline='alphabetic';x.font=`900 64px ${S.FT}`;const w=x.measureText(val).width;x.fillStyle='rgba(0,0,0,.8)';x.beginPath();x.roundRect(X-14,Y-62,w+x.measureText(unit).width*.5+70,84,16);x.fill();x.fillStyle='#fff';x.fillText(val,X,Y);x.font=`800 30px ${S.FT}`;x.fillStyle=A;x.fillText(unit,X+w+12,Y);x.restore()};
 // kamera modelu: celok → zábery na časti → celok; f = jeden záber; run = pomalý nájazd
 const cams=(d,FULL,FV0,tour,DUR)=>{const f=String(d.f||''),PZ=WIDE?1:1.2,FV={};for(const k in FV0)FV[k]=[FV0[k][0],FV0[k][1],FV0[k][2]*PZ];   // na výšku idú zábery na časti bližšie, nech diel zaberie celú šírku
+// fs = [[časť, čas v scéne], …]: kamera ide za hlasom – na každú časť príde chvíľu predtým, než o nej zaznie slovo
+const fs=(Array.isArray(d.fs)?d.fs:[]).filter(q=>q&&FV[q[0]]);if(fs.length){const KF=[[0,FULL]],sh=N(d._sh);let last=-9;KF.fs=fs.map((q,i)=>{const tt=Math.max(i?.2:.45,N(q[1])-sh-.5,last+1.6);KF.push([tt,FV[q[0]],.8]);last=tt;return [q[0],tt]});return KF}
 if(f=='run')return [[0,FULL],[.2,[FULL[0],FULL[1],FULL[2]*1.14],Math.max(3,DUR)]];if(FV[f]){const KF=[[0,FULL],[.45,FV[f],.8]];for(let q=6.4;q<DUR-3.4;q+=6.6){KF.push([q,[FULL[0],FULL[1],FULL[2]*1.08],1]);KF.push([q+2.3,FV[f],.9])}return KF}   // dlhá scéna na jednej časti: kamera občas odíde na celok a vráti sa, obraz nestojí
 const n=tour.length,KF=[[0,FULL]];tour.forEach((k,i)=>KF.push([.9+i*(DUR*.72-.9)/n,FV[k],.8]));KF.push([DUR*.8,FULL,1]);return KF};
+
+// ktorá časť je práve v zábere a ako dlho: [názov, sekundy]
+const shot=(KF,d,t)=>{if(KF.fs){let c=null;for(const q of KF.fs){if(t>=q[1])c=q;else break}return c?[c[0],t-c[1]]:['',0]}return [String(d.f||''),t]};
 
 // ---------- turbodmychadlo: výfukové plyny točia turbínu, tá cez hriadeľ točí kompresor, ktorý stláča vzduch do motora ----------
 // l = [výfuk dnu, turbína, kompresor, vzduch do motora]; f = turbine | shaft | compressor | run
@@ -50,7 +55,7 @@ wheel(T,th,11,.55,k);wheel(C,th,12,-.75,k);
 // popisky pri celkovom pohľade
 x.globalAlpha=p*sp*(1-ez((cm[2]/zf-1)/.22));tag(S,LN[0],T[0]-120,T[1]-R1-34,'center','#ffb060');tag(S,LN[1],T[0],T[1]+R1+22,'center','#e9ecef');tag(S,LN[2],C[0],C[1]+R1+22,'center','#e9ecef');tag(S,LN[3],C[0]+120,C[1]-R1-34,'center',AIR);
 x.restore();x.globalAlpha=p;
-const fi=['turbine','shaft','compressor'].indexOf(String(d.f||''));if(fi>=0&&t>.35)stamp(S,fi,[LN[1],LN[1]?'SHAFT':'',LN[2]][fi]||'',3,t-.35,A);
+const [FN,ts]=shot(KF,d,t),fi=['turbine','shaft','compressor'].indexOf(FN);if(fi>=0&&ts>.35)stamp(S,fi,[LN[1],LN[1]?'SHAFT':'',LN[2]][fi]||'',3,ts-.35,A);
 if(fi<0)meter(S,(Math.round(w/W1*150)*1000).toLocaleString('en-US'),'RPM',A,cl((t-.6)/.4));
 callout(S,d,t,A);x.globalAlpha=1}};
 CTX.turbo=['car','engine'];
@@ -103,7 +108,7 @@ x.beginPath();x.arc(0,0,20,0,TAU);x.fillStyle='#3a3e44';x.fill();x.stroke();x.fi
 if(L>.5){x.save();x.globalCompositeOperation='lighter';const g=x.createRadialGradient(VX,yT,0,VX,yT,34);g.addColorStop(0,rgba(A,.8*Math.min(1,L/8)));g.addColorStop(1,rgba(A,0));x.fillStyle=g;x.fillRect(VX-40,yT-34,80,68);x.restore()}
 x.globalAlpha=p*sp*(1-ez((cm[2]/zf-1)/.22));tag(S,LN[0],C1[0]+118,C1[1]-64,'left');tag(S,LN[1],VX+62,SEAT-166,'left');tag(S,LN[2],C2[0]+10,C2[1]-R2-150,'center');
 x.restore();x.globalAlpha=p;
-const fi=['cam','valve','belt'].indexOf(String(d.f||''));if(fi>=0&&t>.35)stamp(S,fi,LN[fi]||'',3,t-.35,A);
+const [FN,ts]=shot(KF,d,t),fi=['cam','valve','belt'].indexOf(FN);if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||'',3,ts-.35,A);
 if(fi<1)meter(S,(L/Lm*10).toFixed(1),'MM',A,cl((t-.6)/.4),fi==0);
 callout(S,d,t,A);x.globalAlpha=1}};
 
@@ -148,10 +153,10 @@ if(a>.6&&braking){x.save();x.globalCompositeOperation='lighter';[SX+13,SX-13].fo
 if(a>.05){x.globalAlpha=p*a;[[SX+96,1],[SX-70,-1]].forEach(([ax,sd])=>{x.strokeStyle=A;x.fillStyle=A;x.lineWidth=6;x.beginPath();x.moveTo(ax,350);x.lineTo(ax-sd*34,350);x.stroke();x.beginPath();x.moveTo(ax-sd*48,350);x.lineTo(ax-sd*30,340);x.lineTo(ax-sd*30,360);x.closePath();x.fill()});x.globalAlpha=p}
 x.globalAlpha=p*sp*(1-ez((cm[2]/zf-1)/.22));tag(S,LN[0],DC[0],DC[1]+R+34,'center');tag(S,LN[1],SX+30,96,'center');tag(S,LN[2],SX,392,'center');
 x.restore();x.globalAlpha=p;
-const fi=['disc','caliper'].indexOf(String(d.f||''));if(fi>=0&&t>.35)stamp(S,fi,LN[fi]||'',2,t-.35,A);
+const [FN,ts]=shot(KF,d,t),fi=['disc','caliper'].indexOf(FN);if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||'',2,ts-.35,A);
 meter(S,String(Math.round(w/W0*100)),'KM/H',A,cl((t-.6)/.4),fi>=0);
 if(K>.03){x.save();x.globalAlpha=p*Math.min(1,K*3);x.textAlign='right';x.textBaseline='alphabetic';x.font=`900 54px ${S.FT}`;x.lineJoin='round';x.strokeStyle='rgba(0,0,0,.8)';x.lineWidth=10;const s2=Math.round(40+460*K)+' °C';x.strokeText(s2,S.w-44,S.h-74);x.fillStyle=K>.5?'#ffb347':'#ff6a3a';x.fillText(s2,S.w-44,S.h-74);x.restore()}
 callout(S,d,t,A);x.globalAlpha=1}};
 // pomôcky pre ďalšie súbory s modelmi (zz_mech_pro_c.js)
-Object.assign(K,{LBL,tag,meter,cams});
+Object.assign(K,{LBL,tag,meter,cams,shot});
 }

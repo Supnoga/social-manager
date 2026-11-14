@@ -1,7 +1,7 @@
 // Presné modely 3 – prevody: prevodovka a diferenciál. Kolesá sú kreslené zboku (os leží v rovine obrazu),
 // zuby sú pásiky, ktoré sa posúvajú presne podľa uhla natočenia. Točí sa len to, čo sa točí naozaj.
 {
-const K=window.KIT,PRO=K.PRO,{mix,ez,poly,hatch,STG,camAt,stamp,callout,LBL,tag,meter,cams,CTX}=K;
+const K=window.KIT,PRO=K.PRO,{mix,ez,poly,hatch,STG,camAt,stamp,callout,LBL,tag,meter,cams,shot,CTX}=K;
 const TAU=Math.PI*2,N=v=>{v=parseFloat(v);return isFinite(v)?v:0},mx=(a,b,k)=>a+(b-a)*k;
 // uhol = integrál otáčok (Simpson), aby sa pri zmene rýchlosti nič neposkočilo a snímka sa dala vypočítať pre ľubovoľný čas
 const integ=(f,t)=>{if(t<=0)return 0;const n=48,h=t/n;let s=f(0)+f(t);for(let i=1;i<n;i++)s+=f(i*h)*(i%2?4:2);return s*h/3};
@@ -50,7 +50,7 @@ GP.forEach((g,i)=>{const th=WG[i]*t,col=mix('#ffffff',A,EN[i]);gear(g[0],Y1,g[2]
 // popisky pri celkovom pohľade
 x.globalAlpha=p*sp*(1-ez((cm[2]/zf-1)/.22));lead(S,LN[0],150,6,84,Y1-17);lead(S,LN[2],445,6,445,58);lead(S,LN[3],700,6,720,Y1-17);lead(S,LN[1],440,550,450,Y2+78);
 x.restore();x.globalAlpha=p;
-const fi=G0?1:['input','gears','collar','output'].indexOf(String(d.f||''));if(fi>=0&&t>.35)stamp(S,fi,LN[fi]||'',4,t-.35,A);
+const [FN,ts]=shot(KF,d,t),fi=G0?1:['input','gears','collar','output'].indexOf(FN);if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||'',4,ts-.35,A);
 const gn=Math.min(2,Math.round(sh(t))),a=cl((t-.6)/.4);meter(S,(Math.round(3000*wo/WI/10)*10).toLocaleString('en-US'),'RPM',A,a,fi>=0);badge(S,String(gn+1),RAT[gn].toFixed(2)+' : 1',A,a);
 callout(S,d,t,A);x.globalAlpha=1}};
 CTX.gearbox=['car','gearbox'];
@@ -95,8 +95,8 @@ x.strokeStyle=A;x.lineWidth=4;x.lineCap='round';x.lineJoin='round';x.beginPath()
 x.globalAlpha=p*sp*(1-ez((cm[2]/zf-1)/.22));lead(S,LN[0],CX+150,CY-RR-70,CX+44,CY-RR-8);lead(S,LN[1],CX-RP-150,CY+RR-10,CX-RP-8,CY+RR-40);lead(S,LN[2],CX+212,CY+158,CX+24,CY+70);lead(S,LN[3],668,CY-86,650,CY-14);
 x.restore();
 // otáčky ľavého a pravého kolesa: súčet je stále rovnaký
-const fi=['pinion','spider'].indexOf(F),a=cl((t-.6)/.4),nl=Math.round(500*wl(t)/WC/5)*5;x.globalAlpha=p;
-if(fi>=0&&t>.35)stamp(S,fi,[LN[0],LN[2]][fi]||'',2,t-.35,A);
+const [FN,ts]=shot(KF,d,t),fi=['pinion','spider'].indexOf(FN),a=cl((t-.6)/.4),nl=Math.round(500*wl(t)/WC/5)*5;x.globalAlpha=p;
+if(fi>=0&&ts>.35)stamp(S,fi,[LN[0],LN[2]][fi]||'',2,ts-.35,A);
 if(HOLD){meter(S,(1-k).toFixed(1),'× CAGE',A,a,fi>=0);badge(S,(1+k).toFixed(1),'× CAGE',A,a)}else{meter(S,String(nl),'RPM',A,a,fi>=0);badge(S,String(1000-nl),'RPM',A,a);x.globalAlpha=p*a;arrow(k);x.globalAlpha=p}
 callout(S,d,t,A);x.globalAlpha=1}};
 CTX.differential=['car','diff'];

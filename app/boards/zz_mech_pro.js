@@ -265,7 +265,7 @@ if(hot&&CARHOT[hot]){const h=CARHOT[hot];x.beginPath();x.arc(h[0],h[1],58+16*pul
 const INTRO={car:{hot:CARHOT,draw:CAR}};
 const CTX={piston:['car','engine'],wankel:['car','engine'],rotary:['car','engine'],camshaft:['car','engine'],gearbox:['car','gearbox'],differential:['car','diff'],car_brake:['car','brake']};
 // obalí model: auto príde, diel sa rozsvieti, kamera doň vletí a prelne sa do rezu
-const withIntro=(v,d,ctx,base)=>{const vm=el('div','','position:absolute;left:0;top:0;width:864px;height:560px;transform-origin:50% 50%;opacity:0');v.append(vm);const upd=base(vm,d);
+const withIntro=(v,d,ctx,base)=>{const vm=el('div','','position:absolute;left:0;top:0;width:864px;height:560px;transform-origin:50% 50%;opacity:0');v.append(vm);d._sh=(d._first?1.15:Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)))*.78;const upd=base(vm,d);
 const S=STG(v),x=S.x;x.canvas.style.cssText+=';-webkit-mask-image:radial-gradient(ellipse 56% 56% at 50% 50%,#000 74%,transparent 100%);-webkit-mask-composite:source-over;mask-composite:add';const A=D.acc,IN=d._first?1.15:Math.max(1.7,Math.min(2.8,(N(d._dur)||8)*.3)),SC=WIDE?1.5:1.62,OX=(S.w-520*SC)/2,OY=S.h/2+150,_sh=(d._sh=IN*.78),SCN=INTRO[ctx[0]]||INTRO.car,h=SCN.hot[ctx[1]],H=[OX+h[0]*SC,OY+h[1]*SC];
 return (t,st)=>{S.begin();const u=t/IN;if(u<1.02){const drive=1-ez(u/.42),dx=SCN.still?0:-drive*drive*700,zo=ez((u-.6)/.4),z=1+zo*zo*8.5,P=lerp(H,[S.w/2,S.h/2],ez((u-.6)/.34));
 x.save();x.globalAlpha=(d._first?1:E(u/.12))*(1-ez((u-.74)/.2));x.translate(P[0],P[1]);x.scale(z,z);x.translate(-H[0],-H[1]);
