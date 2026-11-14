@@ -731,7 +731,7 @@ def idea_voice_all(iid: int, only_missing: int = 0):
 
 @app.get("/api/voices/{lang}")
 def voice_list(lang: str):
-    return {"voices": voices.catalog(lang), "google": voices.google_usage(), "sample": voices.sample(lang)}
+    return {"voices": voices.catalog(lang), "google": voices.google_usage(), "sample": voices.sample(lang), "local": voices.local_status()}
 
 
 @app.post("/api/voices/preview")
@@ -805,6 +805,12 @@ def _broll_ready():
     return st["pexels"] or st["pixabay"] or st["own"] > 0 or st["ai"]
 
 
+def _other_voice(s):
+    """Projekt má lokálny hlas, ale scenár je nahovorený iným: pri skladaní sa nahovorí nanovo (zadarmo), nech kanál hovorí jedným hlasom."""
+    p = db.one("SELECT voices FROM projects WHERE id=?", (s["project_id"],)) or {}
+    return voices.project_voice(p, s["lang"]).startswith("local:") and (s.get("voice_engine") or "") != "local"
+
+
 @app.post("/api/scripts/{sid}/to-video")
 def script_to_video(sid: int, data: dict = Body(default={})):
     """Vytvorí video: zábery z internetu/tvoje + titulky slovo po slove (predvolené), tvoje podkladové video, alebo farby dizajnu."""
@@ -812,7 +818,8 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     if data.get("new_voice"):   # tlačidlo „Nový zvuk“: hlas sa nahrá nanovo a video sa zloží podľa neho
         script_voice(sid, {"fresh": True})
         s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
-    elif not s["voice_path"] or not Path(s["voice_path"]).exists() or voices.stale(s["voice_path"], s.get("voice_engine") or "", s["voiceover"], s["lang"]):
+    elif (not s["voice_path"] or not Path(s["voice_path"]).exists() or _other_voice(s)
+          or voices.stale(s["voice_path"], s.get("voice_engine") or "", s["voiceover"], s["lang"])):
         script_voice(sid, {})   # aj starý hlas bez presných časov slov sa urobí nanovo (čistejší, titulky sedia)
         s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
     want_music = data.get("music", True)
@@ -827,6 +834,7 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     style = data.get("style") or ("base" if base else "explainer" if anim.available() else
                                   "broll" if _broll_ready() or brand.brand_footage(s["project_id"]) else "color")
     done = logo_in = False
+    want_style = style
     # font značky (ak má všetky písmená tohto jazyka)
     font_txt = (s["voiceover"] or "") + " " + " ".join(sc.get("onscreen", "") for sc in scenes)
     brand.use_font(s["project_id"], font_txt, letters_only=style == "explainer")
@@ -842,7 +850,7 @@ def script_to_video(sid: int, data: dict = Body(default={})):
                            logo=brand.logo_data_uri(lg, 680, 176) if lg and bo["logo_corner"] else None,
                            logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
                            products=brand.product_images(s["project_id"]), wide=wide,
-                           thumb=out.with_suffix(".jpg") if wide else None, **_thumb_opts(s))
+                           thumb=out.with_suffix(".jpg") if wide else None, title=s.get("title") or "", **_thumb_opts(s))
             done = logo_in = True
         except Exception as e:
             print("animované video:", e)
@@ -872,11 +880,18 @@ def script_to_video(sid: int, data: dict = Body(default={})):
         print("logo vo videu:", e)
     try:  # zvuk: hudba pod hlasom, jemné prechody, hlasitosť ako na sieťach
         if not base:
-            audio.finish(out, s["voice_path"], _scene_cuts(s, scenes, style if done else ""), s["idea_id"], want_music)
+            audio.finish(out, s["voice_path"], _scene_cuts(s, scenes, style if done else ""), s["idea_id"], want_music,
+                         events=explainer.EVENTS.pop(str(out), None))
     except Exception as e:
         print("zvuk videa:", e)
     vid = _add_video(s["project_id"], str(out), out.name, s["lang"], s)
-    return {"video_id": vid, "style": style if done or style != "broll" else "color"}
+    # kontrola pred zverejnením: slabé alebo prázdne video ostane „zadržané“ a plánovač ho nevezme
+    qa = explainer.QA.pop(str(out), None) if logo_in else None
+    if qa is None and want_style == "explainer":
+        qa = {"ok": False, "why": ["Animované video sa nepodarilo zložiť, vyšla len náhradná verzia"]}
+    if qa:
+        db.run("UPDATE videos SET qa=?, status=? WHERE id=?", (json.dumps(qa, ensure_ascii=False), "ready" if qa.get("ok") else "hold", vid))
+    return {"video_id": vid, "style": style if done or style != "broll" else "color", "qa": qa}
 
 
 brand.RENDER = script_to_video  # oprava videí so zlým logom ich skladá nanovo
@@ -1327,6 +1342,12 @@ def _script_ahead_loop():
 def _prod_project(pid_s, c):
     """Jeden projekt v jednom kole dennej výroby."""
     pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
+    last = db.q("""SELECT status FROM videos WHERE project_id=? AND script_id IS NOT NULL
+                   AND created_at > datetime('now','localtime','-1 day') ORDER BY id DESC LIMIT 3""", (pid,))
+    if len(last) == 3 and all(r["status"] == "hold" for r in last):
+        # tri videá po sebe neprešli kontrolou: ďalšie scenáre by len míňali AI, projekt dnes stojí
+        PROD["log"].append(f"projekt {pid}: posledné 3 videá neprešli kontrolou pred zverejnením, výroba pre tento projekt dnes stojí")
+        return
     made = _render_prescripted(pid)
     if made:
         _prod_plan(pid, made)
@@ -1424,6 +1445,23 @@ def dt_now():
     return _d.datetime.now().strftime("%d.%m. %H:%M")
 
 
+def _local_voice_setup():
+    """Raz: projekty, ktoré sú len po anglicky, dostanú lokálny hlas (Oliver 14.11.: Xplained lokálne, ostatné jazyky Google).
+    Model hlasu sa stiahne na pozadí; kým nie je, hovorí doterajší hlas."""
+    if not db.get_setting("local_voice_set", False):
+        for p in db.q("SELECT id, languages, voices FROM projects"):
+            try:
+                langs, v = json.loads(p["languages"] or "[]"), json.loads(p.get("voices") or "{}")
+            except Exception:
+                continue
+            if langs == ["en"] and not str(v.get("en") or "").startswith(("local:", "edge:")):
+                v["en"] = "local:am_michael"
+                db.run("UPDATE projects SET voices=? WHERE id=?", (json.dumps(v), p["id"]))
+        db.set_setting("local_voice_set", True)
+    if any("local:" in (p.get("voices") or "") for p in db.q("SELECT voices FROM projects")):
+        voices.local_ensure()
+
+
 def _produce_loop():
     import time as _t
     _t.sleep(90)
@@ -1514,6 +1552,13 @@ def videos_import(data: dict = Body(...)):
             _add_video(int(data["project_id"]), str(f.resolve()), f.name, lang)
             n += 1
     return {"created": n}
+
+
+@app.post("/api/videos/{vid}/release")
+def video_release(vid: int):
+    """Ručne pustí zadržané video (neprešlo kontrolou pred zverejnením) do plánovania."""
+    db.run("UPDATE videos SET status='ready' WHERE id=? AND status='hold'", (vid,))
+    return {"ok": True}
 
 
 @app.get("/api/videos")
@@ -2075,6 +2120,10 @@ def main():
         inspire._db()
     except Exception:
         pass
+    try:
+        _local_voice_setup()  # anglické kanály hovoria lokálnym hlasom (zadarmo, bez limitu)
+    except Exception as e:
+        print("lokálny hlas:", e)
     try:
         from . import radar
         radar.start()  # trendy, konkurencia, čísla našich videí (na pozadí, bez AI)

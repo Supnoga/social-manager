@@ -90,7 +90,7 @@ PACK = {
     "lines": '{"k":"lines","x":["6:00","9:00","12:00","15:00","18:00"],"s":[["Solar",[0,30,80,50,5]],["Demand",[40,60,55,60,90]]]} = 2-3 lines over the same time (supply vs demand, two brands)',
     "hist": '{"k":"map","y":[-200,-1,117],"h":["Roman Empire"],"l":"optional tag"} = HISTORICAL map: approximate borders in that year (1-4 years show growth or fall over time), h = empire or state names as in history books',
     "truesize": '{"k":"map","c":["RU"],"t":"US"} = true size: the first country slides onto country t at the same real size',
-    "mech": '{"k":"mech","m":"piston|wankel|gears|wing|wave|radar|orbit|pendulum|jet","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine cutaway (l = the 4 strokes), wankel = rotary engine cutaway (l = intake, compression, power, exhaust), gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
+    "mech": '{"k":"mech","m":"piston|wankel|gears|wing|wave|radar|orbit|pendulum|jet","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine cutaway (l = the 4 strokes), wankel = rotary engine cutaway (l = intake, compression, power, exhaust); piston and wankel take "f":"intake|compression|power|exhaust" (camera close-up on the stroke the voice talks about) or "f":"run" (running at full speed), and {"k":"mech","m":"versus","a":"piston","b":"wankel","l":["name A","name B"]} runs two of them side by side to compare; gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
 }
 CHANNEL_PACKS = {
     "cash": ("growth", "inflation", "pie", "stack", "dots", "lines"), "wallet": ("loan", "growth", "pie", "waterfall", "inflation", "stack"),
@@ -856,7 +856,7 @@ const tt=el('div','ttl');tt.lang=D.lang;tt.innerHTML=String(sc.h||'').split(/\s+
 const intro=i==0;if(WIDE)fit(tt,intro?66:58,34,76,1620);else fit(tt,intro?104:82,44,intro?330:270,860);const th=tt.offsetHeight;const vz=el('div','viz');if(!WIDE)vz.style.top=Math.max(690,362+th+90)+'px';w.append(vz);
 let upd=()=>{};try{upd=(V[sc.v.k]||V.text)(vz,sc.v)||(()=>{})}catch(e){vz.textContent=''}
 w.style.display='none';
-return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0}});
+return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0,fast:i==0&&sc.v.k=='mech'&&!!(window.MECHPRO&&MECHPRO[sc.v.m])}});
 const CAP=document.getElementById('cap'),BAR=document.getElementById('bar'),GLOW=document.getElementById('glow'),LG=document.getElementById('lg'),END=document.getElementById('end');let lastCap=-1;
 const EIMG=END.querySelector('img'),ELN=END.querySelector('.ln'),EGL=END.querySelector('.gl');const TAIL=D.tail||0;
 if(D.logo){LG.src=D.logo;LG.style.display='block'}if(D.logoEnd||D.logo)EIMG.src=D.logoEnd||D.logo;
@@ -870,16 +870,18 @@ for(let x=-g+off;x<PW+g;x+=g){CX.moveTo(x,0);CX.lineTo(x,PH)}for(let y=-g+off*.6
 PT.forEach(p=>{const y=((p.y-t*p.v)%1+1)%1*PH,x=p.x*PW+Math.sin(t*.5+p.ph)*26;const al=(.10+.10*Math.sin(t*.9+p.ph))*(p.a?1.9:1);CX.fillStyle=p.a?D.acc:'#fff';CX.globalAlpha=Math.max(0,al);CX.beginPath();CX.arc(x,y,p.r,0,6.3);CX.fill()});CX.globalAlpha=1}
 function renderAt(t){let cur=SC.length-1;for(let i=0;i<SC.length;i++){if(t<SC[i].t1){cur=i;break}}
 const ending=TAIL>0&&t>=D.total,et=t-D.total;
-const MV=.8,LD=SC.length?SC[SC.length-1].t1-SC[SC.length-1].t0:0,ZO=NS>2?Math.min(3.2,Math.max(1.8,LD*.5)):0;const zo=ZO?EI((t-(D.total-ZO))/(ZO*.75)):0;
+const MV=.8,LD=SC.length?SC[SC.length-1].t1-SC[SC.length-1].t0:0,ZO=NS>2&&!D.loop?Math.min(3.2,Math.max(1.8,LD*.5)):0;const zo=ZO?EI((t-(D.total-ZO))/(ZO*.75)):0;
 let cx=SC[cur].c[0],cy=SC[cur].c[1],zs=1;if(cur>0){const p=EI((t-SC[cur].t0)/MV);if(p<1){const b=SC[cur-1].c;cx=b[0]+(cx-b[0])*p;cy=b[1]+(cy-b[1])*p;zs=1-.14*Math.sin(Math.PI*p)}}
+// slučka: na konci krátkeho videa kamera preletí späť na prvú scénu v jej úvodnom stave, takže koniec plynulo nadviaže na začiatok
+const lp=D.loop&&NS>1&&cur>0?EI((t-(D.len-.6))/.5):0;if(lp>0){const b=SC[0].c;cx+=(b[0]-cx)*lp;cy+=(b[1]-cy)*lp;zs=1-.14*Math.sin(Math.PI*lp)}
 let sx=PW/2,sy=PH/2;if(zo>0){const AW=WIDE?1700:864,AH=WIDE?790:1150,fs=Math.min(AW/WW,AH/WH);cx+=(WW/2-cx)*zo;cy+=(WH/2-cy)*zo;zs=1+(fs-1)*zo;sx+=((WIDE?960:504)-sx)*zo;sy+=((WIDE?465:750)-sy)*zo}
 root.style.transform=`translate(${sx-cx*zs}px,${sy-cy*zs}px) scale(${zs})`;root.style.opacity=ending?1-cl(et/.3):1;
-SC.forEach((s,i)=>{const lt=t-s.t0,dur=s.t1-s.t0;const vis=!(ending&&et>.3)&&(zo>0?i<=cur:(i==cur||(i==cur-1&&t-SC[cur].t0<MV)));s.w.style.display=vis?'block':'none';if(!vis)return;
-s.fr.style.opacity=zo;if(i!=cur)return;
+SC.forEach((s,i)=>{const home=lp>0&&i==0,lt=home?0:t-s.t0,dur=s.t1-s.t0;const vis=home||(!(ending&&et>.3)&&(zo>0?i<=cur:(i==cur||(i==cur-1&&t-SC[cur].t0<MV))));s.w.style.display=vis?'block':'none';if(!vis)return;
+s.fr.style.opacity=zo;if(i!=cur&&!home)return;
 const l2=i==0?lt:lt-.12;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
-const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=E((l2-.2)/.4);s.vz.style.transform=`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.28:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>s.fast?1:E((lt-.6-a*span)/(b*Math.max(.7,span)));
+s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=`translateY(${s.fast?0:(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.28:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
 SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
@@ -1013,8 +1015,48 @@ def thumb_index(scenes, sc_data, want=None):
     return 0
 
 
+EVENTS = {}   # cesta videa -> [(druh zvuku, čas)] z posledného skladania
+QA = {}       # cesta videa -> výsledok kontroly pred zverejnením
+WEAK_MAX = 0.4    # najviac toľko scén smie byť „slabých“ (ikony, text, zoznam)
+EMPTY_MIN = 0.012  # scéna, kde je v strede obrazu menej než toľko svietiacich bodov, je prázdna
+
+
+def _coverage(jpg, wide):
+    """Koľko z plochy obrazu scény (bez nadpisu a titulkov) naozaj niečo ukazuje (0–1)."""
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(jpg)).convert("L")
+        box = (400, 240, 1520, 965) if wide else (30, 700, 1050, 1400)
+        im = im.crop(box).resize((204, 140))
+        px = im.getdata()
+        return sum(1 for v in px if v > 70) / len(px)
+    except Exception:
+        return 1.0
+
+
+def check(sc_data, cover):
+    """Kontrola pred zverejnením. Vráti {"ok", "why": [dôvody po slovensky], ...}.
+    Neprejde: prázdna scéna, stroj bez presného modelu, priveľa scén len s ikonami či textom."""
+    from . import auto_visual
+    body = sc_data[:-1] if len(sc_data) > 2 else sc_data   # posledná scéna je výzva „pozri celé video“
+    weak = [i + 1 for i, s in enumerate(body) if (s["v"] or {}).get("k") in auto_visual.WEAK]
+    crude = sorted({str(s["v"].get("m") or "kresba") for s in body
+                    if (s["v"].get("k") == "mech" and s["v"].get("m") not in auto_visual.PRECISE) or s["v"].get("k") == "svg"})
+    empty = [i + 1 for i, c in sorted(cover.items()) if c < EMPTY_MIN]
+    why = []
+    if empty:
+        why.append("Prázdna scéna: " + ", ".join(map(str, empty)))
+    if crude:
+        why.append("Stroj bez presného modelu: " + ", ".join(crude))
+    if body and len(weak) / len(body) > WEAK_MAX:
+        why.append(f"Slabý obraz (len ikony alebo text) v {len(weak)} z {len(body)} scén")
+    return {"ok": not why, "why": why, "scenes": len(sc_data), "weak": len(weak),
+            "precise": sum(1 for s in body if s["v"].get("k") == "map" or (s["v"].get("k") == "mech" and s["v"].get("m") in auto_visual.PRECISE))}
+
+
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title=""):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -1028,28 +1070,39 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     sc_data, pcache, used, prev = [], {}, {}, None
     seen_mech = set()
     from . import auto_visual
-    for sc, (t0, t1) in zip(scenes, times):
+    # stroj, o ktorom je celé video (ak má presný model): podľa názvu videa, inak podľa toho, čo v texte prevláda
+    topic = auto_visual.topic(" . ".join([text] + [f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''}" for sc in scenes]), title)
+    for i, (sc, (t0, t1)) in enumerate(zip(scenes, times)):
         spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
-        v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text)
+        v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text,
+                                topic=topic, last=i == len(scenes) - 1 and len(scenes) > 2)
         prev = v.get("m") if v.get("k") == "mech" else None
         v = prepare(v, lang)
         if v.get("k") == "mech":  # réžia: dĺžka scény a úvodný záber „kde to je“ len pri prvom výskyte stroja
-            v = dict(v, _dur=round(t1 - t0, 2), **({} if v.get("m") in seen_mech else {"_in": 1}))
+            v = dict(v, _dur=round(t1 - t0, 2), **({} if v.get("m") in seen_mech else {"_in": 1}), **({"_first": 1} if i == 0 else {}))
             seen_mech.add(v.get("m"))
+            if v.get("m") in auto_visual.PRECISE and not v.get("c"):   # číslo, ktoré hlas povie, naskočí pri modeli
+                c = auto_visual.callout(sc.get("onscreen"), [w for w in words if t0 - .05 <= w["s"] < t1], t0)
+                if c:
+                    if c["t"] is None:
+                        c["t"] = round((t1 - t0) * .45, 2)
+                    v = dict(v, c=c)
         h = (sc.get("onscreen") or "").strip()
         v = with_product(h, v, products, pcache)
         if v.get("k") == "text" and re.sub(r"\W", "", str(v.get("w", "")).lower()) == re.sub(r"\W", "", h.lower()):
             h = ""  # rovnaký text ako nadpis: ukáž ho len raz, veľkým
         sc_data.append({"h": h, "v": v, "t0": round(t0, 3), "t1": round(t1, 3),
                         "steps": STEPS.get(v.get("k"), lambda d: 2)(v)})
-    tail = TAIL if (logo_end or logo) else 0
+    loop = bool(loop and not wide and len(sc_data) > 2)   # krátke video: koniec nadviaže na začiatok (bez záverečnej karty, logo ostáva v rohu)
+    tail = 0 if loop else TAIL if (logo_end or logo) else 0
     data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
-            "logo": logo or "", "logoEnd": logo_end or "", "tail": tail, "wide": bool(wide)}
+            "logo": logo or "", "logoEnd": "" if loop else logo_end or "", "tail": tail, "wide": bool(wide),
+            "loop": loop, "len": round(total + (0.6 if loop else tail or 0.3), 3)}
     vw, vh = (H, W) if wide else (W, H)
     html = page(data, font, font_text)
     if total > 90:
         fps = 25
-    length = total + (tail or 0.3)
+    length = data["len"]
     n = int(length * fps)
     ff = media.ffmpeg()
     cmd = [ff, "-y", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-", "-i", str(voice)]
@@ -1086,9 +1139,14 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             pg = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)
+            probe = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .7) * fps)): k for k, d in enumerate(sc_data)}
+            cover = {}
             for i in range(n):
                 pg.evaluate(f"renderAt({i / fps:.4f})")
-                proc.stdin.write(pg.screenshot(type="jpeg", quality=90))
+                shot = pg.screenshot(type="jpeg", quality=90)
+                if i in probe:   # jedna snímka z každej scény na kontrolu pred zverejnením
+                    cover[probe[i]] = _coverage(shot, wide)
+                proc.stdin.write(shot)
             proc.stdin.close()
             err = proc.stderr.read().decode(errors="ignore")
             if proc.wait() != 0:
@@ -1097,6 +1155,8 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             if proc.poll() is None:
                 proc.kill()
             b.close()
+    EVENTS[str(out)] = auto_visual.sound_events(sc_data)   # zvuky k obrazu (domieša audio.finish)
+    QA[str(out)] = check(sc_data, cover)
     if _all_black(out, length):
         raise RuntimeError("Video vyšlo celé čierne, skús ho vyrobiť znova")
     return str(out)

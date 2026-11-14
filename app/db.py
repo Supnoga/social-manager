@@ -180,6 +180,7 @@ MIGRATIONS = [
     "ALTER TABLE posts ADD COLUMN stash_id TEXT DEFAULT ''",
     "ALTER TABLE videos ADD COLUMN removed INTEGER DEFAULT 0",
     "ALTER TABLE videos ADD COLUMN preview_path TEXT DEFAULT ''",
+    "ALTER TABLE videos ADD COLUMN qa TEXT DEFAULT ''",
     "ALTER TABLE post_stats ADD COLUMN watch_min REAL DEFAULT 0",
     "ALTER TABLE post_stats ADD COLUMN avg_pct REAL DEFAULT 0",
     "ALTER TABLE post_stats ADD COLUMN subs INTEGER DEFAULT 0",
