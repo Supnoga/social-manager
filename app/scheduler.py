@@ -97,6 +97,9 @@ def release_one(post):
         msg = str(e)[:800]
         if "notFound" in msg or "404" in msg:  # niekto video na YouTube zmazal: nahrá sa nanovo, ak je súbor
             db.run("UPDATE posts SET stash_id='', error=? WHERE id=?", ("Súkromné video na YouTube chýba, nahrá sa znova", post["id"]))
+        elif "quota" in msg.lower():  # denný limit: počká na ďalší deň, nepočíta sa ako neúspešný pokus
+            db.run("UPDATE posts SET error=?, updated_at=? WHERE id=?",
+                   ("Dnešný limit YouTube je minutý, zverejní sa po jeho obnovení.", now_str(), post["id"]))
         elif post["attempts"] >= 5:
             db.run("UPDATE posts SET status='failed', error=?, updated_at=? WHERE id=?", (msg, now_str(), post["id"]))
         else:
@@ -108,7 +111,7 @@ def stash_one(post):
     """Video čakajúce na schválenie nahrá na YouTube ako súkromné, aby sa mohlo z Macu zmazať."""
     acc = db.one("SELECT * FROM accounts WHERE id=?", (post["account_id"],))
     vid = db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],))
-    if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or not youtube.quota_ok(acc):
+    if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or not youtube.quota_ok(acc, reserve=youtube.RELEASE_RESERVE):
         return False
     state["current"] = f"YouTube (súkromne): {vid['title'] or vid['original_name']}"
     try:
