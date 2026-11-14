@@ -76,8 +76,11 @@ def _uploads():
     return u.get(gday(), {})
 
 
-def quota_ok(account):
-    return _uploads().get(str(_client_idx(account)), 0) < DAILY_UPLOADS
+RELEASE_RESERVE = 10  # nahrávanie dopredu nechá ~16 000 jednotiek na zverejnenie, playlisty a odkazy (tie sa nepočítajú)
+
+
+def quota_ok(account, reserve=0):
+    return _uploads().get(str(_client_idx(account)), 0) < DAILY_UPLOADS - reserve
 
 
 def count_upload(account):
