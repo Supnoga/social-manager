@@ -277,7 +277,7 @@ def api_meta():
 
 @app.post("/api/settings")
 def api_settings(data: dict = Body(...)):
-    allowed = {"guide", "precise_only", "ai_mode", "model_creative", "model_cheap", "model_premium", "render_parallel", "paused", "claude_path", "meta_api_version", "tt_mode",
+    allowed = {"guide", "detail", "precise_only", "ai_mode", "model_creative", "model_cheap", "model_premium", "render_parallel", "paused", "claude_path", "meta_api_version", "tt_mode",
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min", "ttb_redirect",
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
@@ -791,6 +791,14 @@ def _scene_cuts(s, scenes, style):
     return []
 
 
+def _detail():
+    """Úroveň detailu presných modelov vo videu: 1 = základná, 2 = detailná (nastavenie `detail`, mení sa cez /api/settings)."""
+    try:
+        return 2 if int(db.get_setting("detail", 1) or 1) >= 2 else 1
+    except Exception:
+        return 1
+
+
 def _thumb_opts(s):
     """Text a scéna náhľadového obrázka dlhého videa zo scenára (pole thumb)."""
     try:
@@ -851,7 +859,7 @@ def script_to_video(sid: int, data: dict = Body(default={})):
                            logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
                            products=brand.product_images(s["project_id"]), wide=wide,
                            thumb=out.with_suffix(".jpg") if wide else None, title=s.get("title") or "",
-                           guide=bool(db.get_setting("guide", False)), **_thumb_opts(s))   # guide = sprievodca (robot pri titulkoch), zapína sa nastavením
+                           guide=bool(db.get_setting("guide", False)), detail=_detail(), **_thumb_opts(s))   # guide = sprievodca (robot pri titulkoch), zapína sa nastavením
             done = logo_in = True
         except Exception as e:
             print("animované video:", e)
@@ -1199,10 +1207,15 @@ def _produce_once():
 def _prescripted(pid):
     """Dlhé nápady s hotovým scenárom (napísaným vopred), ktoré ešte nemajú video."""
     rows = db.q("""SELECT i.id, i.title, i.hook, i.angle FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
-                   WHERE i.project_id=? AND i.format='long' AND COALESCE(i.ahead,0)=1
+                   WHERE i.project_id=? AND i.format='long' AND COALESCE(i.ahead,0) IN (1,2)
                    AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)
                    ORDER BY i.id""", (pid,))
+    # ahead=2 = skladanie sa začalo; ak po ňom nezostalo video (chyba, vypnutie appky), skúsi sa znova, najviac 2x za beh appky
+    rows = [r for r in rows if r["id"] not in _PRE_BUSY and _PRE_FAIL.get(r["id"], 0) < 2]
     return [r for r in rows if _idea_model(r)] if _precise_only() else rows
+
+
+_PRE_BUSY, _PRE_FAIL = set(), {}
 
 
 def _precise_only():
@@ -1245,7 +1258,7 @@ def models_demand(project_id: int = 0):
     for p in db.q("SELECT id, name FROM projects" + (" WHERE id=?" if project_id else "") + " ORDER BY id", (project_id,) if project_id else ()):
         ready, missing, other = {}, {}, 0
         for r in db.q("""SELECT i.id, i.title, i.hook, i.angle, COALESCE(i.format,'short') fmt FROM ideas i WHERE i.project_id=?
-                         AND i.status IN ('new','approved')
+                         AND i.status IN ('new','approved','scripted')
                          AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=i.id)""", (p["id"],)):
             m = _idea_model(r)
             if m:
@@ -1269,15 +1282,19 @@ def _render_prescripted(pid):
     if not rows:
         return 0
     iid = rows[0]["id"]
-    db.run("UPDATE ideas SET ahead=2 WHERE id=?", (iid,))  # už sa skladá (nech ho nevezme iný pracovník)
+    _PRE_BUSY.add(iid)  # už sa skladá (nech ho nevezme iný pracovník)
+    db.run("UPDATE ideas SET ahead=2 WHERE id=?", (iid,))
     made = 0
     PROD["step"] = "Skladám dlhé video z hotového scenára"
     try:
         idea_produce_first(iid, {})
         made += 1
     except Exception as e:
+        _PRE_FAIL[iid] = _PRE_FAIL.get(iid, 0) + 1
         PROD["log"].append(f"nápad {iid}: {e}")
         return 0
+    finally:
+        _PRE_BUSY.discard(iid)
     for t in db.q("""SELECT i.id FROM ideas i WHERE i.parent_id=? AND EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id AND s.is_source=1)
                      AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)""", (iid,)):
         PROD["step"] = "Skladám Shorts z hotových scenárov"
