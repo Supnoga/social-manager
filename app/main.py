@@ -1119,9 +1119,11 @@ def _prod_supply(pid, fmt):
 
 def _prod_pick(pid, fmt, n, min_score=0):
     """Najlepšie schválené nápady bez scenára (s hodnotením aspoň min_score); každý z inej série, kým sa dá."""
-    rows = db.q("""SELECT i.id, COALESCE(i.pillar,'') pillar FROM ideas i WHERE i.project_id=? AND i.status='approved'
+    rows = db.q("""SELECT i.id, COALESCE(i.pillar,'') pillar, i.title, i.hook, i.angle FROM ideas i WHERE i.project_id=? AND i.status='approved'
                    AND COALESCE(i.format,'short')=? AND (i.due_date IS NULL OR i.due_date='') AND COALESCE(i.score,0)>=?
                    AND NOT EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id) ORDER BY i.score DESC, i.id""", (pid, fmt, min_score))
+    if _precise_only():   # len témy, ktoré majú presný model: inak by video vyšlo z ikon a neprešlo kontrolou
+        rows = [r for r in rows if _idea_model(r)]
     last = [r["pillar"] for r in db.q("""SELECT COALESCE(i.pillar,'') pillar FROM videos v JOIN scripts s ON s.id=v.script_id
                    JOIN ideas i ON i.id=s.idea_id WHERE v.project_id=? ORDER BY v.id DESC LIMIT 2""", (pid,))]
     out, used = [], set(x for x in last if x)
@@ -1195,10 +1197,62 @@ def _produce_once():
 
 def _prescripted(pid):
     """Dlhé nápady s hotovým scenárom (napísaným vopred), ktoré ešte nemajú video."""
-    return db.q("""SELECT i.id FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
+    rows = db.q("""SELECT i.id, i.title, i.hook, i.angle FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
                    WHERE i.project_id=? AND i.format='long' AND COALESCE(i.ahead,0)=1
                    AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)
                    ORDER BY i.id""", (pid,))
+    return [r for r in rows if _idea_model(r)] if _precise_only() else rows
+
+
+def _precise_only():
+    """Výroba berie len nápady o stroji s presným modelom (dá sa vypnúť nastavením precise_only=false)."""
+    return bool(db.get_setting("precise_only", True))
+
+
+def _idea_model(r):
+    """Presný model, o ktorom je nápad (rozhoduje názov, potom háčik a uhol); None = taký model ešte nie je."""
+    from . import auto_visual
+    return auto_visual.topic(" . ".join(str(r[k] or "") for k in ("title", "hook", "angle")), r["title"] or "")
+
+
+def _machine_project(pid):
+    """Kanál o strojoch = aspoň pätina posledných nápadov má v názve stroj. Inde by nápady „len o strojoch“ nedávali zmysel."""
+    from . import auto_visual
+    rows = db.q("SELECT title FROM ideas WHERE project_id=? ORDER BY id DESC LIMIT 60", (pid,))
+    return bool(rows) and sum(1 for r in rows if auto_visual.find(r["title"] or "")) >= max(3, len(rows) * .2)
+
+
+def _models_focus():
+    from . import auto_visual
+    names = sorted({auto_visual.NAMES[m] for m in auto_visual.PRECISE if m in auto_visual.NAMES})
+    return ("Every idea must explain ONE of these machines (we have exact animated models only for them) and name it in the title: "
+            + ", ".join(names) + ". Find fresh angles: how it works, why it fails, myths, comparisons, numbers.")
+
+
+@app.get("/api/models/demand")
+def models_demand(project_id: int = 0):
+    """Ktoré nápady sa dajú vyrobiť s presným modelom a ktoré stroje chýbajú (podľa názvov čakajúcich nápadov)."""
+    from . import auto_visual
+    out = {"models": sorted(auto_visual.PRECISE - {"versus"}), "precise_only": _precise_only(), "projects": []}
+    for p in db.q("SELECT id, name FROM projects" + (" WHERE id=?" if project_id else "") + " ORDER BY id", (project_id,) if project_id else ()):
+        ready, missing, other = {}, {}, 0
+        for r in db.q("""SELECT i.id, i.title, i.hook, i.angle, COALESCE(i.format,'short') fmt FROM ideas i WHERE i.project_id=?
+                         AND i.status IN ('new','approved')
+                         AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=i.id)""", (p["id"],)):
+            m = _idea_model(r)
+            if m:
+                k = ready.setdefault(m, {"short": 0, "long": 0})
+                k["long" if r["fmt"] == "long" else "short"] += 1
+                continue
+            hit = auto_visual.find(r["title"] or "")
+            if hit:
+                missing[hit[0]] = missing.get(hit[0], 0) + 1
+            else:
+                other += 1
+        if ready or missing or other:
+            out["projects"].append({"id": p["id"], "name": p["name"], "ready": ready, "ready_total": sum(v["short"] + v["long"] for v in ready.values()),
+                                    "missing": dict(sorted(missing.items(), key=lambda kv: -kv[1])), "no_machine": other})
+    return out
 
 
 def _render_prescripted(pid):
@@ -1362,12 +1416,16 @@ def _prod_project(pid_s, c):
             continue
         ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
         rk = f"{dt_now()[:6]}:{pid}"
+        if _precise_only() and not _machine_project(pid):
+            PROD["log"].append(f"projekt {pid}: nemá témy s presným modelom, výroba ho zatiaľ preskakuje")
+            continue
         if left < per * 3 and not c.get("no_ideas") and PROD.setdefault("refills", {}).get(rk, 0) < 6:  # zásoba nápadov dochádza: doplň ju jedným volaním (max 6x denne)
             PROD["refills"][rk] = PROD["refills"].get(rk, 0) + 1
             PROD["step"] = "Dopĺňam nápady"
             try:
                 before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
-                content.run_task("ideas", {"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt})
+                content.run_task("ideas", dict({"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt},
+                                               **({"focus": _models_focus()} if _precise_only() else {})))
                 for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
                     if r["id"] not in before and (r["score"] or 0) >= max(7, int(c.get("min_score") or 0)):
                         db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))
