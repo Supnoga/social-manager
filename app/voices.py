@@ -406,33 +406,51 @@ LOCAL_VOICES = [("af_heart", "F", "teplý, prirodzený", "en-us"), ("af_bella", 
                 ("am_michael", "M", "pokojný rozprávač", "en-us"), ("am_fenrir", "M", "hlbší, rázny", "en-us"),
                 ("am_puck", "M", "mladší, svižný", "en-us"), ("bf_emma", "F", "britský, jemný", "en-gb"),
                 ("bm_george", "M", "britský rozprávač", "en-gb")]
-LOCAL = {"installing": False, "error": "", "k": None}
+LOCAL = {"installing": False, "error": ""}
 _local_lock = threading.Lock()
 
 
+def _local_py():
+    v = LOCAL_DIR / "venv"
+    return v / "Scripts" / "python.exe" if sys.platform == "win32" else v / "bin" / "python"
+
+
 def local_ready():
-    try:
-        import kokoro_onnx  # noqa
-    except Exception:
-        return False
-    return all((LOCAL_DIR / f).exists() and (LOCAL_DIR / f).stat().st_size >= n for f, n in LOCAL_FILES.items())
+    return ((LOCAL_DIR / ".ok").exists() and _local_py().exists()
+            and all((LOCAL_DIR / f).exists() and (LOCAL_DIR / f).stat().st_size >= n for f, n in LOCAL_FILES.items()))
+
+
+def _sh(cmd, timeout=1800):
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="ignore", stdin=subprocess.DEVNULL, start_new_session=True, timeout=timeout)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout or "chyba").strip()[-300:])
+    return r.stdout
 
 
 def local_ensure(wait=False):
-    """Raz na pozadí doinštaluje lokálny hlas a stiahne jeho model (asi 350 MB, zadarmo)."""
+    """Raz na pozadí pripraví lokálny hlas: vlastný Python 3.12 (appka môže bežať na staršom), balík hlasu a model (asi 350 MB).
+    Všetko zadarmo a bez klikania; chyba ostane v LOCAL["error"]."""
     if local_ready() or LOCAL["installing"]:
         return
 
     def go():
         LOCAL["installing"] = True
+        step = "príprava"
         try:
-            try:
-                import kokoro_onnx  # noqa
-            except Exception:
-                subprocess.run([sys.executable, "-m", "pip", "install", "-q", "kokoro-onnx>=0.4.9"], capture_output=True,
-                               stdin=subprocess.DEVNULL, start_new_session=True, timeout=1800)
             LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+            py = _local_py()
+            if not (LOCAL_DIR / ".ok").exists() or not py.exists():
+                step = "inštalácia uv"
+                _sh([sys.executable, "-m", "pip", "install", "-q", "uv"])
+                step = "Python 3.12 pre hlas"
+                _sh([sys.executable, "-m", "uv", "venv", "--python", "3.12", "--clear", str(LOCAL_DIR / "venv")])
+                step = "balík hlasu"
+                _sh([sys.executable, "-m", "uv", "pip", "install", "--python", str(py), "kokoro-onnx>=0.4.9", "numpy"])
+                step = "skúška balíka"
+                _sh([str(py), "-c", "import kokoro_onnx, numpy"], 300)
+                (LOCAL_DIR / ".ok").write_text("ok")
             for f, n in LOCAL_FILES.items():
+                step = "sťahovanie modelu " + f
                 dest = LOCAL_DIR / f
                 if dest.exists() and dest.stat().st_size >= n:
                     continue
@@ -445,9 +463,10 @@ def local_ensure(wait=False):
                 if part.stat().st_size < n:
                     raise RuntimeError("model sa nestiahol celý")
                 part.replace(dest)
-            LOCAL["error"] = "" if local_ready() else "lokálny hlas sa nepodarilo nainštalovať"
+            LOCAL["error"] = ""
         except Exception as e:
-            LOCAL["error"] = str(e)[:200]
+            LOCAL["error"] = f"{step}: {str(e)[-300:]}"
+            print("lokálny hlas:", LOCAL["error"])
         finally:
             LOCAL["installing"] = False
     if wait:
@@ -466,7 +485,7 @@ def _local_tts(text, voice, out_path, rate=1.0, lang="en"):
         raise RuntimeError("Lokálny hlas vie dobre len po anglicky")
     if not local_ready():
         local_ensure()
-        raise RuntimeError("Lokálny hlas sa ešte pripravuje (sťahuje sa raz, asi 350 MB)")
+        raise RuntimeError("Lokálny hlas sa ešte pripravuje (sťahuje sa raz, asi 350 MB)" + (": " + LOCAL["error"] if LOCAL["error"] else ""))
     loc = {v: l for v, _, _, l in LOCAL_VOICES}.get(voice)
     if not loc:
         raise RuntimeError("Neznámy lokálny hlas " + voice)
@@ -479,21 +498,17 @@ def _local_tts(text, voice, out_path, rate=1.0, lang="en"):
             spoken.append((p, sp, maps))
     if not spoken:
         raise RuntimeError("Prázdny text pre hlas")
-    import numpy as np
-    with _local_lock:   # model sa načíta raz a ostáva v pamäti; hovorí vždy len jedno video naraz
-        if LOCAL["k"] is None:
-            from kokoro_onnx import Kokoro
-            LOCAL["k"] = Kokoro(str(LOCAL_DIR / "kokoro-v1.0.onnx"), str(LOCAL_DIR / "voices-v1.0.bin"))
-        clips = []
-        for _, sp, _ in spoken:
-            smp, sr = LOCAL["k"].create(sp, voice=voice, speed=max(0.7, min(1.4, rate or 1.0)), lang=loc)
-            clips.append((array("h", (np.clip(smp, -1, 1) * 32767).astype("<i2").tobytes()), int(sr)))
+    import tempfile
+    with _local_lock, tempfile.TemporaryDirectory() as tmp:   # hovorí vždy len jedno video naraz (šetrí procesor pre skladanie obrazu)
+        src = Path(tmp) / "vety.json"
+        src.write_text(json.dumps([sp for _, sp, _ in spoken], ensure_ascii=False), encoding="utf-8")
+        _sh([str(_local_py()), str(Path(__file__).with_name("tts_local.py")), str(LOCAL_DIR), voice, loc,
+             f"{max(0.7, min(1.4, rate or 1.0)):.2f}", str(src), tmp], timeout=600 + 20 * len(spoken))
+        clips = [_pcm((Path(tmp) / f"{i}.wav").read_bytes()) for i in range(len(spoken))]
     sr = clips[0][1]
     pause = 1 / max(0.8, rate or 1.0) ** 0.5
     pcm, words = array("h", bytes(2 * int(sr * 0.04))), []
     for (orig, sp, spans), (a, _) in zip(spoken, clips):
-        if sys.byteorder == "big":
-            a.byteswap()
         a, gaps = _tidy(a, sr)
         if not len(a):
             continue

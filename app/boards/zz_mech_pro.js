@@ -267,5 +267,7 @@ x.strokeStyle='rgba(255,255,255,.22)';x.lineWidth=2;x.beginPath();x.moveTo(-200,
 x.translate(OX+dx,OY);x.scale(SC,SC);CAR(x,dx/(44*SC),u>.36?ctx[1]:null,A,((t*1.5)%1));x.restore()}
 const ma=ez((u-.76)/.24);vm.style.opacity=ma;vm.style.transform=`scale(${(.3+.7*ez((u-.68)/.32)).toFixed(4)})`;if(ma>0)upd(Math.max(0,t-IN*.78),st)}};
 window.MECHPRO=PRO;
+// stavebnica: overené diely a efekty, z ktorých sa skladajú ďalšie presné modely (zz_mech_pro_*.js)
+window.KIT={PRO,G,GEARPRO,HS,hex,rgba,mix,ez,lerp,wob,dot,flame,spark,metal,hatch,poly,STG,camAt,stamp,callout,CAR,CARHOT,CTX,AIR,FUEL,SMOKE,FIRE,WATER};
 const _m3=V.mech;V.mech=(v,d)=>{const base=PRO[d&&d.m]?PRO[d.m]:_m3,c=d&&d._in&&CTX[d.m];return c?withIntro(v,d,c,base):base(v,d)};
 }
