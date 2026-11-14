@@ -19,7 +19,7 @@ RULES = [
     (r"parachut|skydiv|terminal velocity", "parachute", ["Drag", "Weight"]),
     (r"rocket|booster|launch vehicle|liftoff|stage separation", "rocket", ["Payload", "Second stage", "First stage"]),
     (r"satellite|\bgps\b|orbit", "orbit", ["Earth", "Satellites"]),
-    (r"\bradar|stealth", "radar", []),
+    (r"\bradar|stealth", "radar", ["Antenna", "Pulse", "Target", "Screen"]),
     (r"submarine|ballast", "submarine", ["Ballast tank", "Sea water"]),
     (r"projectile|trajectory|ballistic|cannon|artillery|howitzer", "trajectory", []),
     (r"nuclear|fission|reactor|uranium|chain reaction", "fission", ["Neutron", "Uranium-235", "Energy"]),
@@ -30,7 +30,7 @@ RULES = [
     (r"escalator", "escalator", ["Handrail", "Drive"]),
     (r"elevator|lift shaft|counterweight", "elevator", ["Car", "Counterweight"]),
     (r"suspension bridge|bridge", "bridge", ["Deck", "Hangers", "Main cable", "Towers", "Anchorage"]),
-    (r"tunnel boring|\btbm\b|tunnel", "tunnel", ["Cutterhead", "Lining rings", "Conveyor"]),
+    (r"tunnel boring|\btbm\b|tunnel", "tunnel", ["Cutterhead", "Thrust jacks", "Lining rings", "Conveyor"]),
     (r"oil well|drilling|drill rig|derrick|fracking", "drill", ["Derrick", "Drill bit", "Oil reservoir"]),
     (r"canal lock|lock chamber|panama canal", "canal_lock", ["Upper water", "Lock chamber", "Lower water"]),
     (r"\bdams?\b|hydroelectric|hydropower|reservoir", "dam", ["Reservoir", "Turbine", "Grid"]),
@@ -101,6 +101,17 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
     "solar": [("junction", r"junction|silicon|knock|electric field|n-type|p-type|\blayers?\b|\bholes?\b|free electrons?"),
               ("circuit", r"circuit|\bwires?\b|current|\bflows?\b|\bload\b|bulb|lamp|inverter|\bgrid\b|battery|\bvolts?\b|power your"),
               ("light", r"sunlight|photons?|\bsun\b|light (hits|strikes)|\brays?\b")],
+    "tunnel": [("jacks", r"\bjacks?\b|hydraulic|thrust|pushes? (itself|forward|off)|rams?\b|cylinders?"),
+               ("rings", r"lining|\brings?\b|segments?|concrete|erector|\bwalls?\b|waterproof|gasket|grout"),
+               ("conveyor", r"conveyor|\bbelt\b|\bscrew\b|\bmuck\b|spoil|debris|rubble|carr(y|ies) (it |the )?(away|out)|out of the tunnel"),
+               ("cutter", r"cutter ?head|cutting (head|wheel|discs?)|\bdis[ck] cutters?|\bcutters?\b|\bface\b|grinds?|chews?|\brock\b|\bteeth\b|rotat")],
+    "radar": [("chaff", r"chaff|alumini?um|\bstrips\b|decoys?|\bfoil\b"), ("clutter", r"clutter|\bbirds?\b|flock|false (targets?|echoes?|alarms?)"),
+              ("doppler", r"doppler|frequency shift|closing speed|how fast|velocity|moving targets?"),
+              ("stealth", r"stealth|invisible|deflect|scatter|absorb|angled|radar cross|\bRCS\b|faceted|coating"),
+              ("screen", r"\bscreen\b|\bdisplay\b|\bblip|\bscope\b|operator|measures? the (time|delay)|microseconds?|round trip|time it takes"),
+              ("target", r"\becho|bounces?|reflect|\btarget\b|aircraft|\bplanes?\b|\bjet\b|missile|\bhull\b|metal"),
+              ("pulse", r"\bpulses?\b|radio waves?|microwaves?|speed of light|\bbeam\b|sends? out|transmit|\bsignal"),
+              ("antenna", r"antenna|\bdish\b|\barray\b|transmitter|receiver|rotat|\bsweeps?\b")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
                   ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
 }
@@ -111,7 +122,8 @@ RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump"
 CAM_ONLY = {"turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "valve", "belt"}, "car_brake": {"caliper", "disc"},
             "gearbox": {"input", "gears", "collar", "output"}, "differential": {"pinion", "spider"},
             "heatpump": {"evap", "comp", "cond", "valve"}, "wind_turbine": {"rotor", "gearbox", "generator"},
-            "solar": {"light", "junction", "circuit"}}
+            "solar": {"light", "junction", "circuit"}, "tunnel": {"cutter", "jacks", "rings", "conveyor"},
+            "radar": {"antenna", "pulse", "target", "screen"}}
 # tenké schémy, ktoré v krátkom videu o stroji nahradí model (grafy s číslami ostávajú)
 SOFT = {"flow", "cycle", "steps", "network", "tree", "layers", "split", "stack", "level", "zoom", "size", "sim", "forces", "myth", "dots",
         "funnel", "venn", "house", "crack", "clock", "matrix"}   # modely, ktoré vedia záber „beží naplno“
@@ -134,9 +146,11 @@ _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": 
             "gearbox": r"\bgears?\b|\bshift|clutch|\bratio|synchro|\bshafts?\b", "differential": r"\bwheels?\b|corner|axle|spider|pinion|ring gear|\bturns?\b",
             "solar": r"photons?|electrons?|silicon|junction|sunlight|\bcells?\b|inverter|\bvolts?\b|current",
             "wind_turbine": r"\bblades?\b|nacelle|\brotor\b|gearbox|generator|\byaw|\bpitch|megawatt|\bMW\b|\btower",
+            "tunnel": r"cutter ?head|\bcutters?\b|lining|segments?|\brings?\b|\bjacks?\b|conveyor|\bshield\b|\bmuck\b|boring machine|\btbm\b",
+            "radar": r"\bpulses?\b|\becho|antenna|\bdish\b|radio waves?|reflect|bounces?|\bblip|\bscreen\b|stealth|microwaves?",
             "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
 # model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
-_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3}
+_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3}
 
 
 def topic(full, title="", strict=False):
@@ -154,7 +168,9 @@ _AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine b
           "gears": r"\bcvt\b|no gears", "wankel": r"[1-9][- ]stroke|one[- ]stroke|rival", "heatpump": r"brushless|\bmotors?\b|\bcost\b",
           "piston": r"opposed|two[- ]stroke|2[- ]stroke|deactivat|diesel|spark plug makes|\bquiz\b|lasts longer",
           "camshaft": r"rotary valve|camless|phaser", "turbo": r"supercharger",
-          "wind_turbine": r"\bweld|steel plates|\b1 piece|floats|floating", "solar": r"solar (thermal|water)"}
+          "wind_turbine": r"\bweld|steel plates|\b1 piece|floats|floating", "solar": r"solar (thermal|water)",
+          "tunnel": r"sewer|flood|immersed|float|wind tunnel|drill and blast|\bblast|dynamite|by hand|\bmines?\b|mining|quantum|carpal|\bvpn\b|\bquiz\b|\bsink|riverbed|underwater|breathe|chimney|\bair\b|\bfire\b|\brain\b|drain|pump|stream|\bpipes?\b|never (came|dry)|stay cool|poured|below it all|cross passages|alive|future",
+          "radar": r"sonar|lidar|speed (camera|trap|gun)|weather|\bquiz\b|microwave oven|candy|chocolate|passive|never transmits|phased|from space|\bimages?\b|mapping|sensor fusion|hopping|beamforming|signal processing|whisper|reveals its own|turn off|horizon|bomber|warning receivers?|locked on|lost fights"}
 
 
 def _topic(full, title=""):
@@ -176,7 +192,7 @@ def _topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel"}
+NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 

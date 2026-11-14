@@ -861,9 +861,9 @@ w.style.display='none';
 const pro=sc.v.k=='mech'&&!!(window.MECHPRO&&MECHPRO[sc.v.m]);return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0,pro,fast:i==0&&pro}});
 const CAP=document.getElementById('cap'),BAR=document.getElementById('bar'),GLOW=document.getElementById('glow'),LG=document.getElementById('lg'),END=document.getElementById('end');let lastCap=-1;
 const EIMG=END.querySelector('img'),ELN=END.querySelector('.ln'),EGL=END.querySelector('.gl');const TAIL=D.tail||0;
-// sprievodca: líška (maskot) pri titulkoch – „hovorí“ ich, ukazuje hore na stroj a reaguje na čísla (len na výšku, keď je D.guide)
-const GD=(()=>{if(!D.guide||WIDE)return null;const R=2,w=210,h=250,c=el('canvas','','position:absolute;left:36px;top:1474px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(1.2)');c.id='gdc';c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
-CAP.style.left='300px';CAP.style.width='644px';CAP.style.textAlign='left';return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
+// sprievodca: líška (maskot) pri titulkoch – „hovorí“ ich, ukazuje hore na stroj a reaguje na čísla (keď je D.guide; na výšku vľavo od titulkov, na šírku v ľavom dolnom rohu pod číslami)
+const GD=(()=>{if(!D.guide)return null;const R=2,w=210,h=250,c=el('canvas','',WIDE?'position:absolute;left:150px;top:846px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(.85)':'position:absolute;left:36px;top:1474px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(1.2)');c.id='gdc';c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
+if(WIDE){CAP.style.left='380px';CAP.style.width='1160px'}else{CAP.style.left='300px';CAP.style.width='644px';CAP.style.textAlign='left'}return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
 function drawGuide(t,cur,talk,ending){const {x,R,w,h}=GD,A=D.acc,T2=Math.PI*2;x.setTransform(R,0,0,R,0,0);x.clearRect(0,0,w,h);const sc=D.scenes[cur]||{},v=sc.v||{},lt=t-(sc.t0||0),pt=v.k=='mech'?E((lt-.45)/.4):0;
 let ex=0,ek=0;if(v.c&&v.c.t!=null){ek=lt-v.c.t;if(ek>=0&&ek<1.3)ex=Math.exp(-ek*3.2)}
 const a=E((t-.15)/.45)*(ending?0:1);if(a<=0)return;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,bob=Math.sin(t*2.1)*5-ex*24*Math.abs(Math.sin(ek*12)),blink=((t+.7)%3.3)<.11&&ex<.2;
@@ -924,10 +924,10 @@ let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e)
 if(GD)drawGuide(t,cur,ci>=0,ending);
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
-const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,24,58,1400);else fit(CAP,GD?54:60,30,150,GD?644:864);lastCap=ci}}
+const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,24,58,GD?1160:1400);else fit(CAP,GD?54:60,30,150,GD?644:864);lastCap=ci}}
 // náhľadový obrázok dlhého videa: veľký text vľavo, hlavný obraz vpravo, bez titulkov a lišty
 window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(Math.max(s.t0+.1,s.t1-.2));
-CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;
+CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;if(GD)GD.x.canvas.style.display='none';
 const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';s.vz.querySelectorAll('.phud').forEach(e=>e.style.display='none');
 GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';
 const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?820:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
@@ -944,9 +944,9 @@ hit=(a,b,m)=>!!a&&!!b&&Math.min(a[2],b[2])-Math.max(a[0],b[0])>m&&Math.min(a[3],
 op=e=>{let o=1;for(;e&&e.style;e=e.parentElement){const c=getComputedStyle(e);if(c.display=='none'||c.visibility=='hidden')return 0;o*=+c.opacity}return o};
 const T={},cb=CAP.getBoundingClientRect(),k=cb.width/(CAP.offsetWidth||1);T.titulky=[cb.left,cb.top,cb.right,cb.top+(WIDE?58:150)*k];
 T.nadpis=U([...s.tt.querySelectorAll('.w')].map(e=>e.getBoundingClientRect()));if(LG.offsetWidth&&op(LG)>.3)T.logo=B(LG);if(WIDE&&op(s.k)>.3)T['číslo scény']=TX(s.k);
-const G=GD&&op(GD.x.canvas)>.3?B(GD.x.canvas):null,ks=Object.keys(T);
-ks.forEach((a,i)=>ks.slice(i+1).forEach(b=>{if(hit(T[a],T[b],2))bad.add(a+' × '+b)}));if(G&&hit(G,TX(CAP),4))bad.add('sprievodca × titulky');
-s.vz.querySelectorAll('canvas.pmod,canvas.phud').forEach(c=>{if(op(c)<.3)return;const r=B(c),nm=c.classList.contains('pmod')?'obraz stroja':'čísla pri stroji';ks.forEach(a=>{if(hit(T[a],r,3))bad.add(a+' × '+nm)});if(G&&hit(G,r,3))bad.add('sprievodca × '+nm);
+const G=GD&&op(GD.x.canvas)>.3?B(GD.x.canvas):null;if(G)T.sprievodca=G;const ks=Object.keys(T);
+ks.forEach((a,i)=>ks.slice(i+1).forEach(b=>{if(hit(T[a],T[b],2))bad.add(a+' × '+b)}));
+s.vz.querySelectorAll('canvas.pmod,canvas.phud').forEach(c=>{if(op(c)<.3)return;const r=B(c),nm=c.classList.contains('pmod')?'obraz stroja':'čísla pri stroji';ks.forEach(a=>{if(hit(T[a],r,3))bad.add(a+' × '+nm)});
 const S=c._S;if(!S)return;if(c.classList.contains('pmod')){const hc=[...s.vz.querySelectorAll('canvas.phud')].find(h=>h._S===S);if(hc&&hit(r,B(hc),2))bad.add('čísla pri stroji × obraz stroja');
 const tg=S.tags.filter(u=>u[4]>.5);tg.forEach((a,i)=>tg.slice(i+1).forEach(b=>{if(hit(a,b,2))bad.add('názvy v modeli cez seba')}))}
 else{const hd=S.hud.filter(u=>u[5]>.5).map(u=>[u[1],u[2],u[1]+u[3],u[2]+u[4]]);hd.forEach((a,i)=>hd.slice(i+1).forEach(b=>{if(hit(a,b,2))bad.add('čísla pri stroji cez seba')}))}});
@@ -1190,7 +1190,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     loop = bool(loop and not wide and len(sc_data) > 2)   # krátke video: koniec nadviaže na začiatok (bez záverečnej karty, logo ostáva v rohu)
     tail = 0 if loop else TAIL if (logo_end or logo) else 0
     data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
-            "logo": logo or "", "logoEnd": "" if loop else logo_end or "", "tail": tail, "wide": bool(wide), "guide": bool(guide) and not wide, "detail": int(detail or 1),
+            "logo": logo or "", "logoEnd": "" if loop else logo_end or "", "tail": tail, "wide": bool(wide), "guide": bool(guide), "detail": int(detail or 1),
             "loop": loop, "len": round(total + (0.6 if loop else tail or 0.3), 3)}
     vw, vh = (H, W) if wide else (W, H)
     html = page(data, font, font_text)
