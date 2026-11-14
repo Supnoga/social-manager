@@ -1382,6 +1382,9 @@ def _mp_run(workers, until):
                 MPROD["log"].append(f"{date} kanál {pid}: {str(e)[:150]}")
                 if kind == 0:
                     slot["state"] = "bad"
+                if MPROD.get("publish") and (kind == 1 or slot["state"] == "ok"):   # hotové video hneď do plánu zverejnenia
+                    from . import planner
+                    planner.plan_week([pid], 3)
             finally:
                 MPROD["left"] = len(tasks)
                 MPROD["step"] = [x for x in MPROD["step"] if not x.startswith(f"{date} kanál {pid} ")]
@@ -1403,7 +1406,7 @@ def month_plan_produce(data: dict = Body(default={})):
     """Vyrobí videá v poradí mesačného plánu (s kontrolou obrazu). Nič nenahráva ani neplánuje."""
     if MPROD["running"]:
         return {"running": True}
-    MPROD.update(log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[])
+    MPROD.update(log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=bool(data.get("publish")))
     threading.Thread(target=_mp_run, args=(int(data.get("workers") or 3), data.get("until") or ""), daemon=True).start()
     return {"started": True}
 
