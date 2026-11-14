@@ -218,8 +218,18 @@ Write in {languages.english(p['source_lang'])}.""", "repeat", "cheap")
 
 
 def weekly_auto():
-    """Voliteľne: každú nedeľu večer naplánuje ďalší týždeň sám (nastavenie auto_plan_week)."""
+    """Voliteľne: každú nedeľu večer naplánuje ďalší týždeň sám (nastavenie auto_plan_week).
+    Projekty s vlastným plánom (plan_projects) a dennou výrobou sa dopĺňajú každú hodinu, aby hotové videá nečakali mimo plánu."""
     now = dt.datetime.now()
+    hour = now.strftime("%Y-%m-%d %H")
+    if db.get_setting("auto_plan_hour", "") != hour:
+        db.set_setting("auto_plan_hour", hour)
+        own = {int(k) for k in (db.get_setting("plan_projects", {}) or {})} & {int(k) for k in (db.get_setting("auto_produce", {}) or {})}
+        if own:
+            try:
+                plan_week(sorted(own))
+            except Exception as e:
+                print("hodinové plánovanie:", e)
     if not db.get_setting("auto_plan_week", False) or now.weekday() != 6 or now.hour < 18:
         return
     if db.get_setting("auto_plan_last", "") == now.date().isoformat():
