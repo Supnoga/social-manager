@@ -1378,6 +1378,12 @@ def _mp_run(workers, until):
                         MPROD["first"].setdefault(str(pid), date)
                 elif slot["state"] == "ok" and _mp_short(pid, slot["final"]):
                     MPROD["done"]["short"] += 1
+                if MPROD.get("publish") and slot["state"] == "ok":   # hotové video hneď do plánu zverejnenia
+                    try:
+                        from . import planner
+                        planner.plan_week([pid], 3)
+                    except Exception as e:
+                        MPROD["log"].append(f"plánovanie kanála {pid}: {str(e)[:120]}")
             except Exception as e:
                 MPROD["log"].append(f"{date} kanál {pid}: {str(e)[:150]}")
                 if kind == 0:
@@ -1403,7 +1409,7 @@ def month_plan_produce(data: dict = Body(default={})):
     """Vyrobí videá v poradí mesačného plánu (s kontrolou obrazu). Nič nenahráva ani neplánuje."""
     if MPROD["running"]:
         return {"running": True}
-    MPROD.update(log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[])
+    MPROD.update(log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=bool(data.get("publish")))
     threading.Thread(target=_mp_run, args=(int(data.get("workers") or 3), data.get("until") or ""), daemon=True).start()
     return {"started": True}
 
