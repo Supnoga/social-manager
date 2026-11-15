@@ -4,7 +4,7 @@ import re
 
 # (regex, mechanizmus, popisky po anglicky) – poradie = priorita (konkrétne pred všeobecnými)
 RULES = [
-    (r"jet engine|turbofan|turbojet|jet turbine", "jet", ["Intake", "Compressor", "Combustion", "Exhaust"]),
+    (r"jet engine|turbofan|turbojet|jet turbine", "jet", ["Fan", "Compressor", "Combustion", "Turbine", "Nozzle"]),
     (r"rotary engine|wankel|rotor housing|apex seal|triangular rotor", "wankel", ["Intake", "Compression", "Power", "Exhaust"]),
     (r"turbo(charger|charged|charging)?s?\b|turbo lag|wastegate|boost pressure", "turbo", ["Exhaust in", "Turbine", "Compressor", "Air to engine"]),
     (r"four[- ]stroke|piston|(?<!lock )cylinder|combustion engine|intake stroke|compression stroke|power stroke|exhaust stroke|how (an? )?(car )?engines?\b"
@@ -20,26 +20,26 @@ RULES = [
     (r"rocket|booster|launch vehicle|liftoff|stage separation", "rocket", ["Payload", "Second stage", "First stage"]),
     (r"satellite|\bgps\b|orbit", "orbit", ["Earth", "Satellites"]),
     (r"\bradar|stealth", "radar", ["Antenna", "Pulse", "Target", "Screen"]),
-    (r"submarine|ballast", "submarine", ["Ballast tank", "Sea water"]),
+    (r"submarine|ballast", "submarine", ["Ballast tanks", "Compressed air", "Pressure hull", "Propeller", "Dive planes"]),
     (r"projectile|trajectory|ballistic|cannon|artillery|howitzer", "trajectory", []),
     (r"nuclear|fission|reactor|uranium|chain reaction", "fission", ["Neutron", "Uranium-235", "Energy"]),
-    (r"hydraulic|pascal", "hydraulic", ["Small piston", "Big piston", "Hydraulic oil"]),
+    (r"hydraulic|pascal", "hydraulic", ["Small piston", "Big piston", "Hydraulic oil", "Check valves"]),
     (r"\blever|fulcrum", "lever", ["Load", "Effort", "Pivot"]),
     (r"pulley|block and tackle", "pulley", ["Pulley", "Load", "Pull"]),
     (r"tower crane|\bcranes?\b", "crane", ["Counterweight", "Load"]),
     (r"escalator", "escalator", ["Handrail", "Drive"]),
-    (r"elevator|lift shaft|counterweight", "elevator", ["Car", "Counterweight"]),
+    (r"elevator|lift shaft|counterweight", "elevator", ["Car", "Counterweight", "Traction sheave", "Safety brake"]),
     (r"suspension bridge|bridge", "bridge", ["Deck", "Hangers", "Main cable", "Towers", "Anchorage"]),
     (r"tunnel boring|\btbm\b|tunnel", "tunnel", ["Cutterhead", "Thrust jacks", "Lining rings", "Conveyor"]),
     (r"oil well|drilling|drill rig|derrick|fracking", "drill", ["Derrick", "Drill bit", "Oil reservoir"]),
     (r"canal lock|lock chamber|panama canal", "canal_lock", ["Upper water", "Lock chamber", "Lower water"]),
-    (r"\bdams?\b|hydroelectric|hydropower|reservoir", "dam", ["Reservoir", "Turbine", "Grid"]),
+    (r"\bdams?\b|hydroelectric|hydropower|reservoir", "dam", ["Reservoir", "Dam wall", "Penstock", "Turbine", "Generator"]),
     (r"wind turbine|wind power|wind farm|wind energy", "wind_turbine", ["Rotor", "Gearbox", "Generator", "Tower"]),
     (r"solar (panel|cell|power|energy)|photovoltaic", "solar", ["Sunlight", "P-N junction", "Current"]),
     (r"heat pump|wärmepumpe|tepeln\w+ čerpad|tepeln\w+ čerpad|pompa ciepła|hőszivattyú|refrigerant", "heatpump",
      ["Evaporator", "Compressor", "Condenser", "Expansion valve"]),
     (r"air ?condition|\bac unit", "aircon", ["Compressor", "Cooling", "Heat outside"]),
-    (r"fridge|refrigerator", "fridge", ["Compressor", "Cold", "Heat"]),
+    (r"fridge|refrigerator", "fridge", ["Compressor", "Condenser", "Expansion", "Evaporator"]),
     (r"generator|dynamo|alternator", "generator", ["Turbine", "Generator", "Bulb"]),
     (r"electric motor|e-motor|ev motor", "motor", ["Magnet", "Coil", "Battery"]),
     (r"transformer|high voltage|substation", "transformer", ["Primary coil", "Iron core", "Secondary coil"]),
@@ -122,6 +122,27 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
              ("pressure", r"pressure|suction|bernoulli|faster over|speeds? up over|\bsucks?"),
              ("lift", r"\blift\b|upward force|newton|pushes? (the )?air down|downwash|deflect"),
              ("flow", r"airflow|air flows?|streamlines?|leading edge|air (splits|hits|meets)")],
+    "dam": [("arch", r"curved|\barch|canyon walls?|abutments?"), ("spill", r"spillway|overflow|flood ?gates?|overtop|\bslides?\b"),
+            ("pressure", r"pressure|thicker|weight of (the )?water|pushes? (on|against)|\bdepth\b|deeper"),
+            ("generator", r"generator|electricit|\bgrid\b|megawatts?|\bcoils?\b|magnets?|power lines?|transformer"),
+            ("turbine", r"turbine|runner|\bblades?\b|\bspins?\b|spinning"), ("penstock", r"penstock|\bpipes?\b|intake|rush(es|ing)?"),
+            ("wall", r"\bwall\b|concrete|gravity dam|foundation|bedrock|\bcrest\b"), ("reservoir", r"reservoir|\blake\b|stored? water|water level|upstream")],
+    "submarine": [("sonar", r"sonar|\bpings?\b|hydrophone"), ("dive", r"\bdives?\b|diving|submerge|\bsinks?\b|flood"),
+                  ("surface", r"\bsurfac(e|es|ing)\b|blow(s|ing)? (the )?(tanks|ballast)|\brises?\b"), ("air", r"compressed air|high[- ]pressure air|air flasks?"),
+                  ("tanks", r"ballast|\btanks?\b|buoyan|\bvents?\b"), ("hull", r"pressure hull|\bhull\b|crush|water pressure|\bsteel\b|titanium|\bdepth"),
+                  ("propeller", r"propeller|pump[- ]?jet|\bshaft\b|reactor|electric motor"), ("planes", r"dive planes?|hydroplanes?|\bplanes\b|\bfins?\b|rudder|steer")],
+    "hydraulic": [("valves", r"check valves?|one[- ]way valves?|\bvalves?\b|release"), ("oil", r"\boil\b|\bfluid\b|incompressible|pressure|pascal"),
+                  ("big", r"big(ger)? piston|large piston|wide piston|\bram\b|lifts? (the|a|your) car|\bload\b"),
+                  ("small", r"small piston|narrow piston|handle|\blever\b|pump(s|ing)?\b|\bstrokes?\b|push(es)? down|your (hand|arm)")],
+    "elevator": [("snap", r"\bsnaps?\b|(cable|rope) (breaks|fails)|free ?fall|plummet|cut the (cable|rope)"),
+                 ("brake", r"safety (gear|brake)|\bbrakes?\b|governor|wedge|clamp|\bgrips?\b|otis"), ("sheave", r"sheave|pulley|\bmotor\b|traction|machine room|friction"),
+                 ("counterweight", r"counterweight|balanc"), ("car", r"\bcar\b|\bcab(in)?\b|passengers?|\bdoors?\b|\bfloors?\b")],
+    "fridge": [("dirty", r"\bdust|dirty|clogged|clean(ing)? the coils"), ("evaporator", r"evaporat|freez|absorbs? (the )?heat|\bboils?\b|inside the (fridge|box)|\bcold\b"),
+               ("valve", r"capillary|expansion|throttl|pressure drops?|narrow tube"),
+               ("condenser", r"condens|\bcoils?\b|back of the fridge|out the back|releases? (the )?heat|dumps? (the )?heat|kitchen"),
+               ("compressor", r"compressor|\bhum|squeez|\bpump\b|\bmotor\b|\bclick")],
+    "jet": [("nozzle", r"nozzle|exhaust|thrust|newton"), ("turbine", r"turbine"), ("combustor", r"combust|\bfuel\b|\bburn|flame|ignit|kerosene"),
+            ("compressor", r"compress|squeez|\bstages?\b"), ("fan", r"\bfan\b|bypass|intake|\bblades?\b|\bsucks?")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
                   ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
 }
@@ -134,7 +155,10 @@ CAM_ONLY = {"turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "va
             "heatpump": {"evap", "comp", "cond", "valve"}, "wind_turbine": {"rotor", "gearbox", "generator"},
             "solar": {"light", "junction", "circuit"}, "tunnel": {"cutter", "jacks", "rings", "conveyor"},
             "radar": {"antenna", "pulse", "target", "screen"}, "bridge": {"deck", "hangers", "cable", "towers", "anchor"},
-            "wing": {"flow", "pressure", "lift"}}
+            "wing": {"flow", "pressure", "lift"}, "dam": {"reservoir", "wall", "penstock", "turbine", "generator"},
+            "submarine": {"tanks", "air", "hull", "propeller", "planes"}, "hydraulic": {"small", "big", "oil", "valves"},
+            "elevator": {"car", "counterweight", "sheave", "brake"}, "fridge": {"compressor", "condenser", "valve", "evaporator"},
+            "jet": {"fan", "compressor", "combustor", "turbine", "nozzle"}}
 # tenké schémy, ktoré v krátkom videu o stroji nahradí model (grafy s číslami ostávajú)
 SOFT = {"flow", "cycle", "steps", "network", "tree", "layers", "split", "stack", "level", "zoom", "size", "sim", "forces", "myth", "dots",
         "funnel", "venn", "house", "crack", "clock", "matrix"}   # modely, ktoré vedia záber „beží naplno“
@@ -161,9 +185,15 @@ _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": 
             "radar": r"\bpulses?\b|\becho|antenna|\bdish\b|radio waves?|reflect|bounces?|\bblip|\bscreen\b|stealth|microwaves?",
             "bridge": r"\bcables?\b|hangers?|suspenders?|\btowers?\b|anchor|\bdeck\b|suspension|\bspan\b|strands?",
             "wing": r"\blift\b|airflow|air ?foil|angle of attack|\bstall|pressure|\bflaps?\b|leading edge|trailing edge|\bdrag\b",
+            "dam": r"reservoir|turbine|penstock|spillway|generator|concrete|\bwall\b|water pressure|megawatt|hydro",
+            "submarine": r"ballast|\btanks?\b|pressure hull|\bhull\b|\bdives?\b|surfac|compressed air|buoyan|propeller",
+            "hydraulic": r"pistons?|\boil\b|\bfluid\b|pressure|cylinders?|\bvalves?\b|pascal|\blever\b|\bjack\b",
+            "elevator": r"counterweight|\bropes?\b|\bcables?\b|sheave|pulley|safety (gear|brake)|governor|\bshaft\b|\brails?\b",
+            "fridge": r"compressor|refrigerant|condens|evaporat|\bcoils?\b|\bheat\b|capillary|thermostat",
+            "jet": r"\bfan\b|compressor|combust|turbine|nozzle|bypass|thrust|\bblades?\b|\bfuel\b",
             "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
 # model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
-_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3}
+_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3, "dam": 3, "submarine": 3, "hydraulic": 3, "elevator": 3, "fridge": 3, "jet": 3}
 
 
 def topic(full, title="", strict=False):
@@ -185,6 +215,12 @@ _AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine b
           "tunnel": r"sewer|flood|immersed|float|wind tunnel|drill and blast|\bblast|dynamite|by hand|\bmines?\b|mining|quantum|carpal|\bvpn\b|\bquiz\b|\bsink|riverbed|underwater|breathe|chimney|\bair\b|\bfire\b|\brain\b|drain|pump|stream|\bpipes?\b|never (came|dry)|stay cool|poured|below it all|cross passages|alive|future",
           "bridge": r"paint|holes in|americas|\bships?\b|too low|\barch|truss bridge|draw ?bridge|bascule|cable[- ]stayed|pontoon|float|covered|beam bridge|\brope|land bridge|rectifier|cantilever|viaduct|aqueduct|\bstone|roman|lift bridge|swing|movable|\bopens?\b|\bquiz\b|\bship'?s? bridge|dental|card game",
           "wing": r"holds itself|wobble|crosswind|wing low|grounded|winglet|swept|sweep|\bflex|\bbend|fold|\bbirds?\b|insect|wingtip|vortex|vortices|turbulence|\bice\b|icing|fuel|wingspan|delta|flying wing|\bquiz\b|buffalo|chicken|right[- ]wing|left[- ]wing|rivet|\bspar\b",
+          "dam": r"beaver|drained itself|moved sideways|tailings|landslide|ice dam|pumped|tidal|\bdike|\bquiz\b|rain reservoir",
+          "submarine": r"torpedo|sound layer|layers of sound|silent|silence|quiet|nois|signature|\bhunt|aircraft|find(ing)? submarines|vanish|\bhides?\b|detection|sonar|cable|\bquiz\b",
+          "hydraulic": r"brak|excavator|fracking|fractur|hydraulic jump|elevator|\bquiz\b",
+          "elevator": r"space elevator|never stops|paternoster|puzzle|wrong one|grain|\bquiz\b",
+          "fridge": r"magnet|smart fridge|door seal|absorption|gas fridge|\bquiz\b|ice ?maker|defrost",
+          "jet": r"jet stream|jet lag|jet ski|jet ?pack|water ?jet|inkjet|ramjet|scramjet|\bquiz\b",
           "radar": r"sonar|lidar|speed (camera|trap|gun)|weather|\bquiz\b|microwave oven|candy|chocolate|passive|never transmits|phased|from space|\bimages?\b|mapping|sensor fusion|hopping|beamforming|signal processing|whisper|reveals its own|turn off|horizon|bomber|warning receivers?|locked on|lost fights"}
 
 
@@ -207,7 +243,7 @@ def _topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing"}
+NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing", "dam": "Hydroelectric dam", "submarine": "Submarine", "hydraulic": "Hydraulic jack", "elevator": "Elevator", "fridge": "Refrigerator", "jet": "Jet engine"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
