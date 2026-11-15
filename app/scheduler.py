@@ -34,6 +34,9 @@ def process_one(post):
     if not acc or not vid:
         db.run("UPDATE posts SET status='failed', error='Účet alebo video už neexistuje' WHERE id=?", (post["id"],))
         return
+    from . import brand
+    if brand.unlogo_blocked(vid["id"]):   # ešte so starým logom: počká na opravu
+        return
     if acc["platform"] == "youtube" and not youtube.quota_ok(acc):
         nxt = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=random.randint(0, 59), second=0)
         db.run("UPDATE posts SET scheduled_at=?, error=? WHERE id=?", (nxt.strftime("%Y-%m-%d %H:%M:%S"),
@@ -124,6 +127,9 @@ def stash_one(post):
     vid = db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],))
     if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or not youtube.quota_ok(acc, reserve=youtube.RELEASE_RESERVE):
         return False
+    from . import brand
+    if brand.unlogo_blocked(vid["id"]):
+        return False
     state["current"] = f"YouTube (súkromne): {vid['title'] or vid['original_name']}"
     retry = (post.get("error") or "").startswith("Súkromné nahratie:")
     try:
@@ -177,7 +183,8 @@ def ahead_one():
     for p in rows:
         acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
         vid = db.one("SELECT * FROM videos WHERE id=?", (p["video_id"],))
-        if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]):
+        from . import brand
+        if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or brand.unlogo_blocked(vid["id"]):
             continue
         k = youtube._client_idx(acc)
         need = 0
