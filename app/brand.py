@@ -923,3 +923,132 @@ def fixlogo_get():
 @router.post("/api/brand/fixlogo")
 def fixlogo_post(data: dict = Body(default={})):
     return fixlogo(bool(data.get("apply", True)))
+
+
+# ---------- odstránenie starého loga z hotových videí (1.76.0) ----------
+# Oliver 15.11.: staré logo kanála (spred líšky) hore vo videu je škaredé. Líška je vo videu ako sprievodca, logo v rohu
+# netreba. Nové videá ho už nemajú (logo_corner/logo_end vypnuté), hotové neuverejnené sa opravia bez AI aj bez
+# skladania nanovo: ffmpeg delogo zahladí roh (pozadie je tmavé), dlhým videám sa odstrihne záverečná karta s logom.
+_unlogo_busy = threading.Lock()
+_unlogo_state = {"running": False, "done": 0, "errors": [], "current": None}
+UNLOGO_TAIL = 1.8   # explainer.TAIL: záverečná karta s logom na konci dlhého videa
+
+
+def _logo_box(pid, wide):
+    """Kde presne je logo v rohu (rovnaký výpočet ako v explainer: data URI 680×176 → CSS rámček, stage posun)."""
+    lg = video_logo(pid, dark_bg=True)
+    if not lg:
+        return None
+    try:
+        lay = _logo_layer(lg["path"], 680, 176)
+        w0, h0 = lay.size
+    except Exception:
+        w0, h0 = 600, 600
+    if wide:
+        r = min(280 / w0, 64 / h0, 1)
+        x, y, w, h = 150, 72, w0 * r, h0 * r
+    else:
+        r = min(340 / w0, 88 / h0, 1)
+        s = .97   # #stage: transform-origin 72px 196px; translate(8px,-56px) scale(.97)
+        x, y, w, h = 72 + 8, 196 - 56, w0 * r * s, h0 * r * s
+    pad = 14
+    return int(x - pad), int(y - pad), int(w + 2 * pad), int(h + 2 * pad)
+
+
+def unlogo_pending(pids):
+    done = set(db.get_setting("unlogo_done", []) or [])
+    out = []
+    for pid in pids:
+        rows = db.q(f"""SELECT v.*, {db.fmt_sql('v')} fmt FROM videos v WHERE v.project_id=?
+                       AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND (COALESCE(p.stash_id,'')!=''
+                            OR COALESCE(p.external_id,'')!='' OR p.status='uploading'))""", (pid,))
+        out += [r for r in rows if r["id"] not in done and r["file_path"] and Path(r["file_path"]).exists()]
+    # najprv videá, ktoré idú von najskôr
+    def first(r):
+        p = db.one("SELECT MIN(scheduled_at) t FROM posts WHERE video_id=? AND status IN ('queued','review')", (r["id"],))
+        return (p or {}).get("t") or "9999"
+    return sorted(out, key=first)
+
+
+def unlogo_blocked(video_id):
+    """Video ešte čaká na odstránenie starého loga: nenahrávať ho."""
+    return int(video_id or 0) in set(db.get_setting("unlogo_todo", []) or [])
+
+
+def _unlogo_one(v):
+    from . import media
+    ff = media.ffmpeg()
+    src = Path(v["file_path"])
+    wide = (v.get("fmt") or "") == "long"
+    box = _logo_box(v["project_id"], wide)
+    tmp = src.with_name(src.stem + ".unlogo.mp4")
+    vf = []
+    if box:
+        x, y, w, h = box
+        vf.append(f"delogo=x={x}:y={y}:w={w}:h={h}")
+    dur = None
+    if wide:
+        r = subprocess.run([ff, "-i", str(src)], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", r.stderr or "")
+        if m:
+            dur = int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3])
+    cmd = [ff, "-y", "-i", str(src)]
+    if vf:
+        cmd += ["-vf", ",".join(vf)]
+    if dur and dur > 30:
+        cmd += ["-t", f"{dur - UNLOGO_TAIL:.2f}"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(tmp)]
+    r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < 10000:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError((r.stderr or "ffmpeg")[-300:])
+    import os
+    os.replace(tmp, src)
+    try:
+        db.run("UPDATE videos SET size=? WHERE id=?", (src.stat().st_size, v["id"]))
+        if dur and dur > 30:
+            db.run("UPDATE videos SET duration=? WHERE id=?", (round(dur - UNLOGO_TAIL, 2), v["id"]))
+    except Exception:
+        pass
+
+
+def unlogo(pids):
+    for pid in pids:   # nové videá už bez starého loga
+        o = opts(pid)
+        o.update(logo_corner=False, logo_end=False)
+        db.set_setting(f"brand_opts_{pid}", o)
+    todo = unlogo_pending(pids)
+    db.set_setting("unlogo_todo", sorted(set(db.get_setting("unlogo_todo", []) or []) | {r["id"] for r in todo}))
+
+    def run():
+        if not _unlogo_busy.acquire(blocking=False):
+            return
+        _unlogo_state["running"] = True
+        try:
+            for v in todo:
+                _unlogo_state["current"] = v["id"]
+                try:
+                    _unlogo_one(v)
+                    db.set_setting("unlogo_done", (db.get_setting("unlogo_done", []) or []) + [v["id"]])
+                    _unlogo_state["done"] += 1
+                    db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != v["id"]])
+                except Exception as e:   # ostáva zablokované (nenahrá sa so starým logom)
+                    _unlogo_state["errors"].append([v["id"], str(e)[:300]])
+                    print("odstránenie loga:", v["id"], e)
+        finally:
+            _unlogo_state["running"] = False
+            _unlogo_state["current"] = None
+            _unlogo_busy.release()
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"started": len(todo)}
+
+
+@router.post("/api/brand/unlogo")
+def unlogo_api(data: dict = Body(default={})):
+    return unlogo([int(p) for p in data.get("project_ids", [])])
+
+
+@router.get("/api/brand/unlogo")
+def unlogo_status():
+    return dict(_unlogo_state, todo=len(db.get_setting("unlogo_todo", []) or []))
