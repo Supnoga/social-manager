@@ -2,6 +2,7 @@
 // Každý kanál: každý deň 1 dlhé video + jeho 3 krátke. Zostavuje sa bez AI z nápadov v appke.
 const MP_COVER = { model: ['ok', 'presný model'], verify: ['warn', 'overí sa pri skladaní'], gap: ['bad', 'chýba téma'] };
 const mpDay = d => { const x = new Date(d + 'T12:00:00'); return ['ne', 'po', 'ut', 'st', 'št', 'pi', 'so'][x.getDay()] + ' ' + d.slice(8, 10) + '.' + d.slice(5, 7) + '.'; };
+const mpStock = n => `<span class="chip ${n >= 7 ? 'ok' : n >= 3 ? 'warn' : 'bad'}" title="Koľko dní dopredu má kanál hotové videá">zásoba ${n} ${n === 1 ? 'deň' : n >= 2 && n <= 4 ? 'dni' : 'dní'}</span>`;
 const mpModel = m => m ? (({ piston: 'piestový motor', wankel: 'rotačný motor', rotary: 'rotačný motor', gears: 'ozubené kolesá', turbo: 'turbo', camshaft: 'vačkový hriadeľ', car_brake: 'brzda', gearbox: 'prevodovka', differential: 'diferenciál', heatpump: 'tepelné čerpadlo', wind_turbine: 'veterná turbína', solar: 'solárny panel' })[m] || m) : '';
 
 async function mpBuild(pid) {
@@ -13,7 +14,7 @@ function mpSummaryRow(p) {
   const s = p.summary || {}, n = s.long_slots || p.days.length || 30;
   const bar = k => `<div style="width:${(s[k] || 0) / n * 100}%;background:${k === 'model' ? 'var(--ok, #2fbf71)' : k === 'verify' ? '#d9a400' : '#ff4d4d'}"></div>`;
   const miss = Object.entries(s.missing || {}).map(([m, c]) => `${esc(mpModel(m))} ${c}`).join(', ');
-  return `<tr onclick="go('p/${p.id}/plan')" style="cursor:pointer"><td><b style="color:#fff">${esc(p.name)}</b><div class="small dim">${p.machine ? 'kanál o strojoch' : 'iné témy'}${p.spare ? ' · v zálohe ' + p.spare + ' tém' : ''}</div></td>
+  return `<tr onclick="go('p/${p.id}/plan')" style="cursor:pointer"><td><b style="color:#fff">${esc(p.name)}</b> ${mpStock(p.stock || 0)}<div class="small dim">${p.machine ? 'kanál o strojoch' : 'iné témy'}${p.spare ? ' · v zálohe ' + p.spare + ' tém' : ''}</div></td>
     <td style="width:38%"><div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:#222">${bar('model')}${bar('verify')}${bar('gap')}</div>
       <div class="small dim" style="margin-top:4px">${s.longs || 0} dlhých (${s.model || 0} s modelom, ${s.verify || 0} overí sa) · ${s.shorts || 0} krátkych${s.gap ? ` · <span style="color:#ff8080">${s.gap} chýba</span>` : ''}</div></td>
     <td class="small dim">${miss ? 'chýbajú modely: ' + miss : ''}</td><td style="text-align:right">${I('right', 's')}</td></tr>`;
@@ -27,7 +28,7 @@ async function pMonthPlan(m) {
     <p class="muted">Každý kanál: 1 krátke video denne (18:00) a dlhé každý 3. deň (14:00), kanály sa pri dlhých striedajú. 3 krátke patria k dlhému: prvé ide v jeho deň po ňom, ďalšie 2 dni potom. Plán sa skladá z nápadov, ktoré už máš, bez AI a nič sa podľa neho zatiaľ nevyrába ani nenahráva.</p></div>
     <span class="sp"></span><button class="btn" onclick="mpBuild(0)">${I('refresh')}Zostaviť plán</button></div>
     ${ps.length ? `<div class="card"><div class="row" style="gap:18px;margin-bottom:10px"><span>Od <b>${esc(d.start)}</b> na ${d.days} dní</span>
-      <span class="chip">${tot('longs')} dlhých · ${tot('shorts')} krátkych</span><span class="chip ok">${tot('model')} dlhých s presným modelom</span><span class="chip warn">${tot('verify')} overí sa pri skladaní</span>${tot('gap') ? `<span class="chip bad">${tot('gap')} chýba téma</span>` : ''}
+      <span class="chip ${Math.min(...ps.map(p => p.stock || 0)) >= 7 ? 'ok' : 'warn'}">zásoba: najmenej ${Math.min(...ps.map(p => p.stock || 0))}, priemer ${Math.round(ps.reduce((a, p) => a + (p.stock || 0), 0) / ps.length)} dní</span><span class="chip">${tot('longs')} dlhých · ${tot('shorts')} krátkych</span><span class="chip ok">${tot('model')} dlhých s presným modelom</span><span class="chip warn">${tot('verify')} overí sa pri skladaní</span>${tot('gap') ? `<span class="chip bad">${tot('gap')} chýba téma</span>` : ''}
       <span class="sp"></span><span class="small dim">zostavené ${esc(d.built)}</span></div>
       <table>${ps.map(mpSummaryRow).join('')}</table></div>
       <p class="small dim">Zelená: video ukáže presný model stroja. Žltá: téma bez stroja, obraz skontroluje appka pri skladaní a video, ktoré neprejde, ostane zadržané (plán vezme ďalšiu tému). Červená: na ten deň zatiaľ nie je téma s dobrým obrazom.</p>`
@@ -50,6 +51,6 @@ async function pProjectPlan(m, p) {
     <p class="muted">1 krátke video denne o 18:00, dlhé každý 3. deň o 14:00 a jeho 3 krátke v ten deň po ňom a 2 dni potom. ${x ? `Od ${esc(d.start)} na ${d.days} dní.` : ''}</p></div>
     <span class="sp"></span><a class="btn ghost" href="#/plan">${I('layers')}Všetky kanály</a><button class="btn" onclick="mpBuild(${p.id})">${I('refresh')}Zostaviť znova</button></div>
     ${x ? `<div class="card">${(() => { const s = x.summary; const miss = Object.entries(s.missing || {}).map(([k, c]) => esc(mpModel(k)) + ' ' + c).join(', ');
-      return `<div class="row" style="gap:10px;margin-bottom:10px"><span class="chip">${s.longs} dlhých · ${s.shorts} krátkych</span><span class="chip ok">${s.model} s modelom</span><span class="chip warn">${s.verify} overí sa</span>${s.gap ? `<span class="chip bad">${s.gap} chýba</span>` : ''}<span class="chip">${s.scripts_ready} dlhých má hotový scenár</span>${x.spare ? `<span class="chip">${x.spare} tém v zálohe</span>` : ''}</div>${miss ? `<p class="small dim">Témy čakajú na modely: ${miss}.</p>` : ''}`; })()}
+      return `<div class="row" style="gap:10px;margin-bottom:10px">${mpStock(x.stock || 0)}<span class="chip">${s.longs} dlhých · ${s.shorts} krátkych</span><span class="chip ok">${s.model} s modelom</span><span class="chip warn">${s.verify} overí sa</span>${s.gap ? `<span class="chip bad">${s.gap} chýba</span>` : ''}<span class="chip">${s.scripts_ready} dlhých má hotový scenár</span>${x.spare ? `<span class="chip">${x.spare} tém v zálohe</span>` : ''}</div>${miss ? `<p class="small dim">Témy čakajú na modely: ${miss}.</p>` : ''}`; })()}
       <table>${x.days.map(row).join('')}</table></div>` : empty('calendar', 'Plán pre tento kanál ešte nie je zostavený.')}`;
 }

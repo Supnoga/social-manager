@@ -150,4 +150,38 @@ def get(project_id=0):
     if project_id:
         projs = {k: v for k, v in projs.items() if k == str(project_id)}
     return {"start": plan.get("start", ""), "days": plan.get("days", 30), "built": plan.get("built", ""),
-            "projects": [dict(v, id=int(k), name=names.get(k, k)) for k, v in sorted(projs.items(), key=lambda kv: int(kv[0]))]}
+            "projects": [dict(v, id=int(k), name=names.get(k, k), stock=stock_days(int(k))) for k, v in sorted(projs.items(), key=lambda kv: int(kv[0]))]}
+
+
+def stock_days(pid, today=None):
+    """Hlavná merná jednotka (Oliver 15.11.): koľko dní obsahu má kanál pripravených, počítané od dnes bez prerušenia.
+    Deň je pokrytý, keď je hotové jeho krátke video (a v deň dlhého aj dlhé). Pred prvým dlhým videom kanál nič nezverejňuje."""
+    today = today or dt.date.today()
+    pp = (db.get_setting("plan_projects", {}) or {}).get(str(pid)) or {}
+    offset = int(pp.get("offset", 0))
+    made = {}
+    for k, v in (db.get_setting("month_plan_made", {}) or {}).items():
+        p, _, d = k.partition(":")
+        if p == str(pid) and (v or {}).get("long"):
+            made[d] = int((v or {}).get("shorts") or 0)
+    if not made:
+        return 0
+    first = min(made)
+    n, day = 0, today
+    while n < 120:
+        if day.isoformat() < first:   # kanál ešte nezačal: čaká na svoje prvé dlhé
+            n += 1
+            day += dt.timedelta(days=1)
+            continue
+        back = (day.toordinal() + offset) % LONG_EVERY   # koľko dní od posledného dňa dlhého videa
+        ld = day - dt.timedelta(days=back)
+        if ld.isoformat() not in made or made[ld.isoformat()] <= back:
+            break
+        n += 1
+        day += dt.timedelta(days=1)
+    return n
+
+
+def stock_all():
+    """Zásoba dní pre všetky kanály (aj tie, ktoré ešte nemajú plán: 0)."""
+    return [{"id": r["id"], "name": r["name"], "days": stock_days(r["id"])} for r in db.q("SELECT id, name FROM projects ORDER BY id")]

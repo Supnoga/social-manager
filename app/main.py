@@ -1257,6 +1257,13 @@ def month_plan_get(project_id: int = 0):
     return monthplan.get(project_id)
 
 
+@app.get("/api/stock")
+def stock():
+    """Zásoba: koľko dní hotového obsahu má každý kanál (hlavná merná jednotka, Oliver 15.11.)."""
+    from . import monthplan
+    return monthplan.stock_all()
+
+
 @app.post("/api/month-plan/build")
 def month_plan_build(data: dict = Body(default={})):
     """Zostaví plán z nápadov v appke, bez AI. Nič nevyrába ani nenahráva."""
