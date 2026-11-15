@@ -202,6 +202,8 @@ def resolve(d, lang="en"):
                 riv.append({"n": str(v).strip(), "l": lines})
     if not (ccs or pts or riv):
         return None
+    if not ccs and pts and pts[0].get("cc") in P["countries"]:
+        ccs = [pts[0]["cc"]]   # len mesto bez krajiny: zvýrazní sa krajina, v ktorej leží (inak by mapa ostala tmavá a prázdna)
     main = ccs[0] if ccs else (pts[0]["cc"] if pts else None)
     group = len(ccs) > 4
     out = {"k": "map", "c": ccs, "main": main, "pts": pts, "r": routes, "v": riv, "group": group,
@@ -213,7 +215,10 @@ def resolve(d, lang="en"):
     t = country(d.get("t")) if isinstance(d.get("t"), str) else None
     if t and ccs and t != ccs[0] and t in P["countries"]:  # skutočná veľkosť: hlavná krajina sa presunie na inú
         out["onto"] = t
+        out["c"] = [c for c in ccs if c != t]   # cieľová krajina je len obrys, nie druhá zvýraznená (inak má názov dvakrát)
         out["names"][t] = country_name(t, lang)
+        if flag_uri(t):
+            out["flags"][t] = flag_uri(t)
         out["lp"][t] = [P["countries"][t]["x"], P["countries"][t]["y"]]
     return out
 
