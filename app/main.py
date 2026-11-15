@@ -2272,6 +2272,22 @@ def posts(status: str = "", limit: int = 300):
     return _posts(where, "p.scheduled_at DESC" if status in ("done", "failed") else "p.scheduled_at", limit, args)
 
 
+@app.post("/api/posts/mark-hold")
+def posts_mark_hold(data: dict = Body(...)):
+    """Len v appke: posty (napr. staré videá, ktoré už niekto ručne prepol na súkromné) dostanú stav 'hold',
+    aby neblokovali miesta v pláne. Na YouTube sa nič nemení. Pôvodný stav sa zapamätá v posts_hold."""
+    keep = db.get_setting("posts_hold", {}) or {}
+    n = 0
+    for i in data.get("ids") or []:
+        p = db.one("SELECT id, status FROM posts WHERE id=?", (int(i),))
+        if p and p["status"] != "hold":
+            keep[str(p["id"])] = p["status"]
+            db.run("UPDATE posts SET status='hold', updated_at=? WHERE id=?", (scheduler.now_str(), p["id"]))
+            n += 1
+    db.set_setting("posts_hold", keep)
+    return {"held": n}
+
+
 @app.post("/api/posts/hold-all")
 def posts_hold_all(data: dict = Body(default={})):
     """Zastaví všetko, čo ešte nie je verejné: posty dostanú stav 'hold' (pôvodný sa zapamätá v posts_hold) a
