@@ -7,7 +7,7 @@ function geoCore(f){const g=f.geometry;if(!g||g.type!='MultiPolygon')return g;co
 const big=P.reduce((a,b)=>b.a>a.a?b:a);const bb=d3.geoBounds(big.p);let r0=0;[[bb[0][0],bb[0][1]],[bb[1][0],bb[1][1]],[bb[0][0],bb[1][1]],[bb[1][0],bb[0][1]]].forEach(p=>{r0=Math.max(r0,d3.geoDistance(big.m,p))});
 const lim=Math.max(.17,r0*1.5);return {type:'MultiPolygon',coordinates:P.filter(x=>d3.geoDistance(x.m,big.m)<lim).map(x=>x.c)}}
 V.map=(v,d)=>{if(d.hist)return V.hmap(v,d);const F=geoInit();if(!F)return V.text(v,{w:d.l||(d.names&&d.names[d.main])||''});
-const MW=864,MH=560,R=1.6;const cv=el('canvas','',`position:absolute;left:0;top:${D.wide?36:0}px;width:${MW}px;height:${MH}px;-webkit-mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%);mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%)`);cv.width=MW*R;cv.height=MH*R;v.append(cv);
+const MW=864,MH=560,R=1.6;const cv=el('canvas','',`position:absolute;left:0;top:${0}px;width:${MW}px;height:${MH}px;-webkit-mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%);mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%)`);cv.width=MW*R;cv.height=MH*R;v.append(cv);
 const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.scale(R,R);ctx.lineJoin='round';ctx.lineCap='round';
 const C=d.c||[],sel=new Set(C),group=!!d.group,PTS=d.pts||[],RT=d.r||[],RV=d.v||[];
 const SF=F.filter(f=>sel.has(f.id)).sort((a,b)=>(a.id==d.main)-(b.id==d.main));
@@ -16,19 +16,21 @@ const geoms=SF.map(f=>core[f.id]);PTS.forEach(p=>geoms.push({type:'Point',coordi
 const ONTO=d.onto?F.find(f=>f.id==d.onto):null;if(ONTO)geoms.push(geoCore(ONTO));
 const tiny=C.filter(c=>!SF.some(f=>f.id==c)&&d.lp&&d.lp[c]);tiny.forEach(c=>geoms.push({type:'Point',coordinates:d.lp[c]}));
 if(!geoms.length)return V.text(v,{w:d.l||''});
-const FC={type:'GeometryCollection',geometries:geoms};const gb=d3.geoBounds(FC);let lo0=gb[0][0],lo1=gb[1][0];if(lo1<lo0)lo1+=360;
+// skutočná veľkosť dvoch krajín ďaleko od seba (Grónsko a Austrália): na guli ich naraz nevidno, záber ide na cieľovú krajinu a prvá k nej priletí spoza obzoru
+let fitG=geoms,FARK=1;if(ONTO&&SF.length){const M0=SF.find(f=>f.id==d.main)||SF[SF.length-1],go=geoCore(ONTO);if(d3.geoDistance(d3.geoCentroid(core[M0.id]),d3.geoCentroid(go))>1.1){fitG=[go];const ar=g=>{const q=d3.geoArea(g);return Math.min(q,4*Math.PI-q)};FARK=Math.min(1,Math.sqrt(ar(go)/Math.max(1e-9,ar(core[M0.id]))))*.85}}
+const FC={type:'GeometryCollection',geometries:fitG};const gb=d3.geoBounds(FC);let lo0=gb[0][0],lo1=gb[1][0];if(lo1<lo0)lo1+=360;
 const cen=gb[1][0]-gb[0][0]>300&&gb[0][0]<gb[1][0]?d3.geoCentroid(FC):[((lo0+lo1)/2+540)%360-180,(gb[0][1]+gb[1][1])/2];
 const proj=d3.geoOrthographic().clipAngle(90).precision(.4),path=d3.geoPath(proj,ctx);
 const S0=MH*.46,ROT=[-cen[0],-Math.max(-60,Math.min(60,cen[1]))];
 proj.rotate(ROT).scale(1).translate([0,0]);const bb=d3.geoPath(proj).bounds(FC);const bw=bb[1][0]-bb[0][0],bh=bb[1][1]-bb[0][1];
 const onlyPts=!SF.length&&!RV.length&&RT.length==0;
 let SF_=bw>1e-6||bh>1e-6?Math.min((MW-150)/Math.max(bw,1e-6),(MH-130)/Math.max(bh,1e-6)):2400;
-SF_=Math.max(S0,Math.min(onlyPts?2400:5200,SF_));
+SF_=Math.max(S0,Math.min(onlyPts?2400:5200,SF_)*FARK);
 const R0=[ROT[0]+62,ROT[1]*.35];const GR=d3.geoGraticule10();
 const ip=d3.geoInterpolate([-R0[0],-R0[1]],[-ROT[0],-ROT[1]]);
 // popisky (HTML, písmo značky)
-const OY=D.wide?36:0;const mk=(css,html)=>{const e=el('div','',`position:absolute;margin-top:${OY}px;white-space:nowrap;opacity:0;text-shadow:0 2px 10px #000,0 0 3px #000;${css}`,html);v.append(e);return e};
-const CL=group?[]:SF.concat([]).reverse().map(f=>f.id).concat(tiny).slice(0,4).map((c,i)=>{const isM=c==d.main;const fl=d.flags&&d.flags[c]?`<img src="${d.flags[c]}" style="height:${isM?38:28}px;width:auto;border-radius:3px;margin-right:12px;vertical-align:middle;box-shadow:0 2px 10px rgba(0,0,0,.6)">`:'';
+const OY=0;const mk=(css,html)=>{const e=el('div','',`position:absolute;margin-top:${OY}px;white-space:nowrap;opacity:0;text-shadow:0 2px 10px #000,0 0 3px #000;${css}`,html);v.append(e);return e};
+const CL=group?[]:SF.concat([]).reverse().map(f=>f.id).concat(tiny).concat(ONTO&&!sel.has(ONTO.id)?[ONTO.id]:[]).slice(0,4).map((c,i)=>{const isM=c==d.main;const fl=d.flags&&d.flags[c]?`<img src="${d.flags[c]}" style="height:${isM?38:28}px;width:auto;border-radius:3px;margin-right:12px;vertical-align:middle;box-shadow:0 2px 10px rgba(0,0,0,.6)">`:'';
 return {c,e:mk(`font-weight:800;text-transform:uppercase;letter-spacing:${isM?1:2}px;font-size:${isM?40:26}px;color:${isM?'#fff':'#e6e6e6'}`,fl+`<span style="vertical-align:middle">${esc((d.names||{})[c]||c)}</span>`),m:isM}});
 const PL=PTS.map(p=>({p,e:mk(`font-family:var(--ft);font-weight:700;font-size:24px;color:#fff;letter-spacing:1px`,esc(p.n))}));
 const TAG=d.l||(group&&C.length?'':'');const tg=TAG?mk(`left:0;top:${MH-46}px;font-weight:800;text-transform:uppercase;font-size:30px;letter-spacing:3px;color:var(--acc);border-left:6px solid var(--acc);padding-left:14px`,esc(TAG)):null;
@@ -61,12 +63,12 @@ RT.forEach((r,i)=>{const rp=st(NST+1+i*.6,1.2+.3*(r.length-2));if(rp<=0)return;c
 ctx.strokeStyle=D.acc;ctx.lineWidth=4.5;ctx.setLineDash([14,9]);ctx.lineDashOffset=-t*30;ctx.beginPath();path({type:'LineString',coordinates:L});ctx.stroke();ctx.setLineDash([]);
 const hd=proj(rp<1?L[L.length-1]:g((t*.35+i*.3)%1));if(hd){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(hd[0],hd[1],7,0,6.3);ctx.fill()}});
 // mestá
-const cb=[];PTS.forEach((pt,i)=>{const pp=st(NST+.4+i*.35,.5);const q=proj([pt.lon,pt.lat]);const on=q&&d3.geoDistance(cr,[pt.lon,pt.lat])<1.5;PL[i].e.style.opacity=on?pp:0;if(!on||pp<=0)return;
+const cb=tg?[[0,MH-50,tg.offsetWidth+10,50]]:[];PTS.forEach((pt,i)=>{const pp=st(NST+.4+i*.35,.5);const q=proj([pt.lon,pt.lat]);const on=q&&d3.geoDistance(cr,[pt.lon,pt.lat])<1.5;PL[i].e.style.opacity=on?pp:0;if(!on||pp<=0)return;
 ctx.globalAlpha=pp;if(pt.cap){ctx.strokeStyle=D.acc;ctx.lineWidth=3;ctx.beginPath();ctx.arc(q[0],q[1],13+3*Math.sin(t*3+i),0,6.3);ctx.stroke()}ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(q[0],q[1],7,0,6.3);ctx.fill();ctx.globalAlpha=1;
 const e=PL[i].e,w=e.offsetWidth,h=e.offsetHeight||30;let x=q[0]+20;if(x+w>MW-6)x=q[0]-20-w;x=Math.max(4,x);let y=q[1]-16;
 for(let k=0;k<3;k++){const hit=cb.find(b=>x<b[0]+b[2]&&x+w>b[0]&&y<b[1]+b[3]&&y+h>b[1]);if(!hit)break;y=hit[1]+hit[3]+2}cb.push([x,y,w,h]);e.style.left=x+'px';e.style.top=y+'px'});
 // popisky krajín (vlajka + názov)
-const lp=st(NST+.3,.6);const boxes=PL.filter(o=>o.e.style.opacity>0).map(o=>[o.e.offsetLeft,o.e.offsetTop,o.e.offsetWidth,o.e.offsetHeight]);
+const lp=st(NST+.3,.6);const boxes=PL.filter(o=>o.e.style.opacity>0).map(o=>[o.e.offsetLeft,o.e.offsetTop,o.e.offsetWidth,o.e.offsetHeight]);if(tg)boxes.push([0,MH-50,tg.offsetWidth+10,50]);
 CL.forEach(o=>{const ll=d.lp&&(d.lp[o.c+'_m']||d.lp[o.c]);const q=ll&&proj(ll);const on=q&&d3.geoDistance(cr,ll)<1.4;o.e.style.opacity=on?lp:0;if(!on)return;const w=o.e.offsetWidth,h=o.e.offsetHeight;
 let x=Math.max(6,Math.min(MW-w-6,q[0]-w/2)),y=Math.max(6,Math.min(MH-h-6,q[1]-h/2));
 for(let k=0;k<4;k++){const hit=boxes.find(b=>x<b[0]+b[2]&&x+w>b[0]&&y<b[1]+b[3]&&y+h>b[1]);if(!hit)break;y=Math.min(MH-h-6,hit[1]+hit[3]+8);if(y>=MH-h-6){y=Math.max(6,hit[1]-h-8)}}
@@ -78,7 +80,7 @@ const yearTxt=y=>{const w=YEARW[D.lang]||YEARW.en;return '≈ '+(y<0?String(-y)+
 V.hmap=(v,d)=>{const F=geoInit();if(!F||!window.HIST)return V.text(v,{w:d.l||''});
 const FR=(d.hist||[]).map(f=>{const T=HIST[String(f.y)];if(!T)return null;const fs=topojson.feature(T,T.objects.h).features;const hs=new Set(f.hl||[]);return {y:f.y,fs,hl:fs.filter(x=>hs.has(x.properties.n))}}).filter(Boolean);
 if(!FR.length)return V.text(v,{w:d.l||''});
-const MW=864,MH=560,R=1.6,OY=D.wide?36:0;const cv=el('canvas','',`position:absolute;left:0;top:${OY}px;width:${MW}px;height:${MH}px;-webkit-mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%);mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%)`);cv.width=MW*R;cv.height=MH*R;v.append(cv);
+const MW=864,MH=560,R=1.6,OY=0;const cv=el('canvas','',`position:absolute;left:0;top:${OY}px;width:${MW}px;height:${MH}px;-webkit-mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%);mask-image:radial-gradient(ellipse 70% 66% at 50% 50%,#000 62%,transparent 100%)`);cv.width=MW*R;cv.height=MH*R;v.append(cv);
 const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.scale(R,R);ctx.lineJoin='round';
 const HL=[].concat(...FR.map(f=>f.hl));const FC={type:'FeatureCollection',features:HL.length?HL:FR[0].fs};
 const gb=d3.geoBounds(FC);let lo0=gb[0][0],lo1=gb[1][0];if(lo1<lo0)lo1+=360;const cen=HL.length?[((lo0+lo1)/2+540)%360-180,(gb[0][1]+gb[1][1])/2]:[15,40];
@@ -101,4 +103,4 @@ const hp=st(.9,.8);ctx.beginPath();f.hl.forEach(x=>path(x));ctx.globalAlpha=a*hp
 drawF(FR[fi],1-mix);if(mix>0)drawF(FR[fi+1],mix);
 const cur=mix>.5?fi+1:fi;yt.textContent=yearTxt(FR[cur].y);yt.style.opacity=st(.5,.5);if(tg)tg.style.opacity=st(1.2,.6);
 LB.forEach((L,i)=>L.forEach(o=>{const q=proj(o.c);const on=i==cur&&q&&d3.geoDistance([rc[0],rc[1]],o.c)<1.4;o.e.style.opacity=on?st(1.2,.5):0;if(!on)return;const w=o.e.offsetWidth,h=o.e.offsetHeight;
-o.e.style.left=Math.max(6,Math.min(MW-w-6,q[0]-w/2))+'px';o.e.style.top=Math.max(50,Math.min(MH-h-6,q[1]-h/2))+'px'}))}};
+o.e.style.left=Math.max(6,Math.min(MW-w-6,q[0]-w/2))+'px';o.e.style.top=Math.max(50,Math.min(MH-h-(tg?56:6),q[1]-h/2))+'px'}))}};

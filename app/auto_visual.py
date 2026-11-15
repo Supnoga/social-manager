@@ -252,7 +252,7 @@ _AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine b
           "bridge": r"paint|holes in|americas|\bships?\b|too low|\barch|truss bridge|draw ?bridge|bascule|cable[- ]stayed|pontoon|float|covered|beam bridge|\brope|land bridge|rectifier|cantilever|viaduct|aqueduct|\bstone|roman|lift bridge|swing|movable|\bopens?\b|\bquiz\b|\bship'?s? bridge|dental|card game",
           "wing": r"holds itself|wobble|crosswind|wing low|grounded|winglet|swept|sweep|\bflex|\bbend|fold|\bbirds?\b|insect|wingtip|vortex|vortices|turbulence|\bice\b|icing|fuel|wingspan|delta|flying wing|\bquiz\b|buffalo|chicken|right[- ]wing|left[- ]wing|rivet|\bspar\b",
           "dam": r"beaver|drained itself|moved sideways|tailings|landslide|ice dam|pumped|tidal|\bdike|\bquiz\b|rain reservoir",
-          "submarine": r"torpedo|sound layer|layers of sound|silent|silence|quiet|nois|signature|\bhunt|aircraft|find(ing)? submarines|vanish|\bhides?\b|detection|sonar|cable|\bquiz\b",
+          "submarine": r"\bships? dump|cargo|container ships?|invasive|species|torpedo|sound layer|layers of sound|silent|silence|quiet|nois|signature|\bhunt|aircraft|find(ing)? submarines|vanish|\bhides?\b|detection|sonar|cable|\bquiz\b",
           "hydraulic": r"brak|excavator|fracking|fractur|hydraulic jump|elevator|\bquiz\b",
           "elevator": r"space elevator|never stops|paternoster|puzzle|wrong one|grain|\bquiz\b",
           "fridge": r"magnet|smart fridge|door seal|absorption|gas fridge|\bquiz\b|ice ?maker|defrost",
@@ -272,14 +272,17 @@ def _topic(full, title=""):
         if hit[0] in _AVOID and re.search(_AVOID[hit[0]], title, re.I):
             return None
         return hit[0] if hit[0] in PRECISE else None   # video je o inom stroji: jeho model nesmie zabrať celé video
-    score = {}
+    score, named = {}, {}
     for m in dict.fromkeys(m for _, m, _ in _RX):
         strong = sum(len(rx.findall(full or "")) for rx, mm, _ in _RX if mm == m)
         if strong:
+            named[m] = strong
             score[m] = 2 * strong + len(re.findall(_SUPPORT.get(m, r"$^"), full or "", re.I))
     best = sorted(score.items(), key=lambda kv: -kv[1])
     if not best or best[0][0] not in PRECISE or best[0][1] < (10 if (title or "").strip() else 6):
         return None   # názov, ktorý stroj nemenuje, je slabší dôkaz: stroj musí v texte prevládať výrazne
+    if (title or "").strip() and named[best[0][0]] < 3:
+        return None   # stroj padne v texte raz či dvakrát (napr. názov hry „Radar Scope“) a zvyšok sú bežné slová ako „screen“: video o ňom nie je
     if len(best) > 1 and best[0][1] < 1.5 * best[1][1]:
         return None   # dva stroje sú v texte zhruba rovnako: bez názvu videa sa nedá povedať, o ktorom je
     return best[0][0]
@@ -453,6 +456,72 @@ def _state(out, used):
     return out
 
 
+# ---------- „kto komu“: scéna z ikon sa ukáže ako nakreslení účastníci, medzi ktorými naozaj niečo putuje (PRO.actors) ----------
+_SPRITE = {n: k for k, v in {
+    "person": "user boss soldier worker customer man woman person employee driver investor", "crowd": "people users family team group audience community",
+    "phone": "phone smartphone mobile", "screen": "tv play video monitor", "laptop": "laptop computer online_shop", "router": "wifi router antenna",
+    "house": "house home village", "city": "city office skyscraper building town", "shop": "store shop supermarket", "bank": "bank capitol government",
+    "factory": "factory", "server": "server database", "cloud": "cloud cloud_upload", "doc": "document contract receipt invoice clipboard", "mail": "mail",
+    "calendar": "calendar", "wallet": "wallet", "coins": "coins moneybag money gold", "coin": "coin dollar euro", "cash": "banknote", "piggy": "piggybank",
+    "tag": "pricetag percent", "lock": "lock", "shield": "shield", "key": "key", "chart": "chart", "chart_down": "chart_down", "growth": "growth",
+    "box": "box package gift pallet crate parcel boxes", "bag": "shopping_bag cart", "truck": "truck forklift van lorry", "warehouse": "warehouse depot hub storage", "container": "container", "plane": "plane", "ship": "ship", "globe": "globe map globe_pin",
+    "check": "check", "cross": "cross", "clock": "clock hourglass", "bulb": "idea bulb", "chip": "chip", "drop": "drop water tap", "bolt": "bolt electricity lightning power",
+    "flame": "flame fire", "snow": "snow snowflake cold", "leaf": "leaf plant", "car": "car taxi", "tank": "tank barrel", "pump": "pump", "battery": "battery",
+    "card": "card credit_card", "air": "air wind"}.items() for n in v.split()}
+_TOKEN = [(k, re.compile(r, re.I)) for k, r in (
+    ("coin", r"[$€£¥]|\b(pay|pays|paid|payments?|prices?|fees?|profits?|margins?|money|cash|rent|salary|wages?|costs?|tax|taxes|interest|loans?|lends?|funds?|"
+             r"revenue|income|dividends?|invest\w*|buys?|sales?|sells?|spends?|debt|refunds?|deposits?|bills?|charges?|subsid\w*|premiums?|tips?|coins?|"
+             r"savings?|earn\w*|budget|credit|returned|cashback|discount)\b"),
+    ("box", r"\b(box|boxes|goods|products?|ships?|shipping|deliver\w*|stock|cargo|parcels?|orders?|supply|supplies|unload\w*|imports?|exports?|food|parts|items?)\b"),
+    ("person", r"\b(crowds?|customers?|visitors?|shoppers?|fans?|viewers?|users?|people|workers?|travell?ers?|passengers?|tourists?|migra\w*|joins?|hires?|"
+               r"subscribers?|players?|families|soldiers?|troops)\b"),
+    ("doc", r"\b(contracts?|copy|copies|papers?|invoices?|reports?|receipts?|letters?|tickets?|licen[cs]es?|patents?|laws?|rules?|plans?|forms?|permits?|deal|agreements?|results?)\b"),
+    ("data", r"\b(data|links?|signals?|connect\w*|sends?|passwords?|log ?in|requests?|stream\w*|cast|click\w*|messages?|upload\w*|download\w*|track\w*|traffic|"
+             r"code|wi-?fi|app|notif\w*|info\w*|search\w*|scan\w*|sync\w*|posts?|watch\w*|shares?|invites?|ads?|email|texts?|calls?|updates?|play|power)\b"))]
+_TOKEN_SRC = {"coin": "wallet coins coin cash piggy bank", "box": "truck box ship factory bag warehouse container", "data": "phone router server cloud laptop screen chip", "drop": "drop tank pump"}
+_STOP = re.compile(r"(?i)\b(block\w*|denied|reject\w*|fail\w*|stopp?\w*|banned|can'?t|cannot|refus\w*|no access|cut off|locked out)\b")
+
+
+def actors(d):
+    """Scéna, rad ikon alebo jednoduchá kresba (ikona, šípka, ikona) → presný blok „kto komu“. None, keď účastníkov nevieme nakresliť:
+    každý musí mať vlastnú kresbu, pri troch a viac smie jeden ostať čiarovou ikonou na tabuľke."""
+    k, nodes, edges = d.get("k"), [], []
+    try:
+        if k == "scene":
+            nodes = [[str(q[0]), str(q[1] if len(q) > 1 else "")] for q in d.get("n") or [] if isinstance(q, list) and q]
+            edges = [[int(e[0]), int(e[1]), str(e[2] if len(e) > 2 else ""), 1 if len(e) > 3 and e[3] else 0] for e in d.get("l") or [] if isinstance(e, list) and len(e) > 1]
+        elif k == "icons":
+            nodes = [[str(q[0]), str(q[1] if len(q) > 1 else "")] if isinstance(q, list) else [str(q), ""] for q in d.get("i") or [] if q]
+        elif k == "draw":
+            el = [e for e in d.get("e") or [] if isinstance(e, dict)]
+            if any(e.get("s") not in ("icon", "arrow") for e in el):
+                return None
+            arrow = None
+            for e in el:
+                if e.get("s") == "icon":
+                    nodes.append([str(e.get("i") or ""), str(e.get("l") or "")])
+                    if arrow is not None and len(nodes) > 1:
+                        edges.append([len(nodes) - 2, len(nodes) - 1, arrow, 1 if e.get("c") else 0])
+                    arrow = None
+                elif nodes:
+                    arrow = str(e.get("l") or "")
+        else:
+            return None
+    except (TypeError, ValueError):
+        return None
+    n = len(nodes)
+    if not 2 <= n <= 4 or len(edges) > 4 or any(not (0 <= a < n and 0 <= b < n and a != b) for a, b, *_ in edges):
+        return None
+    nd = [[_SPRITE.get(i.lower().strip()) or "ico:" + i, l] for i, l in nodes]
+    if sum(1 for q in nd if q[0].startswith("ico:")) > (1 if n >= 3 else 0):
+        return None
+    ed = []
+    for a, b, l, hl in edges:
+        tok = next((t for t, rx in _TOKEN if rx.search(l)), None) or next((t for t, src in _TOKEN_SRC.items() if nd[a][0] in src.split()), "dot")
+        ed.append([a, b, l, hl, tok, 1 if _STOP.search(l) else 0])
+    return {"k": "mech", "m": "actors", "nd": nd, "ed": ed}
+
+
 def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", topic=None, last=False):
     """d = diagram scény. Vráti diagram, ktorý sa naozaj ukáže.
     topic = stroj, o ktorom je celé video: slabé scény (ikony, text) vtedy ukazujú jeho presný model a kamera ide
@@ -486,13 +555,13 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
         f = focus(topic, *texts)
         if f is None:
             if long and prev == topic:
-                return d   # v dlhom videu nie dva celkové pohľady po sebe
+                return actors(d) or d   # v dlhom videu nie dva celkové pohľady po sebe
             f = "run" if topic in RUNS and used.get("_ov", 0) % 2 else ""
             used["_ov"] = used.get("_ov", 0) + 1
         if prev == topic and used.get("_last") == (topic, f):   # nikdy ten istý záber dvakrát po sebe: iná časť, beh naplno alebo celok
             alt = [g for g in focuses(topic, *texts) + (["run"] if topic in RUNS else []) + [""] if (topic, g) != used.get("_last")]
             if long or not alt:
-                return d
+                return actors(d) or d
             f = alt[0]
         used["_last"] = (topic, f)
         out = {"k": "mech", "m": topic}
@@ -507,11 +576,15 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
         hit = find(spoken)
         if hit and sum(len(rx.findall(full or "")) for rx, m, _ in _RX if m == hit[0]) < 3:
             hit = None
-    if not hit or hit[0] not in PRECISE:   # len stroje s presným modelom; staré hrubé schémy sa samy nedopĺňajú
-        return d
+    if hit and (re.search(_AVOID.get(hit[0], r"$^"), (full or "") + " . " + " . ".join(texts), re.I)
+                or sum(len(rx.findall(full or "")) for rx, mm, _ in _RX if mm == hit[0]) < 3
+                or len(re.findall(_SUPPORT.get("wankel" if hit[0] == "rotary" else hit[0], r"$^"), full or "", re.I)) < _NEEDS.get(hit[0], 2)):
+        hit = None   # video nie je o stroji: jeho model sa ukáže, len keď o ňom text naozaj hovorí (aspoň 3×, aj o jeho častiach) a slovo nemá iný význam (VPN „tunnel“, „brake“ na úvery, balastné nádrže nákladnej lode)
+    if not hit or hit[0] not in PRECISE or hit[0] == "actors":   # len stroje s presným modelom; inak účastníci scény nakreslení („kto komu“)
+        return actors(d) or d
     m, labels = hit
     if used.get(m, 0) >= (3 if long else 2) or prev == m:
-        return d
+        return actors(d) or d
     used[m] = used.get(m, 0) + 1
     used["_last"] = (m, "")
     out = {"k": "mech", "m": m}

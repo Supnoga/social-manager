@@ -114,7 +114,7 @@ o.lb.style.left=(x1+o.dv[0]*70-120)+'px';o.lb.style.top=(y1+o.dv[1]*40-16+(o.dv[
 V.waterfall=(v,d)=>{const I=(d.i||[]).filter(x=>Array.isArray(x)).slice(0,6);const tot=N(d.t)||I.reduce((s,x)=>s+N(x[1]),0)||1;const n=I.length+1,bw=Math.min(110,760/n-16),gap=(864-bw*n)/(n+1),base=440,mh=330;
 const u=d.u||'';const bars=[];let acc=0;const mk=(i,lbl,val,from,hot,total)=>{const L=gap+i*(bw+gap);const b=el('div','',`position:absolute;left:${L}px;width:${bw}px;top:${base-(from+val)/tot*mh}px;height:${val/tot*mh}px;background:${total?'#e9e9e9':hot?'var(--acc)':'#4a4a4a'};transform-origin:50% 100%;transform:scaleY(0)`);
 const vl=el('div','big',`left:${L-30}px;width:${bw+60}px;text-align:center;top:${base-(from+val)/tot*mh-46}px;font-size:32px;${hot?'color:var(--acc)':''}`,esc(NF(val,decs(val))+(u?' '+u:'')));const lb=el('div','lab',`left:${L-26}px;width:${bw+52}px;text-align:center;top:${base+14}px;font-size:20px;letter-spacing:1px`,esc(lbl));v.append(b,vl,lb);fit(lb,20,13,54,bw+52);bars.push({b,vl,lb})};
-mk(0,d.l||'',tot,0,0,1);I.forEach((x,i)=>{const val=N(x[1]);acc+=val;mk(i+1,x[0],val,tot-acc,x[2]==1,0)});
+mk(0,d.l||'',tot,0,0,1);I.forEach((x,i)=>{const val=N(x[1]);acc+=val;mk(i+1,x[0],val,Math.max(0,tot-acc),x[2]==1,0)});
 const ax=el('div','',`position:absolute;left:0;top:${base}px;width:864px;height:3px;background:#fff;transform-origin:0 0;transform:scaleX(0)`);v.append(ax);
 return (t,st)=>{ax.style.transform=`scaleX(${E(st(0,.5))})`;bars.forEach((o,i)=>{const q=E(st(.3+i*.5,.5));o.b.style.transform=`scaleY(${q})`;show(o.vl,st(.5+i*.5,.4),8);show(o.lb,st(.3+i*.5,.4),0)})}};
 // ---------- lievik: z koľkých ľudí sa stane koľko zákazníkov ----------

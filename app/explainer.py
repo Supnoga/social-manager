@@ -64,7 +64,7 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 Optional on every element: "c":1 (red highlight) or 2 (grey), "a":"spin" / "shake" / "pulse" / "float" / "flow" (moving dots along a line or arrow; may combine like "spin shake"; a turbine always spins), "at":0,1,2.. (step when it appears, so the drawing builds up while the voice explains), "l":"label under it".
 A drawing MUST be built from real objects (turbine, icons); lines, arrows, circles, rectangles and texts are only helpers (ground line, frame, highlight ring, pointer). Never let a bare circle, rectangle or line stand for a real thing: if there is no icon for the thing, use "scene", "hero" or a number diagram instead. Objects are big (icons 70-110 px, turbines 130-180 px high), 2-4 objects per drawing.
 Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Never put a text on top of a line, arrow or shape or on another text: place it beside with a clear gap (texts are centered on their x). Something must MOVE in every drawing (spin, shake, flow, pulse) and it must show the exact thing the voice is describing at that moment: the machine, the part, the before and after, what goes in and what comes out.
-{"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
+{"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Best with 2-4 of these, which are drawn as real figures and buildings with coins, data or goods travelling between them: user, people, phone, tv, laptop, wifi, house, city, store, bank, factory, server, cloud, document, mail, calendar, wallet, coins, banknote, piggybank, pricetag, lock, shield, key, chart, growth, package, truck, plane, ship, globe, clock, idea, chip, check, cross; say in each arrow label what moves (pays rent, sends data, ships goods). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
 {"k":"map","c":["EG","SD"],"p":["Cairo"],"r":[["Cairo","Aswan"]],"v":"Nile","l":"optional 1-3 word tag"} = real animated map: the globe turns and zooms in, countries light up with their flags. c = ISO 2-letter codes (first = main) or a region (EU, Middle East, Africa, Balkans...), p = max 4 real cities, r = routes: ["Cairo","London"] is a straight flight line; a ship route lists sea waypoints between the ports, e.g. ["Shanghai","South China Sea","Singapore Strait","Sri Lanka South","Bab el Mandeb","Red Sea","Suez Canal","Crete South","Sicily Channel","Strait of Gibraltar","Cape Finisterre","English Channel","Rotterdam"] (other points: Strait of Malacca, Hormuz, Persian Gulf, Cape of Good Hope, Panama Canal, Caribbean, Atlantic, Pacific, Bosporus, Black Sea, Danish Straits, Baltic Sea, North Sea, Taiwan Strait), v = river or canal. Only real places, all fields except c optional. Use "map" EVERY time the voice names a country, region, city, river, sea route or border: it beats all other rules.
 {"k":"timeline","i":[["1869","Suez Canal opens"],...max 5]} (history, dates) | {"k":"line","u":"unit","i":[["2000",12],["2010",30],...max 10]} (change over time)
 PRIORITY: the picture must SHOW what the voice says at that moment. A machine, device or process being explained -> "mech" (ready animated cutaway) when one fits, otherwise "svg" (a cutaway you draw for this scene); a place -> "map"; a spoken number -> a number diagram; things passing something to each other -> "scene"; "draw" only to compare objects side by side; "hero"/"text" only for the hook or the closing line. Never just a spinning icon of the thing.
@@ -719,9 +719,9 @@ const hot=pt.y<112&&pt.x>432||pt.x>640||pt.y>480&&pt.x>432;c.setAttribute('fill'
 V.bars=(v,d)=>{const I=(d.i||[]).slice(0,4);const n=I.length||1,max=Math.max(...I.map(x=>N(x[1])),1),bw=Math.min(170,680/n),gap=(864-bw*n)/(n+1);
 const base=440,mh=360;const s=svg(864,560,`<path class="d ax" pathLength="1" d="M0 ${base} H864" stroke="#fff" stroke-width="3"/>`);v.append(s);
 const it=I.map((x,i)=>{const L=gap+i*(bw+gap),last=i==n-1;const r=el('div','',`position:absolute;left:${L}px;width:${bw}px;bottom:${560-base}px;height:0;background:${last?'var(--acc)':i%2?'#e9e9e9':'#3b3b3b'}`);
-const val=el('div','big',`left:${L-40}px;width:${bw+80}px;text-align:center;font-size:40px;${last?'color:var(--acc)':''}`);const lb=el('div','lab',`left:${L-30}px;width:${bw+60}px;top:${base+18}px;text-align:center`,esc(x[0]));
+const vw=Math.min(bw+80,bw+gap-10),lw=Math.min(bw+60,bw+gap-12);const val=el('div','big',`left:${L+bw/2-vw/2}px;width:${vw}px;text-align:center;white-space:nowrap;font-size:40px;${last?'color:var(--acc)':''}`,esc(NF(N(x[1]),decs(x[1]))+(d.u?' '+d.u:'')));const lb=el('div','lab',`left:${L+bw/2-lw/2}px;width:${lw}px;top:${base+18}px;text-align:center`,esc(x[0]));
 const fu=d.fl&&d.fl[i];if(fu){const f=el('img','',`position:absolute;left:${L+bw/2-33}px;top:${base+16}px;width:66px;height:49px;border-radius:4px;object-fit:cover;box-shadow:0 2px 10px rgba(0,0,0,.6)`);f.src=fu;v.append(f);lb.style.top=(base+76)+'px'}
-v.append(r,val,lb);fit(lb,28,16,70);return {r,val,lb,v:N(x[1]),h:N(x[1])/max*mh,dec:decs(x[1])}});
+v.append(r,val,lb);fit(lb,28,13,fu?44:70);fit(val,40,18,60);return {r,val,lb,v:N(x[1]),h:N(x[1])/max*mh,dec:decs(x[1])}});
 return (t,st)=>{const ax=s.querySelector('.ax');ax.style.strokeDasharray='1 1';ax.style.strokeDashoffset=1-st(0,.6);
 it.forEach((o,i)=>{const p=st(.4+i*.9,.9);o.r.style.height=(E(p)*o.h)+'px';o.val.style.top=(base-E(p)*o.h-52)+'px';o.val.textContent=NF(o.v*E(p),o.dec)+(d.u?' '+d.u:'');o.val.style.opacity=cl(p*3);show(o.lb,st(.4+i*.9,.5),0)})}};
 V.calc=(v,d)=>{const R=(d.r||[]).slice(0,4);const rh=Math.min(130,540/Math.max(1,R.length));
@@ -1072,19 +1072,19 @@ def thumb_index(scenes, sc_data, want=None):
 EVENTS = {}   # cesta videa -> [(druh zvuku, čas)] z posledného skladania
 QA = {}       # cesta videa -> výsledok kontroly pred zverejnením
 WEAK_MAX = 0.4    # najviac toľko scén smie byť „slabých“ (ikony, text, zoznam)
-EMPTY_MIN = 0.012  # scéna, kde je v strede obrazu menej než toľko svietiacich bodov, je prázdna
+EMPTY_MIN = 0.006   # prázdna scéna má 0 až 0,3 %; riedka tabuľka s dvoma riadkami textu okolo 1 % (pri 1,2 % padali dobré videá na hrane merania)
 
 
 def _coverage(jpg, wide):
     """Koľko z plochy obrazu scény (bez nadpisu a titulkov) naozaj niečo ukazuje (0–1)."""
     try:
         import io
-        from PIL import Image
-        im = Image.open(io.BytesIO(jpg)).convert("L")
+        from PIL import Image, ImageChops
         box = (400, 290, 1520, 960) if wide else (30, 560, 1050, 1290)
-        im = im.crop(box).resize((204, 140))
-        px = im.getdata()
-        return sum(1 for v in px if v > 70) / len(px)
+        r, g, bl = Image.open(io.BytesIO(jpg)).convert("RGB").crop(box).resize((204, 140)).split()
+        # najsvetlejšia zložka farby, nie jas: červená či modrá farba kanála má nízky jas a obraz v nej by sa nerátal
+        h = ImageChops.lighter(ImageChops.lighter(r, g), bl).histogram()
+        return sum(h[71:]) / max(1, sum(h))
     except Exception:
         return 1.0
 
@@ -1165,7 +1165,10 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     topic = auto_visual.topic(" . ".join([text] + [f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''}" for sc in scenes]), title, strict=True)
     for i, (sc, (t0, t1)) in enumerate(zip(scenes, times)):
         spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
-        v = auto_visual.upgrade(board_of(sc), sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text,
+        b0 = board_of(sc)
+        if b0.get("k") == "svg" and not topic:   # kresba od AI sa neukazuje: video nie je o stroji s presným modelom, scéna dostane obraz odhadnutý z textu
+            b0 = guess(sc.get("onscreen") or "", sc.get("visual") or "")
+        v = auto_visual.upgrade(b0, sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text,
                                 topic=topic, last=i == len(scenes) - 1 and len(scenes) > 2)
         prev = v.get("m") if v.get("k") == "mech" else None
         v = prepare(v, lang)
@@ -1236,6 +1239,9 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             probe = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .7) * fps)): k for k, d in enumerate(sc_data)}
             probe2 = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .32) * fps)): k for k, d in enumerate(sc_data)}
             cover, over = {}, {}
+            # záverečný odjazd kamery (prehľad všetkých scén naraz) je zámerný: počas neho sa prekrývanie nemeria, inak padne skoro každé dlhé video na poslednej scéne
+            ld = sc_data[-1]["t1"] - sc_data[-1]["t0"] if sc_data else 0
+            zo0 = total - min(3.2, max(1.8, ld * .5)) if len(sc_data) > 2 and not loop else 1e9
             for i in range(n):
                 if check_only and i not in probe and i not in probe2:
                     continue
@@ -1243,7 +1249,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
                 shot = pg.screenshot(type="jpeg", quality=90)
                 if i in probe:   # jedna snímka z každej scény na kontrolu pred zverejnením
                     cover[probe[i]] = _coverage(shot, wide)
-                if i in probe or i in probe2:   # dve snímky z každej scény: neleží niečo cez seba?
+                if (i in probe or i in probe2) and i / fps < zo0:   # dve snímky z každej scény: neleží niečo cez seba?
                     _overlap(pg, over, probe.get(i, probe2.get(i)))
                 if proc:
                     proc.stdin.write(shot)
