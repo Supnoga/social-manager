@@ -79,6 +79,24 @@ def _uploads():
 RELEASE_RESERVE = 10  # nahrávanie dopredu nechá ~16 000 jednotiek na zverejnenie, playlisty a odkazy (tie sa nepočítajú)
 
 
+def _pending_uploads():
+    """Koľko YouTube videí ešte čaká na nahratie do najbližšieho obnovenia kvóty (9:00). Titulky a preklady názvov
+    nesmú zobrať kvótu, ktorú tieto videá potrebujú (15.11.: titulky zjedli celý deň a nové videá nešli von)."""
+    import datetime as dt
+    now = dt.datetime.now()
+    reset = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    if reset <= now:
+        reset += dt.timedelta(days=1)
+    r = db.one("""SELECT COUNT(*) n FROM posts p JOIN accounts a ON a.id=p.account_id WHERE a.platform='youtube'
+                  AND p.status IN ('queued','review') AND p.scheduled_at < ?""", (reset.strftime("%Y-%m-%d %H:%M:%S"),))
+    return int((r or {}).get("n") or 0)
+
+
+def spare_ok(account, cost=1):
+    """Je voľná kvóta na titulky/preklady aj po odrátaní čakajúcich videí (+ rezerva 5)?"""
+    return _uploads().get(str(_client_idx(account)), 0) + cost + _pending_uploads() + 5 <= DAILY_UPLOADS
+
+
 def quota_ok(account, reserve=0):
     return _uploads().get(str(_client_idx(account)), 0) < DAILY_UPLOADS - reserve
 
@@ -398,7 +416,7 @@ def caption_one():
                 f.unlink(missing_ok=True)
             continue
         acc = dict(post)
-        if _uploads().get(str(_client_idx(acc)), 0) + CAPTION_COST > DAILY_UPLOADS:
+        if not spare_ok(acc, CAPTION_COST):
             continue
         lf = f.with_suffix(".lang")
         lang = lf.read_text().strip() if lf.exists() else "en"
@@ -505,7 +523,7 @@ def localize_one():
             continue
         acc = {k: r[k] for k in r.keys() if k not in ("pid", "yt", "vid")}
         acc["id"] = r["account_id"] if "account_id" in r.keys() else acc.get("id")
-        if not quota_ok(acc):
+        if not spare_ok(acc):
             continue
         video = db.one("SELECT * FROM videos WHERE id=?", (r["vid"],))
         tok = access_token(acc)
