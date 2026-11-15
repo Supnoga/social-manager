@@ -1,7 +1,7 @@
 {
  "kinds": {},
  "pack": {
-  "mech2": "{\"k\":\"mech\",\"m\":\"lever\",\"n\":[3,1],\"l\":[\"a\",\"b\"]} m: gearbox n=teeth|hydraulic n=areas|lever n=arms effort,load|pulley n=ropes|transformer n=[N1,N2,V1]|trajectory n=[m/s,°]|circuit n=[V,Ω]|submarine n=depth|elevator n=kg|generator motor rocket fission rotor conveyor solar; l=parts"
+  "mech2": "{\"k\":\"mech\",\"m\":\"gearbox\",\"l\":[\"a\",\"b\"]} m: gearbox|hydraulic|submarine|elevator|solar|gears|piston|rotary|turbo; l=parts"
  },
  "channels": {
   "machines": [
