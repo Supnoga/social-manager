@@ -850,7 +850,11 @@ def _fix_one(vid):
     if not v or not v["script_id"]:
         raise RuntimeError("video bez scenára")
     keep = db.get_setting("fixlogo_hold", {}) or {}
-    # 1) súkromné/naplánované kópie na YouTube zmazať (ešte nie sú verejné)
+    if any(_is_public(p) for p in db.q("SELECT * FROM posts WHERE video_id=?", (vid,))):
+        raise RuntimeError("medzitým sa zverejnilo")
+    # 1) najprv zložiť nanovo (hlas aj scenár ostávajú); keď sa to nepodarí, na YouTube sa nič nezmaže
+    r = RENDER(int(v["script_id"]), {})
+    # 2) až teraz súkromné/naplánované kópie na YouTube zmazať (ešte nie sú verejné)
     for p in db.q("SELECT p.*, a.platform FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.video_id=?", (vid,)):
         if _is_public(p):
             raise RuntimeError("medzitým sa zverejnilo")
@@ -859,8 +863,6 @@ def _fix_one(vid):
             acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
             youtube.delete_video(acc, yid)
             db.run("UPDATE posts SET stash_id='', external_id='', url='' WHERE id=?", (p["id"],))
-    # 2) zložiť nanovo (hlas aj scenár ostávajú, logo už v obraze na správnom mieste)
-    r = RENDER(int(v["script_id"]), {})
     new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
     old = Path(v["file_path"] or "")
     db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0 WHERE id=?",
