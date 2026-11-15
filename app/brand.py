@@ -975,12 +975,25 @@ def unlogo_blocked(video_id):
     return int(video_id or 0) in set(db.get_setting("unlogo_todo", []) or [])
 
 
+def _has_logo(ff, src, box):
+    """Je v rohu naozaj logo? (pozadie je tmavé, logo/podložka svetlé) Nové videá ho už nemajú: tie sa nechajú tak."""
+    x, y, w, h = box
+    r = subprocess.run([ff, "-v", "error", "-ss", "3", "-i", str(src), "-frames:v", "1", "-vf", f"crop={w}:{h}:{x}:{y}",
+                        "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, stdin=subprocess.DEVNULL)
+    px = r.stdout or b""
+    if not px:
+        return True   # nevieme: radšej opraviť
+    return sum(1 for c in px if c > 150) > len(px) * .03
+
+
 def _unlogo_one(v):
     from . import media
     ff = media.ffmpeg()
     src = Path(v["file_path"])
     wide = (v.get("fmt") or "") == "long"
     box = _logo_box(v["project_id"], wide)
+    if not box or not _has_logo(ff, src, box):
+        return False
     tmp = src.with_name(src.stem + ".unlogo.mp4")
     vf = []
     if box:
@@ -1049,6 +1062,77 @@ def unlogo_api(data: dict = Body(default={})):
     return unlogo([int(p) for p in data.get("project_ids", [])])
 
 
-@router.get("/api/brand/unlogo")
+@router.get("/api/unlogo")
 def unlogo_status():
     return dict(_unlogo_state, todo=len(db.get_setting("unlogo_todo", []) or []))
+
+
+# ---------- mapy: kamera netrafila krajiny na severe (1.76.1) ----------
+# Do 1.76.0 mala mapa strop zemepisnej šírky stredu záberu 60°, takže Island, Nórsko, Fínsko, Grónsko… pri
+# priblížení ušli hore z obrazu. Tu sa nájdu hotové neuverejnené videá s takou mapou a zložia sa nanovo (len Mac, bez AI).
+_LAT = {"IS": (63.3, 66.6), "NO": (58.0, 71.2), "FI": (59.8, 70.1), "SE": (55.3, 69.1), "GL": (59.8, 83.6),
+        "RU": (41.2, 81.9), "CA": (41.7, 83.1), "SJ": (76.4, 80.8), "FO": (61.4, 62.4), "AX": (59.9, 60.5)}
+
+
+def _north_map(scenes):
+    for sc in scenes or []:
+        d = ((sc.get("anim") or {}).get("d") or {}) if isinstance(sc, dict) else {}
+        if d.get("k") != "map":
+            continue
+        cs = [str(c).upper() for c in (d.get("c") or [])] + ([str(d["onto"]).upper()] if d.get("onto") else [])
+        if not any(c in _LAT for c in cs):
+            continue
+        lo = min(_LAT.get(c, (45, 45))[0] for c in cs)
+        hi = max(_LAT.get(c, (45, 45))[1] for c in cs)
+        if (lo + hi) / 2 > 59:
+            return True
+    return False
+
+
+def remap_pending(pids):
+    out = []
+    for pid in pids:
+        for v in db.q("""SELECT v.*, s.scenes sc FROM videos v JOIN scripts s ON s.id=v.script_id WHERE v.project_id=?
+                         AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND (COALESCE(p.stash_id,'')!=''
+                              OR COALESCE(p.external_id,'')!='' OR p.status='uploading'))""", (pid,)):
+            if v["id"] in set(db.get_setting("remap_done", []) or []) or not v["file_path"] or not Path(v["file_path"]).exists():
+                continue
+            try:
+                if _north_map(json.loads(v["sc"] or "[]")):
+                    out.append(v)
+            except Exception:
+                pass
+    return out
+
+
+def remap(pids):
+    todo = remap_pending(pids)
+    db.set_setting("unlogo_todo", sorted(set(db.get_setting("unlogo_todo", []) or []) | {r["id"] for r in todo}))
+
+    def run():
+        with _unlogo_busy:   # po jednom, nie súčasne s odstraňovaním loga
+            for v in todo:
+                try:
+                    r = RENDER(int(v["script_id"]), {})
+                    new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
+                    old = Path(v["file_path"])
+                    db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0 WHERE id=?",
+                           (new["file_path"], new["size"], new["duration"], v["id"]))
+                    db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                    for f in (old, old.with_suffix(".jpg")):
+                        if f != Path(new["file_path"]) and f.exists():
+                            f.unlink(missing_ok=True)
+                    db.set_setting("remap_done", (db.get_setting("remap_done", []) or []) + [v["id"]])
+                    db.set_setting("unlogo_done", (db.get_setting("unlogo_done", []) or []) + [v["id"]])
+                    db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != v["id"]])
+                except Exception as e:
+                    _unlogo_state["errors"].append([v["id"], "mapa: " + str(e)[:300]])
+                    print("mapa nanovo:", v["id"], e)
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"started": len(todo), "ids": [v["id"] for v in todo]}
+
+
+@router.post("/api/brand/remap")
+def remap_api(data: dict = Body(default={})):
+    return remap([int(p) for p in data.get("project_ids", [])])

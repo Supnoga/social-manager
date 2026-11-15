@@ -21,7 +21,7 @@ let fitG=geoms,FARK=1;if(ONTO&&SF.length){const M0=SF.find(f=>f.id==d.main)||SF[
 const FC={type:'GeometryCollection',geometries:fitG};const gb=d3.geoBounds(FC);let lo0=gb[0][0],lo1=gb[1][0];if(lo1<lo0)lo1+=360;
 const cen=gb[1][0]-gb[0][0]>300&&gb[0][0]<gb[1][0]?d3.geoCentroid(FC):[((lo0+lo1)/2+540)%360-180,(gb[0][1]+gb[1][1])/2];
 const proj=d3.geoOrthographic().clipAngle(90).precision(.4),path=d3.geoPath(proj,ctx);
-const S0=MH*.46,ROT=[-cen[0],-Math.max(-60,Math.min(60,cen[1]))];
+const S0=MH*.46,ROT=[-cen[0],-Math.max(-85,Math.min(85,cen[1]))];
 proj.rotate(ROT).scale(1).translate([0,0]);const bb=d3.geoPath(proj).bounds(FC);const bw=bb[1][0]-bb[0][0],bh=bb[1][1]-bb[0][1];
 const onlyPts=!SF.length&&!RV.length&&RT.length==0;
 let SF_=bw>1e-6||bh>1e-6?Math.min((MW-150)/Math.max(bw,1e-6),(MH-130)/Math.max(bh,1e-6)):2400;
@@ -84,7 +84,7 @@ const MW=864,MH=560,R=1.6,OY=0;const cv=el('canvas','',`position:absolute;left:0
 const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.scale(R,R);ctx.lineJoin='round';
 const HL=[].concat(...FR.map(f=>f.hl));const FC={type:'FeatureCollection',features:HL.length?HL:FR[0].fs};
 const gb=d3.geoBounds(FC);let lo0=gb[0][0],lo1=gb[1][0];if(lo1<lo0)lo1+=360;const cen=HL.length?[((lo0+lo1)/2+540)%360-180,(gb[0][1]+gb[1][1])/2]:[15,40];
-const proj=d3.geoOrthographic().clipAngle(90).precision(.5),path=d3.geoPath(proj,ctx);const ROT=[-cen[0],-Math.max(-60,Math.min(60,cen[1]))];proj.rotate(ROT).scale(1).translate([0,0]);
+const proj=d3.geoOrthographic().clipAngle(90).precision(.5),path=d3.geoPath(proj,ctx);const ROT=[-cen[0],-Math.max(-85,Math.min(85,cen[1]))];proj.rotate(ROT).scale(1).translate([0,0]);
 const bb=d3.geoPath(proj).bounds(FC);const S0=MH*.46;let SF_=Math.min((MW-120)/Math.max(1e-6,bb[1][0]-bb[0][0]),(MH-110)/Math.max(1e-6,bb[1][1]-bb[0][1]));SF_=Math.max(S0,Math.min(3600,SF_));
 const ip=d3.geoInterpolate([-(ROT[0]+50),-ROT[1]*.35],[-ROT[0],-ROT[1]]);const GR=d3.geoGraticule10();
 const yt=el('div','big',`left:0;top:${OY+4}px;font-size:58px;color:var(--acc);white-space:nowrap;opacity:0;text-shadow:0 2px 12px #000`);v.append(yt);
