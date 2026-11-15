@@ -49,7 +49,10 @@ def _cover(title):
 def build_project(pid, start, days=30, offset=0):
     machine = _machine_project(pid)
     picked, rest, gaps = [], [], {}
+    bad = set(db.get_setting("month_plan_bad", []) or [])   # neprešli kontrolou obrazu vopred
     for r in _longs(pid):
+        if r["id"] in bad:
+            continue
         c, m = _cover(r["title"] or "")
         if c == "gap":   # stroj, ku ktorému model ešte nie je: nepoužije sa
             gaps[m] = gaps.get(m, 0) + 1

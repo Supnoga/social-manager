@@ -1275,10 +1275,28 @@ def _mp_ok(r):
     return bool((r or {}).get("qa") and r["qa"].get("ok"))
 
 
+def _mp_precheck(iid):
+    """Rýchla kontrola obrazu bez hlasu a bez skladania (1–2 min). Vráti (ok, dôvod)."""
+    s = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    if not s:
+        return True, ""
+    try:
+        proj = db.one("SELECT color, design_colors FROM projects WHERE id=?", (s["project_id"],)) or {}
+        colors = json.loads(proj.get("design_colors") or "[]") or [proj.get("color") or "#FF6B00"]
+        wide = ((db.one("SELECT format FROM ideas WHERE id=?", (iid,)) or {}).get("format") == "long")
+        qa = explainer.make(explainer.localized_scenes(s), None, VIDEO_DIR / f"check{iid}.mp4", brand.accent(colors, proj.get("color")),
+                            s["lang"], s["voiceover"], wide=wide, title=s.get("title") or "",
+                            guide=bool(db.get_setting("guide", True)), detail=_detail(), check_only=True)
+    except Exception as e:
+        return True, str(e)[:100]   # kontrolu sa nepodarilo urobiť: rozhodne až kontrola po zložení
+    return bool((qa or {}).get("ok")), "; ".join((qa or {}).get("why") or [])[:200]
+
+
 def _mp_long(slot, tried):
     from . import monthplan
     pid, iid = slot["pid"], slot["idea"]
-    for _ in range(4):
+    tried |= set(db.get_setting("month_plan_bad", []) or [])
+    for _ in range(10):
         if MPROD["stop"]:
             return None
         have = db.one("""SELECT v.status FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=?
@@ -1298,6 +1316,14 @@ def _mp_long(slot, tried):
         try:
             if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
                 content.run_task("scripts", {"idea_ids": [iid]})
+            ok, why = _mp_precheck(iid)
+            if not ok:   # obraz by neprešiel: nevyrába sa, ide ďalšia téma
+                bad = db.get_setting("month_plan_bad", []) or []
+                db.set_setting("month_plan_bad", sorted(set(bad) | {iid}))   # plán ju už neponúkne
+                MPROD["failed"].setdefault(str(pid), []).append({"idea": iid, "why": "kontrola vopred: " + why})
+                MPROD["log"].append(f"kanál {pid}: dlhé {iid} vopred neprešlo ({why})")
+                iid = 0
+                continue
             r = idea_produce_first(iid, {})
             if _mp_ok(r):
                 return iid
