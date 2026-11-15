@@ -166,16 +166,32 @@ def yt_key():
     return (db.get_setting("yt_api_key", "") or "").strip()
 
 
+# Radar smie z dennej kvóty YouTube (10 000 jednotiek, delí sa s nahrávaním) minúť len malú časť.
+# Nahrávanie má vždy prednosť: Radar + čísla v dashboarde spolu najviac ~8 %.
+RADAR_YT_DAILY = 500
+
+
+def _gday_start():
+    """Začiatok „Google dňa“ (polnoc v Kalifornii) v našom miestnom čase, napr. dnes 9:00."""
+    try:
+        from zoneinfo import ZoneInfo
+        pt = dt.datetime.now(ZoneInfo("America/Los_Angeles"))
+        since = pt - dt.timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second, microseconds=pt.microsecond)
+        return since.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return dt.date.today().strftime("%Y-%m-%d")
+
+
 def yt_units_today():
     return db.one("SELECT COALESCE(SUM(units),0) n FROM fetch_log WHERE source LIKE 'yt%' AND ts>=?",
-                  (dt.date.today().strftime("%Y-%m-%d"),))["n"]
+                  (_gday_start(),))["n"]
 
 
 def _yt(path, units=1, **params):
     if not yt_key():
         raise RuntimeError("Chýba YouTube API kľúč (Nastavenia → Radar)")
-    if yt_units_today() > 8000:
-        raise RuntimeError("Dnešná YouTube kvóta je takmer minutá")
+    if yt_units_today() + units > RADAR_YT_DAILY:
+        raise RuntimeError("Radar dnes minul svoj malý podiel kvóty YouTube (nahrávanie má prednosť), pokračuje zajtra po 9:00")
     r = httpx.get(f"https://www.googleapis.com/youtube/v3/{path}", params={**params, "key": yt_key()}, timeout=25)
     _log("yt_" + path.split("/")[0], json.dumps(params)[:100], r.status_code == 200, units)
     if r.status_code != 200:
