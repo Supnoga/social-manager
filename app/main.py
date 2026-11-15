@@ -1463,6 +1463,8 @@ def month_plan_produce(data: dict = Body(default={})):
     """Vyrobí videá v poradí mesačného plánu (s kontrolou obrazu). Nič nenahráva ani neplánuje."""
     if MPROD["running"]:
         return {"running": True}
+    if data.get("reset_bad"):   # po oprave kontroly: témy zamietnuté vopred sa skúsia znova
+        db.set_setting("month_plan_bad", [])
     MPROD.update(log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=bool(data.get("publish")))
     threading.Thread(target=_mp_run, args=(int(data.get("workers") or 3), data.get("until") or ""), daemon=True).start()
     return {"started": True}
