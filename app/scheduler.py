@@ -3,6 +3,7 @@ import os
 import random
 import threading
 import time
+import json
 import traceback
 from datetime import datetime, timedelta
 
@@ -147,6 +148,76 @@ def stash_one(post):
         state["current"] = None
 
 
+def _next_reset():
+    """Kedy sa obnoví denný limit YouTube (polnoc v Kalifornii), v našom miestnom čase."""
+    try:
+        from zoneinfo import ZoneInfo
+        la = ZoneInfo("America/Los_Angeles")
+        d = datetime.now(la).date() + timedelta(days=1)
+        return datetime(d.year, d.month, d.day, tzinfo=la).astimezone().replace(tzinfo=None)
+    except Exception:
+        return datetime.now().replace(hour=9, minute=0, second=0) + timedelta(days=1 if datetime.now().hour >= 9 else 0)
+
+
+def ahead_one():
+    """Oliver 15.11.: voľný zvyšok denného limitu nahrávania využiť na videá na ďalšie dni. Video sa nahrá súkromne
+    s časom zverejnenia (publishAt), YouTube ho zverejní sám v jeho deň. Prednosť majú všetky videá, ktoré majú ísť
+    von pred obnovením limitu (+ RELEASE_RESERVE), najbližšie dni idú prvé a v rámci dňa dlhé pred krátkymi.
+    Krátke sa dopredu nahrá, len keď dlhé video toho kanála v ten deň už nahraté je (bez dlhého nič nevyjde)."""
+    if not db.get_setting("ahead_upload", True):
+        return False
+    reset = _next_reset().strftime("%Y-%m-%d %H:%M:%S")
+    soon = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = db.q("""SELECT p.*, COALESCE(i.format,'short') fmt, substr(p.scheduled_at,1,10) day FROM posts p
+                   JOIN accounts a ON a.id=p.account_id LEFT JOIN videos v ON v.id=p.video_id
+                   LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
+                   WHERE p.status='queued' AND a.platform='youtube' AND COALESCE(p.stash_id,'')='' AND p.scheduled_at>=?
+                   ORDER BY substr(p.scheduled_at,1,10), COALESCE(i.format,'short')!='long', p.scheduled_at LIMIT 60""",
+                (max(reset, soon),))
+    for p in rows:
+        acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
+        vid = db.one("SELECT * FROM videos WHERE id=?", (p["video_id"],))
+        if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]):
+            continue
+        k = youtube._client_idx(acc)
+        need = 0
+        for r in db.q("""SELECT a.tokens FROM posts p JOIN accounts a ON a.id=p.account_id WHERE a.platform='youtube'
+                         AND p.status IN ('queued','uploading') AND COALESCE(p.stash_id,'')='' AND p.scheduled_at<?""", (reset,)):
+            try:
+                if int(json.loads(r["tokens"] or "{}").get("client", 0) or 0) == k:
+                    need += 1
+            except Exception:
+                pass
+        if not youtube.quota_ok(acc, reserve=need + youtube.RELEASE_RESERVE) or youtube.units_blocked(acc) \
+                or youtube.units_used(acc) + 150 + (need + youtube.RELEASE_RESERVE) * 110 > youtube.UNITS_LIMIT:
+            continue
+        if (p.get("error") or "").startswith("Nahratie dopredu:") and (p.get("updated_at") or "") > (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S"):
+            continue
+        if p["fmt"] != "long" and db.one("""SELECT 1 FROM posts p2 JOIN videos v2 ON v2.id=p2.video_id
+                   JOIN scripts s2 ON s2.id=v2.script_id JOIN ideas i2 ON i2.id=s2.idea_id
+                   WHERE p2.account_id=? AND substr(p2.scheduled_at,1,10)=? AND i2.format='long' AND p2.status!='done'""",
+                                         (p["account_id"], p["day"])):
+            continue
+        state["current"] = f"YouTube (dopredu na {p['day']}): {vid['title'] or vid['original_name']}"
+        try:
+            db.run("UPDATE posts SET status='uploading', attempts=attempts+1, updated_at=? WHERE id=?", (now_str(), p["id"]))
+            ext_id, url = youtube.upload(acc, vid, "private", publish_at=_utc(p["scheduled_at"]))
+            db.run("UPDATE posts SET status='done', external_id=?, url=?, error='', updated_at=? WHERE id=?",
+                   (str(ext_id), url or f"https://youtu.be/{ext_id}", now_str(), p["id"]))
+            return True
+        except Exception as e:
+            m = str(e)
+            if "quota" in m.lower() or "uploadLimitExceeded" in m:
+                youtube.units_block(acc)
+                m = "Dnešný limit YouTube je minutý, nahrá sa v jeho deň."
+            db.run("UPDATE posts SET status='queued', error=?, updated_at=? WHERE id=?", ("Nahratie dopredu: " + m[:600], now_str(), p["id"]))
+            traceback.print_exc()
+            return False
+        finally:
+            state["current"] = None
+    return False
+
+
 def stash_on():
     return (db.get_setting("night", {}) or {}).get("stash", True)
 
@@ -161,6 +232,11 @@ def tick():
                   ORDER BY scheduled_at LIMIT 5""", (now_str(),))
     for p in due:
         process_one(p)
+    if not due:
+        try:
+            ahead_one()
+        except Exception:
+            traceback.print_exc()
     if stash_on():
         # poradie: najbližší deň prvý a v rámci dňa dlhé videá pred krátkymi (bez dlhého videa krátke v ten deň nevyjdú)
         rows = db.q("""SELECT p.* FROM posts p JOIN accounts a ON a.id=p.account_id
