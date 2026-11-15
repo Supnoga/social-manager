@@ -1297,8 +1297,8 @@ def _mp_long(slot, tried):
     pid, iid = slot["pid"], slot["idea"]
     tried |= set(db.get_setting("month_plan_bad", []) or [])
     for _ in range(10):
-        if MPROD["stop"]:
-            return None
+        if MPROD["stop"] or (len(MPROD["failed"].get(str(pid), [])) >= 10 and str(pid) not in MPROD["first"]):
+            return None   # kanál, ktorému nič neprešlo: bez vhodného obrazu sa nevyrába (Oliver: radšej nerobiť)
         have = db.one("""SELECT v.status FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=?
                          ORDER BY v.status='ready' DESC LIMIT 1""", (iid,)) if iid else None
         if have and have["status"] == "ready" and iid not in tried:   # už vyrobené (napr. pred reštartom appky)
@@ -1307,7 +1307,8 @@ def _mp_long(slot, tried):
         if iid in tried or have:   # téma už išla (náhrada inde / neprešla kontrolou)
             iid = 0
         if not iid:
-            cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and monthplan._cover(r["title"] or "")[0] != "gap"]
+            cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and r["has_script"]   # len hotové scenáre (bez AI)
+                    and monthplan._cover(r["title"] or "")[0] != "gap"]
             cand.sort(key=lambda r: (monthplan._cover(r["title"] or "")[0] != "model", not r["has_script"], -r["score"]))
             if not cand:
                 return None
