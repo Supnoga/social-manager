@@ -41,7 +41,13 @@ def process_one(post):
     db.run("UPDATE posts SET status='uploading', attempts=attempts+1, updated_at=? WHERE id=?", (now_str(), post["id"]))
     state["current"] = f"{acc['platform']}: {vid['title'] or vid['original_name']}"
     try:
-        ext_id, url = UPLOADERS[acc["platform"]](acc, vid, post["privacy"])
+        ext_id = url = None
+        if acc["platform"] == "youtube" and post["attempts"] > 0:  # predošlý pokus sa prerušil: nie je už video na kanáli?
+            found = youtube.find_interrupted(acc, vid)
+            if found:
+                ext_id, url = youtube.release(acc, found) if post["privacy"] == "public" else (found, f"https://youtu.be/{found}")
+        if not ext_id:
+            ext_id, url = UPLOADERS[acc["platform"]](acc, vid, post["privacy"])
         db.run("UPDATE posts SET status='done', external_id=?, url=?, error='', updated_at=? WHERE id=?",
                (str(ext_id), url or "", now_str(), post["id"]))
         if acc["platform"] == "youtube":
@@ -52,13 +58,14 @@ def process_one(post):
                 print("Odkaz na podobné video:", e2)
     except Exception as e:
         msg = str(e)[:800]
+        temporary = any(w in msg for w in ("HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504", "dočasne"))
         if acc["platform"] == "youtube" and ("quotaExceeded" in msg or "uploadLimitExceeded" in msg or "quota" in msg.lower()):
             nxt = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=random.randint(0, 59), second=0)
             db.run("UPDATE posts SET status='queued', attempts=attempts-1, scheduled_at=?, error=?, updated_at=? WHERE id=?",
                    (nxt.strftime("%Y-%m-%d %H:%M:%S"), "Dnešný limit YouTube je minutý. Nahrá sa samo zajtra ráno, netreba nič robiť.", now_str(), post["id"]))
             return
         attempts = post["attempts"] + 1
-        if attempts < 3 and "vypršalo" not in msg and "Najprv" not in msg:
+        if (temporary and attempts < 12) or (attempts < 3 and "vypršalo" not in msg and "Najprv" not in msg):
             retry = (datetime.now() + timedelta(minutes=15 * attempts)).strftime("%Y-%m-%d %H:%M:%S")
             db.run("UPDATE posts SET status='queued', scheduled_at=?, error=?, updated_at=? WHERE id=?",
                    (retry, "Skúsim znova: " + msg, now_str(), post["id"]))
@@ -82,6 +89,8 @@ def release_one(post):
         return
     when = post["scheduled_at"]
     future = datetime.fromisoformat(when) > datetime.now() + timedelta(minutes=10)
+    if youtube.units_blocked(acc):  # Google dnes už odmietol pre limit: skúsi sa až po obnovení o 9:00
+        return
     try:
         ext_id, url = youtube.release(acc, post["stash_id"], _utc(when) if future else None)
         db.run("UPDATE posts SET status='done', external_id=?, url=?, error='', updated_at=? WHERE id=?",
@@ -98,6 +107,7 @@ def release_one(post):
         if "notFound" in msg or "404" in msg:  # niekto video na YouTube zmazal: nahrá sa nanovo, ak je súbor
             db.run("UPDATE posts SET stash_id='', error=? WHERE id=?", ("Súkromné video na YouTube chýba, nahrá sa znova", post["id"]))
         elif "quota" in msg.lower():  # denný limit: počká na ďalší deň, nepočíta sa ako neúspešný pokus
+            youtube.units_block(acc)
             db.run("UPDATE posts SET error=?, updated_at=? WHERE id=?",
                    ("Dnešný limit YouTube je minutý, zverejní sa po jeho obnovení.", now_str(), post["id"]))
         elif post["attempts"] >= 5:
@@ -114,8 +124,13 @@ def stash_one(post):
     if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or not youtube.quota_ok(acc, reserve=youtube.RELEASE_RESERVE):
         return False
     state["current"] = f"YouTube (súkromne): {vid['title'] or vid['original_name']}"
+    retry = (post.get("error") or "").startswith("Súkromné nahratie:")
     try:
-        ext_id, _ = youtube.upload(acc, vid, "private")
+        # značka pre prípad pádu appky uprostred nahrávania: ďalší pokus najprv pozrie, či video na kanáli už nie je
+        db.run("UPDATE posts SET error='Súkromné nahratie: prebieha', updated_at=? WHERE id=?", (now_str(), post["id"]))
+        ext_id = youtube.find_interrupted(acc, vid) if retry else ""
+        if not ext_id:
+            ext_id, _ = youtube.upload(acc, vid, "private")
         db.run("UPDATE posts SET stash_id=?, error='', updated_at=? WHERE id=?", (str(ext_id), now_str(), post["id"]))
         # projekty, ktoré Oliver pustil bez Kontroly: po súkromnom nahratí rovno naplánovať (YouTube ich zverejní sám)
         if vid["project_id"] in {int(x) for x in (db.get_setting("auto_approve_projects", []) or [])}:
@@ -147,10 +162,13 @@ def tick():
     for p in due:
         process_one(p)
     if stash_on():
-        rows = db.q("""SELECT p.* FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.status='review'
+        # poradie: najbližší deň prvý a v rámci dňa dlhé videá pred krátkymi (bez dlhého videa krátke v ten deň nevyjdú)
+        rows = db.q("""SELECT p.* FROM posts p JOIN accounts a ON a.id=p.account_id
+                       LEFT JOIN videos v ON v.id=p.video_id LEFT JOIN scripts s ON s.id=v.script_id
+                       LEFT JOIN ideas i ON i.id=s.idea_id WHERE p.status='review'
                        AND a.platform='youtube' AND COALESCE(p.stash_id,'')=''
                        AND NOT (COALESCE(p.error,'') LIKE 'Súkromné nahratie:%' AND p.updated_at > ?)
-                       ORDER BY p.scheduled_at LIMIT 10""", ((datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"),))
+                       ORDER BY substr(p.scheduled_at,1,10), COALESCE(i.format,'short')!='long', p.scheduled_at LIMIT 10""", ((datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"),))
         done = 0
         for p in rows:
             if done < 2 and stash_one(p):
@@ -168,9 +186,44 @@ def tick():
         except Exception:
             traceback.print_exc()
     try:
+        if datetime.now().hour >= 3:
+            backup_db()
+    except Exception:
+        traceback.print_exc()
+    try:
         nightly.awake_tick(busy=bool(state["current"]))
     except Exception:
         traceback.print_exc()
+
+
+BACKUP_DIR = db.DATA_DIR / "zalohy"
+
+
+def backup_db(keep=5):
+    """Raz denne bezpečná kópia databázy (pripojenia kanálov, plány, nastavenia) do data/zalohy, posledných 5 dní.
+    Vyrovnávacia pamäť AI odpovedí sa nezálohuje (dá sa kedykoľvek vytvoriť znova a zaberá najviac)."""
+    import sqlite3
+    day = datetime.now().strftime("%Y-%m-%d")
+    if db.get_setting("backup_day", "") == day:
+        return
+    db.set_setting("backup_day", day)
+    BACKUP_DIR.mkdir(exist_ok=True)
+    out = BACKUP_DIR / f"app-{day}.db"
+    src = sqlite3.connect(f"file:{db.DB_PATH}?mode=ro", uri=True, timeout=30)
+    dst = sqlite3.connect(out)
+    try:
+        src.backup(dst)
+        try:
+            dst.execute("DELETE FROM ai_cache")
+            dst.commit()
+            dst.execute("VACUUM")
+        except Exception:
+            pass
+    finally:
+        dst.close()
+        src.close()
+    for f in sorted(BACKUP_DIR.glob("app-*.db"))[:-keep]:
+        f.unlink(missing_ok=True)
 
 
 def loop():

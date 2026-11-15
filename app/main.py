@@ -282,7 +282,7 @@ def api_settings(data: dict = Body(...)):
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
-               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce", "night", "ai_effort", "auto_approve_projects", "yt_captions", "yt_project_client"}
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce", "night", "ai_effort", "auto_approve_projects", "yt_captions", "yt_project_client", "autostart"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -367,6 +367,25 @@ def video_save_copy(vid: int, data: dict = Body(default={})):
     return {"ok": True, "path": str(dest)}
 
 
+def _yt_unplan(where, args=()):
+    """Pred zmazaním v appke: videá, ktoré už ležia na YouTube a ešte nie sú verejné (majú tam nastavený čas
+    zverejnenia), tam ostanú súkromné, aby nevyšli samy. Na YouTube sa nič nemaže. Vráti počet."""
+    n = 0
+    now = scheduler.now_str()
+    for p in db.q(f"""SELECT p.id, p.account_id, p.status, p.scheduled_at, COALESCE(p.external_id,'') ext, COALESCE(p.stash_id,'') stash
+                      FROM posts p JOIN accounts a ON a.id=p.account_id LEFT JOIN videos v ON v.id=p.video_id
+                      WHERE a.platform='youtube' AND p.status='done' AND p.scheduled_at>? AND ({where})""", (now, *args)):
+        yid = p["ext"] or p["stash"]
+        if not yid:
+            continue
+        try:
+            youtube.unschedule(db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],)), yid)
+            n += 1
+        except Exception as e:
+            print("zrušenie plánu na YouTube:", yid, str(e)[:200])
+    return n
+
+
 # ---------------- Projekty ----------------
 PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned", "brand_tags"]
 
@@ -417,6 +436,7 @@ def update_project(pid: int, data: dict = Body(...)):
 
 @app.delete("/api/projects/{pid}")
 def delete_project(pid: int):
+    _yt_unplan("v.project_id=?", (pid,))
     for t in ("ideas", "scripts", "videos"):
         db.run(f"DELETE FROM {t} WHERE project_id=?", (pid,))
     db.run("DELETE FROM projects WHERE id=?", (pid,))
@@ -1150,7 +1170,7 @@ def _prod_pick(pid, fmt, n, min_score=0):
 def _produce_once():
     import time as _t
     cfg = db.get_setting("auto_produce", {}) or {}
-    if not cfg or PROD["running"] or AUTO["running"] or db.get_setting("paused", False) or _t.time() < PROD["wait_until"]:
+    if not cfg or PROD["running"] or AUTO["running"] or db.get_setting("paused", False) or _t.time() < PROD["wait_until"] or PROD.get("drain"):
         return
     if any(not j.get("done") for j in JOBS.values()):
         return  # používateľ práve niečo vyrába
@@ -1171,7 +1191,7 @@ def _produce_once():
             try:
                 while True:
                     with qlock:
-                        if not queue:
+                        if not queue or PROD.get("drain"):
                             return
                         pid_s, c = queue.pop(0)
                     if cap and _long_today() >= cap:
@@ -1419,7 +1439,7 @@ def _mp_run(workers, until):
             return "wait" if tasks else None
 
     def work():
-        while not MPROD["stop"]:
+        while not MPROD["stop"] and not MPROD.get("drain"):  # drain = čaká sa na aktualizáciu: dokonči rozrobené, nové nezačínaj
             t = take()
             if t is None:
                 return
@@ -1462,6 +1482,8 @@ def _mp_run(workers, until):
             th.join()
     finally:
         MPROD["running"] = False
+        if not MPROD.get("drain"):  # dokončené alebo zastavené ručne; pri aktualizácii/páde ostáva zapísané a po štarte pokračuje
+            db.set_setting("month_plan_job", None)
         MPROD["log"].append(f"{dt_now()} koniec: {MPROD['done']['long']} dlhých, {MPROD['done']['short']} krátkych")
 
 
@@ -1472,9 +1494,43 @@ def month_plan_produce(data: dict = Body(default={})):
         return {"running": True}
     if data.get("reset_bad"):   # po oprave kontroly: témy zamietnuté vopred sa skúsia znova
         db.set_setting("month_plan_bad", [])
-    MPROD.update(log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=bool(data.get("publish")))
-    threading.Thread(target=_mp_run, args=(int(data.get("workers") or 3), data.get("until") or ""), daemon=True).start()
+    _mp_start(data)
     return {"started": True}
+
+
+def _mp_start(data):
+    """Spustí mesačnú výrobu a zapíše si ju, aby po reštarte appky (aktualizácia, pád, reštart Macu) pokračovala sama."""
+    if MPROD["running"]:
+        return
+    job = {"workers": int(data.get("workers") or 3), "until": data.get("until") or "", "publish": bool(data.get("publish"))}
+    db.set_setting("month_plan_job", job)
+    MPROD.update(running=True, log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=job["publish"])
+    threading.Thread(target=_mp_run, args=(job["workers"], job["until"]), daemon=True).start()
+
+
+def _mp_autoresume():
+    """Po štarte appky: rozbehnutá mesačná výroba pokračuje (čo už je vyrobené, si pamätá month_plan_made)."""
+    import time as _t
+    _t.sleep(120)
+    job = db.get_setting("month_plan_job")
+    if job is None and not db.get_setting("mp_resume_init", False):
+        # prvý štart s touto verziou: výroba bežala pod starou verziou, ktorá si ju nezapisovala
+        if db.get_setting("month_plan_made", {}):
+            job = {"workers": 4, "until": "", "publish": True}
+    db.set_setting("mp_resume_init", True)
+    if job and not MPROD["running"]:
+        _mp_start(job)
+        MPROD["log"].append(f"{dt_now()} pokračujem po reštarte appky")
+
+
+def _drain(on):
+    """Pred aktualizáciou: výroba dokončí rozrobené a nové nezačne. Keď sa aktualizácia nekoná, pustí ju ďalej."""
+    for st in (MPROD, PROD, SCRIPTS):
+        st["drain"] = bool(on)
+    if not on:
+        job = db.get_setting("month_plan_job")
+        if job and not MPROD["running"]:
+            _mp_start(job)
 
 
 @app.get("/api/month-plan/produce")
@@ -1485,6 +1541,7 @@ def month_plan_produce_status():
 @app.post("/api/month-plan/produce/stop")
 def month_plan_produce_stop():
     MPROD["stop"] = True
+    db.set_setting("month_plan_job", None)
     return {"ok": True}
 
 
@@ -1608,7 +1665,7 @@ def _script_ahead_loop():
             try:
                 n = int(nightly.cfg().get("script_workers") or 0)
                 cfg = db.get_setting("auto_produce", {}) or {}
-                if not n or db.get_setting("paused", False) or _t.time() < SCRIPTS["pause_until"]:
+                if not n or db.get_setting("paused", False) or _t.time() < SCRIPTS["pause_until"] or SCRIPTS.get("drain"):
                     _t.sleep(60)
                     continue
                 pick = None
@@ -1642,6 +1699,7 @@ def _script_ahead_loop():
                 finally:
                     with lock:
                         busy.discard(pick[1])
+                        SCRIPTS["running"] = bool(busy)
             except Exception as e:
                 print("scenáre do zásoby:", e)
                 _t.sleep(60)
@@ -1781,6 +1839,31 @@ def _local_voice_setup():
         db.set_setting("local_voice_set", True)
     if any("local:" in (p.get("voices") or "") for p in db.q("SELECT voices FROM projects")):
         voices.local_ensure()
+
+
+def _autostart_setup():
+    """Mac: appka sa zapne sama po prihlásení (po reštarte Macu). Vypína sa nastavením autostart = false."""
+    if sys.platform != "darwin" or os.environ.get("SM_NO_BROWSER") != "1":
+        return  # len appka spustená ikonkou na Macu (nie ručne z Terminálu ani na inom systéme)
+    f = Path.home() / "Library/LaunchAgents/sk.n2n.socialmanager.plist"
+    if not db.get_setting("autostart", True):
+        f.unlink(missing_ok=True)
+        return
+    from xml.sax.saxutils import escape
+    run = db.BASE_DIR / "mac" / "run.sh"
+    body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>sk.n2n.socialmanager</string>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>{escape(str(run))}</string></array>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>{escape(str(db.DATA_DIR / "spustanie.log"))}</string>
+<key>StandardErrorPath</key><string>{escape(str(db.DATA_DIR / "spustanie.log"))}</string>
+</dict></plist>
+"""
+    if not f.exists() or f.read_text(encoding="utf-8") != body:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body, encoding="utf-8")
 
 
 def _produce_loop():
@@ -1968,6 +2051,7 @@ def videos_bulk(data: dict = Body(...)):
     if data.get("action") == "delete":
         for i in ids:
             v = db.one("SELECT file_path FROM videos WHERE id=?", (i,))
+            _yt_unplan("p.video_id=?", (i,))
             if v and str(Path(v["file_path"]).resolve()).startswith(str(VIDEO_DIR.resolve())):
                 Path(v["file_path"]).unlink(missing_ok=True)
             db.run("DELETE FROM posts WHERE video_id=? AND status!='done'", (i,))
@@ -2027,6 +2111,7 @@ def account_update(aid: int, data: dict = Body(...)):
 
 @app.delete("/api/accounts/{aid}")
 def account_delete(aid: int):
+    _yt_unplan("p.account_id=?", (aid,))
     db.run("DELETE FROM posts WHERE account_id=? AND status!='done'", (aid,))
     db.run("DELETE FROM accounts WHERE id=?", (aid,))
     return {"ok": True}
@@ -2242,7 +2327,10 @@ def _review_ids(keys):
 @app.post("/api/review/approve")
 def review_approve(data: dict = Body(...)):
     """Schváli a pustí von. Čo už malo byť zverejnené, pôjde hneď (rozložené po minútach)."""
-    ids = _review_ids(data.get("keys") or "all")
+    keys = data.get("keys")
+    if keys != "all" and not (isinstance(keys, list) and keys):
+        return {"approved": 0}  # prázdny výber neschváli nič (predtým schválil všetko)
+    ids = _review_ids(keys)
     now = datetime.now()
     for i, pid in enumerate(ids):
         row = db.one("SELECT scheduled_at FROM posts WHERE id=?", (pid,))
@@ -2350,6 +2438,7 @@ def post_move(pid: int, data: dict = Body(...)):
 
 @app.delete("/api/posts/{pid}")
 def post_delete(pid: int):
+    _yt_unplan("p.id=?", (pid,))
     db.run("DELETE FROM posts WHERE id=? AND status!='uploading'", (pid,))
     return {"ok": True}
 
@@ -2429,7 +2518,8 @@ app.include_router(weather.router)
 from . import audio  # noqa: E402
 app.include_router(audio.router)
 try:
-    inspire.fix_refrigerant_name()   # „PROLINE R290“ nie je názov, R290 je chladivo (jednorazová oprava textov)
+    if os.environ.get("SM_VERIFY") != "1":  # skúška novej verzie pred aktualizáciou nič nemení
+        inspire.fix_refrigerant_name()   # „PROLINE R290“ nie je názov, R290 je chladivo (jednorazová oprava textov)
 except Exception as _e:
     print("oprava R290:", _e)
 app.include_router(brand.router)
@@ -2482,8 +2572,14 @@ def main():
         radar.start()  # trendy, konkurencia, čísla našich videí (na pozadí, bez AI)
     except Exception:
         pass
-    updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()) or PROD["running"] or bool(scheduler.state.get("current"))
-                               or AUTO.get("running") or PROD.get("running"))
+    updater.background_checker(lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
+                               or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
+                               or brand._fix_state["running"], drain=_drain)
+    threading.Thread(target=_mp_autoresume, daemon=True).start()
+    try:
+        _autostart_setup()
+    except Exception as e:
+        print("automatický štart:", e)
     threading.Thread(target=_produce_loop, daemon=True).start()
     threading.Thread(target=_script_ahead_loop, daemon=True).start()
     if os.environ.get("SM_NO_BROWSER") != "1":
