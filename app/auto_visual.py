@@ -266,6 +266,20 @@ _AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine b
           "radar": r"sonar|lidar|speed (camera|trap|gun)|weather|\bquiz\b|microwave oven|candy|chocolate|passive|never transmits|phased|from space|\bimages?\b|mapping|sensor fusion|hopping|beamforming|signal processing|whisper|reveals its own|turn off|horizon|bomber|warning receivers?|locked on|lost fights"}
 
 
+# Video o lietadle hovorí o prúdovom motore len „engine“ (vták v motore): ráta sa, keď text pozná aspoň 4 jeho časti.
+_ALIAS = {"jet": (r"\b(?:air)?planes?\b|aircraft|airliner|\bpilots?\b|cockpit", r"\bengines?\b", 4, 12)}
+
+
+def _alias(m, full):
+    a = _ALIAS.get(m)
+    if not a or len(re.findall(a[0], full, re.I)) < 3:
+        return 0
+    sup = re.findall(_SUPPORT.get(m, r"$^"), full, re.I)
+    if len({w.lower().rstrip("s") for w in sup if isinstance(w, str)}) < a[2] or len(sup) < a[3]:
+        return 0
+    return len(re.findall(a[1], full, re.I)) // 4
+
+
 def _topic(full, title=""):
     hit = find(title or "")
     if hit:
@@ -274,15 +288,16 @@ def _topic(full, title=""):
         return hit[0] if hit[0] in PRECISE else None   # video je o inom stroji: jeho model nesmie zabrať celé video
     score, named = {}, {}
     for m in dict.fromkeys(m for _, m, _ in _RX):
-        strong = sum(len(rx.findall(full or "")) for rx, mm, _ in _RX if mm == m)
+        strong = sum(len(rx.findall(full or "")) for rx, mm, _ in _RX if mm == m) + _alias(m, full or "")
         if strong:
             named[m] = strong
             score[m] = 2 * strong + len(re.findall(_SUPPORT.get(m, r"$^"), full or "", re.I))
     best = sorted(score.items(), key=lambda kv: -kv[1])
     if not best or best[0][0] not in PRECISE or best[0][1] < (10 if (title or "").strip() else 6):
         return None   # názov, ktorý stroj nemenuje, je slabší dôkaz: stroj musí v texte prevládať výrazne
-    if (title or "").strip() and named[best[0][0]] < 3:
-        return None   # stroj padne v texte raz či dvakrát (napr. názov hry „Radar Scope“) a zvyšok sú bežné slová ako „screen“: video o ňom nie je
+    if (title or "").strip() and (named[best[0][0]] < 3 or len({w.lower() if isinstance(w, str) else "".join(w).lower()
+                                                               for w in re.findall(_SUPPORT.get(best[0][0], r"$^"), full or "", re.I)}) < 3):
+        return None   # stroj padne v texte raz či dvakrát (hra „Radar Scope“) alebo slovo znamená iné (hotelové „wing“) a z jeho častí text pozná len jedno bežné slovo: video o ňom nie je
     if len(best) > 1 and best[0][1] < 1.5 * best[1][1]:
         return None   # dva stroje sú v texte zhruba rovnako: bez názvu videa sa nedá povedať, o ktorom je
     return best[0][0]
@@ -467,7 +482,8 @@ _SPRITE = {n: k for k, v in {
     "box": "box package gift pallet crate parcel boxes", "bag": "shopping_bag cart", "truck": "truck forklift van lorry", "warehouse": "warehouse depot hub storage", "container": "container", "plane": "plane", "ship": "ship", "globe": "globe map globe_pin",
     "check": "check", "cross": "cross", "clock": "clock hourglass", "bulb": "idea bulb", "chip": "chip", "drop": "drop water tap", "bolt": "bolt electricity lightning power",
     "flame": "flame fire", "snow": "snow snowflake cold", "leaf": "leaf plant", "car": "car taxi", "tank": "tank barrel", "pump": "pump", "battery": "battery",
-    "card": "card credit_card", "air": "air wind"}.items() for n in v.split()}
+    "card": "card credit_card", "air": "air wind", "camera": "camera photo image", "pin": "pin location marker", "search": "search magnifier",
+    "tree": "tree forest", "robot": "robot", "satellite": "satellite", "gear": "gear cog settings", "eye": "eye", "sun": "sun", "flag": "flag", "plug": "plug charger socket", "tool": "tool wrench repair", "touch": "touch tap finger"}.items() for n in v.split()}
 _TOKEN = [(k, re.compile(r, re.I)) for k, r in (
     ("coin", r"[$€£¥]|\b(pay|pays|paid|payments?|prices?|fees?|profits?|margins?|money|cash|rent|salary|wages?|costs?|tax|taxes|interest|loans?|lends?|funds?|"
              r"revenue|income|dividends?|invest\w*|buys?|sales?|sells?|spends?|debt|refunds?|deposits?|bills?|charges?|subsid\w*|premiums?|tips?|coins?|"
@@ -494,7 +510,9 @@ def actors(d):
             nodes = [[str(q[0]), str(q[1] if len(q) > 1 else "")] if isinstance(q, list) else [str(q), ""] for q in d.get("i") or [] if q]
         elif k == "draw":
             el = [e for e in d.get("e") or [] if isinstance(e, dict)]
-            if any(e.get("s") not in ("icon", "arrow") for e in el):
+            note = [str(e.get("t") or "").strip() for e in el if e.get("s") == "text"]
+            el = [e for e in el if e.get("s") != "text"]
+            if len(note) > 1 or any(e.get("s") not in ("icon", "arrow") for e in el):
                 return None
             arrow = None
             for e in el:
@@ -505,6 +523,8 @@ def actors(d):
                     arrow = None
                 elif nodes:
                     arrow = str(e.get("l") or "")
+            if note and len(edges) == 1 and not edges[0][2] and len(note[0]) <= 26:
+                edges[0][2] = note[0]   # jediný popis pod kresbou patrí k jej jedinej šípke
         else:
             return None
     except (TypeError, ValueError):
@@ -520,6 +540,20 @@ def actors(d):
         tok = next((t for t, rx in _TOKEN if rx.search(l)), None) or next((t for t, src in _TOKEN_SRC.items() if nd[a][0] in src.split()), "dot")
         ed.append([a, b, l, hl, tok, 1 if _STOP.search(l) else 0])
     return {"k": "mech", "m": "actors", "nd": nd, "ed": ed}
+
+
+def _fill(d, topic, used, scene, lang):
+    """Slabá scéna, ktorá v dlhom videu ostáva bez modelu. Bola tam kresba od AI (prázdna náhrada)? Ukáže sa ďalší záber na inú časť modelu,
+    inak aspoň nadpis scény: prázdna scéna nesmie vzniknúť nikdy."""
+    if d.get("k") != "text" or str(d.get("w") or "").strip():
+        return actors(d) or d
+    parts = sorted(p for p in CAM_ONLY.get(topic, ()) if (topic, p) != used.get("_last"))
+    if parts:
+        f = parts[used.get("_fill", 0) % len(parts)]
+        used["_fill"] = used.get("_fill", 0) + 1
+        used["_last"] = (topic, f)
+        return _state(dict({"k": "mech", "m": topic, "f": f}, **({"l": _LABELS[topic]} if _LABELS.get(topic) and lang == "en" else {})), used)
+    return {"k": "text", "w": str(scene.get("onscreen") or "")}
 
 
 def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", topic=None, last=False):
@@ -555,13 +589,13 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
         f = focus(topic, *texts)
         if f is None:
             if long and prev == topic:
-                return actors(d) or d   # v dlhom videu nie dva celkové pohľady po sebe
+                return _fill(d, topic, used, scene, lang)   # v dlhom videu nie dva celkové pohľady po sebe
             f = "run" if topic in RUNS and used.get("_ov", 0) % 2 else ""
             used["_ov"] = used.get("_ov", 0) + 1
         if prev == topic and used.get("_last") == (topic, f):   # nikdy ten istý záber dvakrát po sebe: iná časť, beh naplno alebo celok
             alt = [g for g in focuses(topic, *texts) + (["run"] if topic in RUNS else []) + [""] if (topic, g) != used.get("_last")]
             if long or not alt:
-                return actors(d) or d
+                return _fill(d, topic, used, scene, lang)
             f = alt[0]
         used["_last"] = (topic, f)
         out = {"k": "mech", "m": topic}

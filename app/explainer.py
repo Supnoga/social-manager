@@ -771,7 +771,7 @@ const halo=el('div','',`position:absolute;left:${cx-sz*.95}px;top:${cy-sz*.95}px
 const ic=icon(d.i||'bolt',sz,'#fff',2.2);ic.style.left=(cx-sz/2)+'px';ic.style.top=(cy-sz/2)+'px';v.append(ic);
 const w=el('div','big',`left:0;top:${cy+sz/2+26}px;width:864px;text-align:center;font-size:70px;text-transform:uppercase`,esc(d.w||'')),s2=el('div','lab a',`left:82px;top:${cy+sz/2+112}px;width:700px;text-align:center;font-size:30px`,esc(d.s||''));v.append(w,s2);fit(w,70,34,84,840);fit(s2,30,18,70,700);
 return (t,st)=>{const p=st(0,1.4);draw(ic,p);ic.style.opacity=p>0?1:0;ic.style.transform=`translateY(${Math.sin(t*1.1)*8}px) scale(${.9+.1*E(p)})`;halo.style.opacity=.22*E(st(.3,1.2))*(1+.12*Math.sin(t*1.6));
-rings.forEach((r,i)=>{const q=((t*.32+i/3)%1);const on=cl(st(.8,.6));r.style.transform=`scale(${.72+q*.9})`;r.style.opacity=on*(1-q)*.55});show(w,st(1,.6),30);show(s2,st(1.5,.6),20)}};
+rings.forEach((r,i)=>{const q=((t*.32+i/3)%1);const on=cl(st(.8,.6));r.style.transform=`scale(${.72+q*.56})`;r.style.opacity=on*(1-q)*.55});show(w,st(1,.6),30);show(s2,st(1.5,.6),20)}};
 // zložená scéna: hotové obrázky + šípky s pohybom, rozloženie robí appka (AI nedáva súradnice)
 V.scene=(v,d)=>{const NN=(Array.isArray(d.n)?d.n:[]).filter(x=>Array.isArray(x)).slice(0,6),n=NN.length;if(!n)return;
 const LL=(Array.isArray(d.l)?d.l:[]).filter(x=>Array.isArray(x)&&x[0]!=x[1]&&NN[x[0]]&&NN[x[1]]).slice(0,8);
@@ -1166,12 +1166,17 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     for i, (sc, (t0, t1)) in enumerate(zip(scenes, times)):
         spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
         b0 = board_of(sc)
-        if b0.get("k") == "svg" and not topic:   # kresba od AI sa neukazuje: video nie je o stroji s presným modelom, scéna dostane obraz odhadnutý z textu
+        if not topic and (b0.get("k") == "svg" or (b0.get("k") == "mech" and b0.get("m") not in auto_visual.PRECISE)):
+            # kresba od AI či stará hrubá schéma sa neukazuje: video nie je o stroji s presným modelom, scéna dostane obraz odhadnutý z textu
             b0 = guess(sc.get("onscreen") or "", sc.get("visual") or "")
         v = auto_visual.upgrade(b0, sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text,
                                 topic=topic, last=i == len(scenes) - 1 and len(scenes) > 2)
         prev = v.get("m") if v.get("k") == "mech" else None
         v = prepare(v, lang)
+        if v.get("k") == "text" and not str(v.get("w") or "").strip():   # mapa, ktorú sa nepodarilo nájsť, či iný obraz bez obsahu: nikdy prázdna scéna
+            v = prepare(guess(sc.get("onscreen") or "", ""), lang)
+            if v.get("k") == "text" and not str(v.get("w") or "").strip():
+                v = {"k": "text", "w": str(sc.get("onscreen") or sc.get("visual") or "")[:60]}
         if v.get("k") == "mech":  # réžia: dĺžka scény a úvodný záber „kde to je“ len pri prvom výskyte stroja
             v = dict(v, _dur=round(t1 - t0, 2), **({} if v.get("m") in seen_mech else {"_in": 1}), **({"_first": 1} if i == 0 else {}))
             seen_mech.add(v.get("m"))

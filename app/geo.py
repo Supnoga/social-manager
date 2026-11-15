@@ -193,6 +193,14 @@ def resolve(d, lang="en"):
             if ll:
                 ends.append(ll)
         if len(ends) >= 2:
+            # „mesto → oceán“: stred oceánu býva tisíce km od krajín v scéne, mapa by sa oddialila a popisy by sa zliali
+            sea = [bool(isinstance(e, str) and sea_point(e) and not city(e, ccs)) for e in (r[0], r[-1])]
+            if any(sea) and ccs:
+                span = max([abs(P["countries"][a]["x"] - P["countries"][b]["x"]) + abs(P["countries"][a]["y"] - P["countries"][b]["y"])
+                            for a in ccs for b in ccs if a in P["countries"] and b in P["countries"]] + [8])
+                far = max(abs(ends[0][0] - ends[-1][0]), abs(ends[0][1] - ends[-1][1]))
+                if far > 2 * span:
+                    continue
             routes.append(ends)
     riv = []
     for v in _list(d.get("v"))[:2]:

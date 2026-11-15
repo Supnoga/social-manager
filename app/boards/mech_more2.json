@@ -1,7 +1,7 @@
 {
  "kinds": {},
  "pack": {
-  "mech3": "mech m: heatpump|aircon|fridge n=kW,COP|canal_lock n=m,len,w|dam n=m,m³/s|crane n=t,m,m|bridge|tunnel n=m/day|drill n=m|escalator n=m,m/s|wind_turbine n=m/s,D|car_brake n=km/h,kg|differential|camshaft n=rpm|cpu n=GHz,cores|hdd n=ms,ms|fiber|parachute n=kg,m²|bicycle n=z1,z2; l=parts"
+  "mech3": "mech m: heatpump|fridge|canal_lock|dam|bridge|tunnel|wind_turbine|car_brake|differential|camshaft|radar|wing|jet|transistor|breaker|orbit|pinlock|wall; l=parts"
  },
  "channels": {
   "machines": [
