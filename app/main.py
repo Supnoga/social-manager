@@ -2277,15 +2277,23 @@ def posts_mark_hold(data: dict = Body(...)):
     """Len v appke: posty (napr. staré videá, ktoré už niekto ručne prepol na súkromné) dostanú stav 'hold',
     aby neblokovali miesta v pláne. Na YouTube sa nič nemení. Pôvodný stav sa zapamätá v posts_hold."""
     keep = db.get_setting("posts_hold", {}) or {}
-    n = 0
+    n, errors = 0, []
     for i in data.get("ids") or []:
-        p = db.one("SELECT id, status FROM posts WHERE id=?", (int(i),))
+        p = db.one("SELECT p.*, a.platform FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.id=?", (int(i),))
         if p and p["status"] != "hold":
+            if data.get("unschedule") and p["status"] == "done" and p["platform"] == "youtube" and (p["external_id"] or p["stash_id"]):
+                try:   # zruší plán zverejnenia na YouTube (video ostane súkromné), ako hold-all
+                    youtube.unschedule(db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],)), p["external_id"] or p["stash_id"])
+                    if not p["stash_id"]:
+                        db.run("UPDATE posts SET stash_id=? WHERE id=?", (p["external_id"], p["id"]))
+                except Exception as e:
+                    errors.append([p["id"], str(e)[:200]])
+                    continue
             keep[str(p["id"])] = p["status"]
             db.run("UPDATE posts SET status='hold', updated_at=? WHERE id=?", (scheduler.now_str(), p["id"]))
             n += 1
     db.set_setting("posts_hold", keep)
-    return {"held": n}
+    return {"held": n, "errors": errors}
 
 
 @app.post("/api/posts/hold-all")
