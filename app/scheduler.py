@@ -43,7 +43,7 @@ def process_one(post):
     try:
         ext_id = url = None
         if acc["platform"] == "youtube" and post["attempts"] > 0:  # predošlý pokus sa prerušil: nie je už video na kanáli?
-            found = youtube.find_uploaded(acc, youtube.upload_title(acc, vid))
+            found = youtube.find_interrupted(acc, vid)
             if found:
                 ext_id, url = youtube.release(acc, found) if post["privacy"] == "public" else (found, f"https://youtu.be/{found}")
         if not ext_id:
@@ -65,7 +65,7 @@ def process_one(post):
                    (nxt.strftime("%Y-%m-%d %H:%M:%S"), "Dnešný limit YouTube je minutý. Nahrá sa samo zajtra ráno, netreba nič robiť.", now_str(), post["id"]))
             return
         attempts = post["attempts"] + 1
-        if temporary or (attempts < 3 and "vypršalo" not in msg and "Najprv" not in msg):
+        if (temporary and attempts < 12) or (attempts < 3 and "vypršalo" not in msg and "Najprv" not in msg):
             retry = (datetime.now() + timedelta(minutes=15 * attempts)).strftime("%Y-%m-%d %H:%M:%S")
             db.run("UPDATE posts SET status='queued', scheduled_at=?, error=?, updated_at=? WHERE id=?",
                    (retry, "Skúsim znova: " + msg, now_str(), post["id"]))
@@ -128,7 +128,7 @@ def stash_one(post):
     try:
         # značka pre prípad pádu appky uprostred nahrávania: ďalší pokus najprv pozrie, či video na kanáli už nie je
         db.run("UPDATE posts SET error='Súkromné nahratie: prebieha', updated_at=? WHERE id=?", (now_str(), post["id"]))
-        ext_id = youtube.find_uploaded(acc, youtube.upload_title(acc, vid)) if retry else ""
+        ext_id = youtube.find_interrupted(acc, vid) if retry else ""
         if not ext_id:
             ext_id, _ = youtube.upload(acc, vid, "private")
         db.run("UPDATE posts SET stash_id=?, error='', updated_at=? WHERE id=?", (str(ext_id), now_str(), post["id"]))

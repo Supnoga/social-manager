@@ -441,10 +441,11 @@ def upload(account, video, privacy="public", publish_at=None):
     return vid, f"https://youtu.be/{vid}"
 
 
-def find_uploaded(account, title, hours=36):
+def find_uploaded(account, title, duration=0, hours=12):
     """Poistka proti dvojitému nahratiu: keď sa predošlý pokus prerušil (výpadok internetu, reštart appky), video už
-    na kanáli môže byť. Pozrie posledné nahraté videá kanála (2 jednotky kvóty) a vráti id videa s rovnakým názvom,
-    ktoré ešte nepatrí žiadnemu príspevku v appke. Pri akejkoľvek chybe vráti '' (nahrá sa ako doteraz)."""
+    na kanáli môže byť. Pozrie posledné nahraté videá kanála (pár jednotiek kvóty) a vráti id videa, ktoré má rovnaký
+    názov aj dĺžku (na sekundu), je z posledných hodín a ešte nepatrí žiadnemu príspevku v appke. Rovnaký názov sám
+    nestačí: staršia verzia toho istého videa nesmie nahradiť novú. Pri akejkoľvek chybe vráti '' (nahrá sa ako doteraz)."""
     try:
         import datetime as dt
         title = (title or "").strip()
@@ -475,14 +476,20 @@ def find_uploaded(account, title, hours=36):
                 continue
             if db.one("SELECT 1 FROM posts WHERE external_id=? OR stash_id=?", (yid, yid)):
                 continue  # toto video už appka pozná (iný príspevok)
-            return yid
+            with client(timeout=30) as c:
+                d = c.get("https://www.googleapis.com/youtube/v3/videos", params={"part": "contentDetails", "id": yid}, headers=h)
+            count_units(account, 1)
+            m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", ((d.json().get("items") or [{}])[0].get("contentDetails") or {}).get("duration") or "") if d.status_code == 200 else None
+            secs = sum(int(x or 0) * k for x, k in zip(m.groups(), (3600, 60, 1))) if m else 0
+            if secs and duration and abs(secs - float(duration)) <= 1.5:
+                return yid
     except Exception as e:
         print("YouTube kontrola dvojitého nahratia:", str(e)[:200])
     return ""
 
 
-def upload_title(account, video):
-    return text_for(video, "youtube", account)[0]
+def find_interrupted(account, video):
+    return find_uploaded(account, text_for(video, "youtube", account)[0], video.get("duration") or 0)
 
 
 SRT_DIR = db.MEDIA_DIR / "srt"
