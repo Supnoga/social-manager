@@ -947,11 +947,11 @@ x.beginPath();x.moveTo(-57.7,-24);x.bezierCurveTo(-66.6,-20,-74,-12,-74,-8);x.be
 // ľavá ruka, telo s bruškom
 {const EX=54+Math.sin(t*2.1)*3;x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(66,162);x.lineTo(EX,188);x.stroke();x.fillStyle=WH;x.beginPath();x.arc(EX,188,5.6,0,T2);x.fill()}
 box(62,146,60,70,24,A,WH);ell(92,186,20,26,CR);
-// hlava: uši, tvár s maskou, oči (pri stroji sa pozrú hore), ňufák, ústa
+// hlava: uši, tvár s maskou, oči (pri stroji sa pozrú hore), ňufák, pod ním ústa
 pth([[52,80],[58,36],[84,64]],A,WH);pth([[132,80],[126,36],[100,64]],A,WH);pth([[59,72],[62,46],[76,64]],DK);pth([[125,72],[122,46],[108,64]],DK);
 pth([[44,72],[140,72],[136,102],[92,138],[48,102]],A,WH);pth([[48,98],[86,110],[92,138],[98,110],[136,98],[92,138]],CR);
 {const dx=4*pt,dy=-3*pt-2*ex;[72,112].forEach(X=>{if(blink){x.strokeStyle=DK;x.lineWidth=4;x.beginPath();x.moveTo(X-8,86);x.lineTo(X+8,86);x.stroke()}else{x.fillStyle=DK;x.beginPath();x.arc(X+dx,86+dy,8*(1+.25*ex),0,T2);x.fill();x.fillStyle='rgba(255,255,255,.9)';x.beginPath();x.arc(X+dx+2.8,86+dy-2.8,2.24,0,T2);x.fill()}})}
-ell(92,126,7,5,DK);{const hh=2+12*amp+6*ex;x.beginPath();x.roundRect(87,112-hh/2,10,hh,Math.min(hh/2,7));x.fillStyle=DK;x.fill()}
+ell(92,115,7,5,DK);{const ry=1.6+4.4*Math.min(1,amp+.6*ex);ell(92,127,5.5,ry,DK)}
 // pravá ruka: v pokoji dole, pri stroji ukazuje hore naň (šípka, nie prst)
 {const an=1.2-2.32*pt+Math.sin(t*4.6)*.07*pt,S0=[122,160],EL=[S0[0]+Math.cos(an+.4*pt)*30,S0[1]+Math.sin(an+.4*pt)*30],HD=[EL[0]+Math.cos(an-.25*pt)*34,EL[1]+Math.sin(an-.25*pt)*34];
 x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(S0[0],S0[1]);x.lineTo(EL[0],EL[1]);x.lineTo(HD[0],HD[1]);x.stroke();x.fillStyle=A;x.beginPath();x.arc(HD[0],HD[1],8,0,T2);x.fill();x.strokeStyle=WH;x.lineWidth=2;x.stroke();
