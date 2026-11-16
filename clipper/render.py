@@ -4,7 +4,9 @@ Rozloženia (vyberá sa pre každý záber zvlášť):
   full = zdroj je už na výšku;  crop = jedna tvár, orez na ňu (pri pohybe ju sleduje);
   duo  = dvaja ľudia vedľa seba, každý dostane polovicu obrazu;  fit = nič isté, celý záber na rozmazanom pozadí.
 Texty sú mimo zón tlačidiel sietí: vpravo 180 px voľných, hore 300 px, dole 560 px."""
+import array
 import json
+import math
 import re
 import statistics
 import subprocess
@@ -40,11 +42,14 @@ def _scene_cuts(src, t0, dur):
 
 def _people(samples):
     """Kto je v zábere: ("crop", body polohy tváre) | ("duo", [ľavý, pravý]) | ("fit", None)."""
-    seen = [sorted(s["faces"], key=lambda f: -f[2])[:2] for s in samples]
-    hit = [f for f in seen if f]
+    allf = [sorted(s["faces"], key=lambda f: -f[2]) for s in samples]
+    hit = [f for f in allf if f]
     if len(hit) < max(2, len(samples) * 0.5):
         return "fit", None
-    two = [f for f in hit if len(f) == 2]
+    crowd = [f for f in hit if len(f) >= 3 and f[0][2] < f[2][2] * 1.7]
+    if len(crowd) > len(hit) * 0.4:
+        return "fit", None              # veľa podobne veľkých tvárí (publikum, skupina, záber spoza rečníka): orez by ukázal náhodného človeka
+    two = [f[:2] for f in hit if len(f) >= 2]
     if len(two) > len(hit) / 2:
         left = [min(f, key=lambda x: x[0]) for f in two]
         right = [max(f, key=lambda x: x[0]) for f in two]
@@ -56,7 +61,20 @@ def _people(samples):
             return "duo", [a, b]
         if big <= small * 1.6:
             return "fit", None          # dvaja blízko seba: orez by jedného odrezal
-    top = [(s["t"], sorted(s["faces"], key=lambda f: -f[2])[0]) for s in samples if s["faces"]]
+    top, prev = [], None
+    for s, fs in zip(samples, allf):    # drž sa tej istej osoby, nie vždy práve najväčšej tváre
+        if not fs:
+            continue
+        f = fs[0]
+        if prev is not None and abs(f[0] - prev[0]) > 0.12:
+            near = min(fs, key=lambda x: abs(x[0] - prev[0]))
+            if near[2] >= f[2] * 0.6 and abs(near[0] - prev[0]) < 0.08:
+                f = near
+        top.append((s["t"], f))
+        prev = f
+    jumps = sum(1 for (ta, fa), (tb, fb) in zip(top, top[1:]) if tb - ta <= 0.6 and abs(fb[0] - fa[0]) > 0.18)
+    if jumps > max(1, len(top) * 0.12):
+        return "fit", None              # tvár preskakuje z miesta na miesto: nie je to jeden človek, orez by skákal
     face = {"cy": statistics.median(f[1] for _, f in top), "w": statistics.median(f[2] for _, f in top)}
     return "crop", {"pts": [(t, f[0]) for t, f in top], "face": face}
 
@@ -119,7 +137,7 @@ def plan(src_path, t0, dur, work, whole=False):
     try:
         if whole:        # klip podľa obrazu (trailer, hra, šport): neorezáva sa na tvár, ukáže sa celý záber
             raise LookupError
-        env.tool("faces", [src_path, f"{t0:.3f}", f"{t0 + dur:.3f}", fj], timeout=900)
+        env.tool("faces", [src_path, f"{t0:.3f}", f"{t0 + dur:.3f}", fj, media.ffmpeg() or "ffmpeg"], timeout=900)
         data = json.loads(fj.read_text())
     except LookupError:
         data = {"w": 0, "h": 0, "samples": []}
@@ -158,7 +176,7 @@ def _vf(shot, sw, sh):
         return f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},{tail}[v]"
     if lay == "crop":
         cw = min(sw, int(sh * 9 / 16) // 2 * 2)
-        return f"[0:v]crop={cw}:{sh}:'{_x_expr(shot['keys'], sw, cw)}':0,scale={W}:{H},{tail}[v]"
+        return f"[0:v]crop={cw}:{sh}:'{_x_expr(shot['keys'], sw, cw)}':0,scale={W}:{H}:flags=lanczos,unsharp=5:5:0.5:5:5:0,{tail}[v]"
     if lay == "duo":
         ch = int(sh * 0.74) // 2 * 2
         cw = min(sw, int(ch * W / (H / 2)) // 2 * 2)
@@ -166,7 +184,7 @@ def _vf(shot, sw, sh):
         for i, p in enumerate(shot["people"]):
             x = max(0, min(sw - cw, round(p["cx"] * sw - cw / 2)))
             y = max(0, min(sh - ch, round(p["cy"] * sh - ch * 0.42)))
-            parts.append(f"[s{i}]crop={cw}:{ch}:{x}:{y},scale={W}:{H // 2}[p{i}]")
+            parts.append(f"[s{i}]crop={cw}:{ch}:{x}:{y},scale={W}:{H // 2}:flags=lanczos,unsharp=5:5:0.5:5:5:0[p{i}]")
         return f"[0:v]split=2[s0][s1];{parts[0]};{parts[1]};[p0][p1]vstack=inputs=2,{tail}[v]"
     if lay == "wide":
         cw = int(sw * WIDE_KEEP) // 2 * 2
@@ -178,9 +196,85 @@ def _vf(shot, sw, sh):
             f"boxblur=26:3,eq=brightness=-0.22[bg];[f0]scale={W}:{fh}[fg];[bg][fg]overlay=0:{min(FIT_Y, (H - fh) // 2)},{tail}[v]")
 
 
+# ---------- zvuk: strih presne do ticha ----------
+def _levels(src, a, b, step=0.02):
+    """Hlasitosť zvuku medzi a..b po 20 ms (dB, vyhladené)."""
+    r = subprocess.run([media.ffmpeg(), "-v", "error", "-ss", f"{max(0.0, a):.3f}", "-t", f"{b - a:.3f}", "-i", str(src), "-vn",
+                        "-ac", "1", "-ar", "8000", "-f", "s16le", "-"], capture_output=True, stdin=subprocess.DEVNULL,
+                       start_new_session=True)
+    x = array.array("h")
+    x.frombytes(r.stdout[:len(r.stdout) // 2 * 2])
+    n = int(8000 * step)
+    raw = [10 * math.log10(max(1.0, sum(v * v for v in x[i:i + n]) / n)) - 90.3 for i in range(0, len(x) - n + 1, n)]
+    return [max(raw[max(0, i - 1):i + 2]) for i in range(len(raw))]
+
+
+def _dip(src, a, b, near):
+    """Pauza v reči medzi a..b najbližšie k času `near`: (koniec reči pred ňou, začiatok reči po nej); None tam, kde reč v okne nie je.
+    Vráti None, keď v okne zreteľná pauza nie je (hudba, potlesk, súvislá reč)."""
+    lv = _levels(src, a, b)
+    if len(lv) < 10 or max(lv) - min(lv) < 15:
+        return None
+    lim, loud = min(lv) + 6, min(lv) + 14
+    runs, start = [], None
+    for i, v in enumerate(lv + [0.0]):
+        if v <= lim and start is None:
+            start = i
+        elif v > lim and start is not None:
+            runs.append((start, i))
+            start = None
+    if not runs:
+        return None
+    at = lambda i: a + i * 0.02
+    i0, i1 = min(runs, key=lambda r: 0.0 if at(r[0]) <= near <= at(r[1]) else min(abs(at(r[0]) - near), abs(at(r[1]) - near)))
+    before = next((k + 1 for k in range(i0 - 1, -1, -1) if lv[k] >= loud), None)
+    after = next((k for k in range(i1, len(lv)) if lv[k] >= loud), None)
+    return (at(before) if before is not None else None), (at(after) if after is not None else None), at(i0), at(i1)
+
+
+def tighten(src_path, t0, t1, words):
+    """Doladí strih podľa zvuku, aby sa nezačínal ani nekončil uprostred slova (časy slov z titulkov sú len približné).
+    Posun je najviac o pár desatín sekundy; dlhší dozvuk (smiech, nádych) na konci sa nemení."""
+    inside = [w for w in words if w["s"] >= t0 - 0.05 and w["s"] < t1 - 0.04]
+    if not inside:
+        return t0, t1
+    ws, we = inside[0]["s"], inside[-1]["e"]
+    try:
+        d = _dip(src_path, ws - 0.6, ws + 0.3, ws - 0.05)
+        if d:                          # tesne pred prvé slovo
+            t0 = max(0.0, d[2], (d[1] - 0.12) if d[1] is not None else d[3] - 0.14)
+        elif ws - t0 > 1.0:
+            t0 = ws - 0.15
+        if t1 - we <= 0.6:             # krátky koniec: tesne za posledné slovo, nie do ďalšieho
+            d = _dip(src_path, we - 0.4, we + 0.7, we + 0.05)
+            if d:
+                end = d[0] if d[0] is not None else d[2]
+                t1 = max(end + 0.08, min(end + 0.3, (d[1] if d[1] is not None else d[3]) - 0.06))
+    except Exception as e:
+        print("Clipper zvuk:", str(e)[:200])
+    return round(t0, 3), round(t1, 3)
+
+
+def _check(out, dur):
+    """Posledná kontrola hotového súboru: čierny začiatok, čierny obraz, hluchý zvuk. Pri chybe vyhodí výnimku s dôvodom."""
+    r = subprocess.run([media.ffmpeg(), "-hide_banner", "-i", str(out), "-vf", "scale=320:-2,blackdetect=d=0.4:pix_th=0.08",
+                        "-af", "silencedetect=n=-50dB:d=4.5,volumedetect", "-f", "null", "-"],
+                       capture_output=True, text=True, errors="ignore", stdin=subprocess.DEVNULL, start_new_session=True)
+    black = [(float(a), float(b)) for a, b in re.findall(r"black_start:([\d.]+) black_end:([\d.]+)", r.stderr)]
+    if any(a < 0.3 for a, _ in black):
+        raise RuntimeError("Klip sa začína čiernym obrazom.")
+    if sum(b - a for a, b in black) > dur * 0.25:
+        raise RuntimeError("Veľká časť klipu je čierny obraz.")
+    m = re.search(r"mean_volume: (-?[\d.]+) dB", r.stderr)
+    if not m or float(m.group(1)) < -45:
+        raise RuntimeError("Klip nemá zvuk.")
+    if re.search(r"silence_start", r.stderr):
+        raise RuntimeError("V klipe je dlhé ticho.")
+
+
 # ---------- titulky a úvodný titulok ----------
 def _clean(tok):
-    t = tok.replace(">>", "").strip()
+    t = tok.replace(">>", "").strip().strip('"“”„«»')      # úvodzovky priamej reči do titulkov nepatria
     return t if re.search(r"\w", t) and not (t.startswith("[") or t.endswith("]")) else ""
 
 
@@ -204,11 +298,13 @@ def _frame(path, chunk, active, hook, cap_y, hook_bottom=None, avoid=None):
         size = 64
         font = media._font(size)
         lines = media._wrap(d, hook, font, safe - 40)
-        while len(lines) > 3 and size > 44:
+        while len(lines) > 3 and size > 38:
             size -= 6
             font = media._font(size)
             lines = media._wrap(d, hook, font, safe - 40)
-        lines = lines[:3]
+        if len(lines) > 3:              # ani najmenšie písmo nestačí: radšej tri bodky než veta useknutá bez varovania
+            lines = lines[:3]
+            lines[2] = lines[2].rstrip(" ,.;:") + "…"
         lh = int(size * 1.32)
         bw = max(d.textlength(ln, font=font) for ln in lines) + 56
         x0 = (W - bw) / 2
@@ -294,11 +390,18 @@ def render(clip):
     if not src or not Path(src["path"] or "").exists():
         raise RuntimeError("Zdrojové video už nie je na disku.")
     ff = media.ffmpeg()
-    t0, dur = float(clip["t0"]), float(clip["t1"]) - float(clip["t0"])
+    visual = (src.get("kind") or "speech") == "visual"
+    t0, t1 = float(clip["t0"]), float(clip["t1"])
+    spoken = source.words(src)
+    if not visual:
+        n0, n1 = tighten(src["path"], t0, t1, spoken)
+        if (n0, n1) != (t0, t1):
+            t0, t1 = n0, n1
+            store.run("UPDATE clips SET t0=?, t1=? WHERE id=?", (t0, t1, clip["id"]))
+    dur = t1 - t0
     out = store.DIR / "clips" / f"klip-{clip['id']}.mp4"
     with tempfile.TemporaryDirectory(dir=store.DIR / "work") as tmp:
         tmp = Path(tmp)
-        visual = (src.get("kind") or "speech") == "visual"
         shots, sw, sh = plan(src["path"], t0, dur, tmp, whole=visual)
         parts, done = [], 0
         total_frames = round(dur * FPS)
@@ -320,13 +423,14 @@ def render(clip):
         for s in shots:
             time_by[s["layout"]] = time_by.get(s["layout"], 0) + s["b"] - s["a"]
         layout = max(time_by, key=time_by.get)
-        words = clip_words(source.words(src), t0, t0 + dur)
+        words = clip_words(spoken, t0, t0 + dur)
         caps = _captions(words, (clip.get("hook") or "").strip(), src.get("lang") or "en", dur, shots, sw, sh, tmp)
-        fade = max(0.0, dur - 0.12)
+        out_d = 0.4 if words and dur - words[-1]["e"] > 0.8 else 0.12      # smiech či potlesk na konci doznie plynulo
+        fade = max(0.0, dur - out_d)
         media._run_ff([ff, "-y", "-i", str(body), "-i", str(caps), "-ss", f"{t0:.3f}", "-t", f"{dur:.3f}", "-i", src["path"],
                        "-filter_complex",
                        f"[0:v][1:v]overlay=0:0:format=auto,format=yuv420p[v];"
-                       f"[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=in:d=0.06,afade=t=out:st={fade:.2f}:d=0.12,aresample=48000[a]",
+                       f"[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=in:d=0.06,afade=t=out:st={fade:.2f}:d={out_d},aresample=48000[a]",
                        "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                        "-r", str(FPS), "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)])
     real = media.duration(out)
@@ -334,4 +438,5 @@ def render(clip):
         raise RuntimeError(f"Klip nevyšiel správne (dĺžka {real:.1f} s namiesto {dur:.1f} s).")
     if not words and not visual:
         raise RuntimeError("V klipe nie je žiadna reč.")
+    _check(out, dur)
     return str(out), real, layout

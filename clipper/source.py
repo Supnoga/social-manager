@@ -11,6 +11,7 @@ from . import env, store
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
 NOISE = re.compile(r"\[[^\]]*\]|\([^)]*\)")        # [Music], (Laughter), (Audience applauds): zvuky, nie reč
+REACT = re.compile(r"laugh|applau|cheer|chuckl|smiech|potlesk|lach|rire|risa", re.I)   # reakcia publika: do titulkov nie, ale klip ju má nechať dobehnúť
 
 
 def add(campaign_id, url):
@@ -31,7 +32,8 @@ def _from_json3(path):
         return []
     words = []
     for ev in data.get("events", []):
-        segs = [dict(s, utf8=NOISE.sub(" ", s.get("utf8") or "")) for s in (ev.get("segs") or [])]
+        segs = [dict(s, utf8=NOISE.sub(lambda m: " (laughter) " if REACT.search(m.group(0)) else " ", s.get("utf8") or ""))
+                for s in (ev.get("segs") or [])]
         segs = [s for s in segs if s["utf8"].strip()]
         if not segs:
             continue
@@ -112,12 +114,52 @@ def fetch(src):
     return store.one("SELECT * FROM sources WHERE id=?", (src["id"],))
 
 
-def words(src):
+def _raw(src):
     try:
-        ws = json.loads(Path(src["words_path"]).read_text(encoding="utf-8"))
+        return json.loads(Path(src["words_path"]).read_text(encoding="utf-8"))
     except Exception:
         return []
-    return [w for w in ws if not NOISE.fullmatch(w["w"])]
+
+
+def _split(ws):
+    """Rozdelí prepis na reč a na poznámky v zátvorkách ([Music], (Laughter), [text na plátne], aj cez viac slov).
+    Vráti (slová reči, [(začiatok, koniec, je to reakcia publika)])."""
+    speech, notes, i = [], [], 0
+    while i < len(ws):
+        tok = ws[i]["w"]
+        close = {"[": "]", "(": ")"}.get(tok[:1])
+        if close:
+            j = i
+            while j < len(ws) - 1 and j - i < 25 and close not in ws[j]["w"]:
+                j += 1
+            if close in ws[j]["w"]:
+                notes.append((" ".join(w["w"] for w in ws[i:j + 1]), ws[i]["s"], ws[j]["e"]))
+                i = j + 1
+                continue
+        speech.append(ws[i])
+        i += 1
+    return speech, [(a, b, bool(REACT.search(text))) for text, a, b in notes]
+
+
+def words(src):
+    return _split(_raw(src))[0]
+
+
+def notes(src):
+    """Poznámky v prepise mimo reči: [(začiatok, koniec, je to reakcia publika)]. Smiech a potlesk, ale aj hudba či text na plátne."""
+    return _split(_raw(src))[1]
+
+
+def reactions(src):
+    """Kde sa publikum smeje alebo tlieska (podľa titulkov): [(začiatok, koniec)], susedné spojené."""
+    out = []
+    for a, b, react in notes(src):
+        if react:
+            if out and a - out[-1][1] < 1.5:
+                out[-1] = (out[-1][0], max(out[-1][1], b))
+            else:
+                out.append((a, b))
+    return out
 
 
 def heat(src):

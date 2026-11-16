@@ -14,7 +14,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     opts = {
         "outtmpl": str(out / "%(id)s.%(ext)s"),
-        "format": f"bv*[height<={height}][ext=mp4]+ba[ext=m4a]/bv*[height<={height}]+ba/b[height<={height}]/b",
+        # H.264 má prednosť: prečíta ho každý nástroj, strihá sa rýchlo a nikdy nie je HDR (vyblednuté farby); AV1 až keď H.264 nie je
+        "format": (f"bv*[height<={height}][vcodec^=avc1]+ba[ext=m4a]/bv*[height<={height}][ext=mp4]+ba[ext=m4a]/"
+                   f"bv*[height<={height}]+ba/b[height<={height}]/b"),
         "merge_output_format": "mp4",
         "ffmpeg_location": ff,
         "noplaylist": True,
