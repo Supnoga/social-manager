@@ -675,9 +675,10 @@ def board(pid: int):
         (SELECT COUNT(*) FROM scripts s WHERE s.idea_id=i.id AND s.voice_path!='') voices,
         (SELECT COUNT(*) FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=i.id) videos,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
-           WHERE s.idea_id=i.id AND p.status='done') posted,
+           WHERE s.idea_id=i.id AND p.status='done' AND p.scheduled_at<=datetime('now','localtime')) posted,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
-           WHERE s.idea_id=i.id AND p.status IN ('queued','uploading','review')) queued,
+           WHERE s.idea_id=i.id AND (p.status IN ('queued','uploading','review')
+                 OR (p.status='done' AND p.scheduled_at>datetime('now','localtime')))) queued,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
            WHERE s.idea_id=i.id AND p.status='failed') failed
         FROM ideas i WHERE i.project_id=? AND i.status NOT IN ('rejected','inbox','snoozed') ORDER BY i.id DESC""", (pid,))
