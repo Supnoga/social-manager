@@ -59,6 +59,8 @@ RULES = [
      ["Base", "Shoulder", "Elbow", "Gripper"]),
     (r"transistors?\b|mosfet", "transistor", ["Source", "Gate", "Drain", "Channel"]),
     (r"circuit breakers?|breaker trips?|\bfuses?\b|\bmcb\b", "breaker", ["Contacts", "Bimetal strip", "Solenoid", "Arc chute"]),
+    (r"hard ?disks?|hard ?drives?|\bhdds?\b|read/write heads?|\bplatters?\b", "harddrive",
+     ["Platter", "Head", "Spindle"]),
     (r"transformer|high voltage|substation", "transformer", ["Primary coil", "Iron core", "Secondary coil"]),
     (r"circuit|electric current|\bohm|voltage", "circuit", ["Battery", "Switch", "Bulb"]),
     (r"conveyor|assembly line|production line|factory line|mass production", "conveyor", ["Weld", "Paint", "Check"]),
@@ -93,6 +95,7 @@ _STROKES = [("intake", r"intake|air (and fuel )?(in\b|enters|rushes)|(pulls?|suc
             ("power", r"power stroke|\bpower\b|spark|ignit|\bburn|combust|explo|expand|bang\b|pushes? the (piston|rotor)"),
             ("exhaust", r"exhaust|used gas|burnt gas|burned gas|swept out|pushed out")]
 _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_mech_pro_b.js)
+    "harddrive": [("head", r"\bhead\b|flies|flying|\bnm\b|air cushion|hover|gap|reads?\b|writes?\b"), ("spindle", r"spindle|\bmotor\b|\bspins?\b|\brpm\b|\bhub\b|rotates?"), ("platter", r"platter|\bdisks?\b|tracks?|sectors?|\bbits?\b|magnetic")],
     "camshaft": [("cam", r"cam lobe|\blobes?\b|camshaft|\bcams?\b|egg[- ]shaped"), ("valve", r"valve|spring|\bport\b|air and fuel|mixture"),
                  ("belt", r"timing (belt|chain)|\bbelt\b|\bchain\b|crankshaft|half (the )?speed|twice|in sync")],
     "turbo": [("turbine", r"turbine|exhaust (gas|gases|side)|hot side|waste energy"), ("shaft", r"\bshaft|bearing|\boil\b"),
@@ -219,7 +222,7 @@ FOCUS = {m: [(f, re.compile(r, re.I)) for f, r in _STROKES] for m in ("piston", 
 FOCUS.update({m: [(f, re.compile(r, re.I)) for f, r in v] for m, v in _PARTS.items()})
 RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump", "wind_turbine", "emotor", "robot_arm")
 # zábery, ktoré len posunú kameru (stav stroja nemenia): v rámci jednej scény môže kamera prejsť z jedného na druhý
-CAM_ONLY = {"turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "valve", "belt"}, "car_brake": {"caliper", "disc"},
+CAM_ONLY = {"harddrive": {"platter", "head", "spindle"}, "turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "valve", "belt"}, "car_brake": {"caliper", "disc"},
             "gearbox": {"input", "gears", "collar", "output"}, "differential": {"pinion", "spider"},
             "heatpump": {"evap", "comp", "cond", "valve"}, "wind_turbine": {"rotor", "gearbox", "generator"},
             "solar": {"light", "junction", "circuit"}, "tunnel": {"cutter", "jacks", "rings", "conveyor"},
@@ -246,7 +249,7 @@ def find(text):
 
 
 # slová, ktoré tému len podporujú (samy model nespustia): pomáhajú spoznať, o ktorom stroji je celé video
-_SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": r"crankshaft|\bstrokes?\b|\bvalves?\b|connecting rod",
+_SUPPORT = {"harddrive": r"platter|\bhead\b|spindle|\bbits?\b|magnetic|tracks?|sectors?|actuator|flies|\bnm\b", "wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": r"crankshaft|\bstrokes?\b|\bvalves?\b|connecting rod",
             "gears": r"\bteeth\b|\btooth\b|\bmesh|\bratio", "turbo": r"turbine|compressor|\bboost|exhaust gas|intercooler|\bspool",
             "camshaft": r"\blobes?\b|\bvalves?\b|timing|\bcams?\b", "car_brake": r"caliper|\bpads?\b|\bdis[ck]s?\b|friction|brake fluid|pedal",
             "gearbox": r"\bgears?\b|\bshift|clutch|\bratio|synchro|\bshafts?\b", "differential": r"\bwheels?\b|corner|axle|spider|pinion|ring gear|\bturns?\b",
@@ -276,7 +279,7 @@ _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": 
             "emotor": r"\bcoils?\b|\bstator\b|\brotor\b|\bmagnets?\b|magnetic field|copper|windings?|torque|\binverter\b|\bphases?\b|\bshaft\b|\bRPM\b",
             "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
 # model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
-_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3, "dam": 3, "submarine": 3, "hydraulic": 3, "elevator": 3, "fridge": 3, "jet": 3, "transistor": 3, "breaker": 3, "canal_lock": 3, "orbit": 3, "pinlock": 3, "wall": 3, "emotor": 3, "battery": 3, "robot_arm": 3, "neuron": 3, "touchscreen": 3, "hurricane": 3}
+_NEEDS = {"harddrive": 3, "heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3, "dam": 3, "submarine": 3, "hydraulic": 3, "elevator": 3, "fridge": 3, "jet": 3, "transistor": 3, "breaker": 3, "canal_lock": 3, "orbit": 3, "pinlock": 3, "wall": 3, "emotor": 3, "battery": 3, "robot_arm": 3, "neuron": 3, "touchscreen": 3, "hurricane": 3}
 
 
 def topic(full, title="", strict=False):
@@ -289,7 +292,7 @@ def topic(full, title="", strict=False):
 
 
 # názov menuje stroj, ale video je o jeho inej podobe, ktorú model neukazuje (rekuperačné brzdenie nie je kotúčová brzda): radšej žiadny model
-_AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine brak|air brake",
+_AVOID = {"harddrive": r"\bssd\b|solid[- ]state|\bflash\b|floppy|\btapes?\b|\bquiz\b", "car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine brak|air brake",
           "gearbox": r"\bcvt\b|no gears|hybrid|direct[- ]drive|cycloidal|dual[- ]mass|dual[- ]clutch|automatic|planetary",
           "gears": r"\bcvt\b|no gears", "wankel": r"[1-9][- ]stroke|one[- ]stroke|rival", "heatpump": r"brushless|\bmotors?\b|\bcost\b",
           "piston": r"opposed|two[- ]stroke|2[- ]stroke|deactivat|diesel|spark plug makes|\bquiz\b|lasts longer",
@@ -356,7 +359,7 @@ def _topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"hurricane": "Hurricane", "touchscreen": "Touchscreen", "neuron": "Nerve cell", "robot_arm": "Robot arm", "battery": "Battery cell", "emotor": "Electric motor", "piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing", "dam": "Hydroelectric dam", "submarine": "Submarine", "hydraulic": "Hydraulic jack", "elevator": "Elevator", "fridge": "Refrigerator", "jet": "Jet engine", "wall": "Wall cross-section", "pinlock": "Pin tumbler lock", "canal_lock": "Canal lock", "orbit": "Orbit", "transistor": "Transistor", "breaker": "Circuit breaker"}
+NAMES = {"harddrive": "Hard disk drive", "hurricane": "Hurricane", "touchscreen": "Touchscreen", "neuron": "Nerve cell", "robot_arm": "Robot arm", "battery": "Battery cell", "emotor": "Electric motor", "piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing", "dam": "Hydroelectric dam", "submarine": "Submarine", "hydraulic": "Hydraulic jack", "elevator": "Elevator", "fridge": "Refrigerator", "jet": "Jet engine", "wall": "Wall cross-section", "pinlock": "Pin tumbler lock", "canal_lock": "Canal lock", "orbit": "Orbit", "transistor": "Transistor", "breaker": "Circuit breaker"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
