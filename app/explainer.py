@@ -22,7 +22,7 @@ KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "
          "forces", "waterfall", "funnel", "loan", "inflation", "crack", "sim", "lines")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
-              "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
+              "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler", "dot")
 ICON_NAMES += tuple(n for n in icons_extra.NAMES if n not in ICON_NAMES)
 BASE_ICONS = ICON_NAMES[:40]  # tieto vidí AI vždy, ďalšie len podľa kanála (app/icons/*.json channels)
 
@@ -54,7 +54,7 @@ SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: 
 {"k":"cycle","l":["outdoor air","evaporator","compressor","condenser","home"]} (how a heat pump works) |
 {"k":"bars","u":"unit","i":[["label",number,"optional ISO country code = flag"],...max 4]} | {"k":"calc","r":[["1 600 m³ × 10,5","16 800 kWh"],...max 4]} |
 {"k":"compare","a":["worse option","value"],"b":["better option","value"]} | {"k":"count","v":75,"pre":"","suf":" %","l":"label"} |
-{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons (any simple English noun works, the app has 1000+ line icons; e.g.): %ICONS% |
+{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons (any simple English noun works, the app has 1000+ line icons; e.g.): %ICONS%. An icon must BE the thing its label names (turbo = "turbocharger", exhaust gas = "exhaust"; "turbine" is a WIND turbine, "cloud" is a rain cloud): never a look-alike; if no icon shows the thing, write "dot" |
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
 {"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"} |
 {"k":"svg","svg":"<g>...</g>"} = CUTAWAY MADE FOR THIS SCENE: inline SVG (viewBox 864x560, no <svg> tag) that shows the inside of the thing and how it moves: real shapes (housing, rotor, piston, valves, pipes, layers, fluid), moving with SMIL <animate>/<animateTransform>/<animateMotion> (dur 2-4s, repeatCount="indefinite"; gas/fluid as dots moving along a path; heat as colour change). Style: black background, white strokes 3-4 px, fills #111/#222, ONE accent colour written as ACC for the moving/important part, 2-4 labels <text font-size="26"> in CAPS inside the frame, parts sized and placed like the real machine (moving parts touch what they push), colour only the part that is working right now, fill 70% of the frame, no gradients/filters/images, max 2500 chars. Use it for the 1-3 key "how it works" scenes when no ready "mech" fits |
@@ -267,7 +267,7 @@ KEYWORDS = [
     (r"\bdom|domov|house|home|haus|bývan|byt", "house"),
     (r"radiátor|radiator|heizkörper|vykurov", "radiator"),
     (r"podlah|floor|fußboden", "floor"),
-    (r"€|eur|úspor|ušetr|cena|cien|náklad|platí|faktúr|price|cost|kosten|spar", "coin"),
+    (r"€|eur|euros?|úspor|ušetr|cena|cien|náklad|platí|faktúr|price|cost|kosten|spar", "coin"),
     (r"zim|mráz|chlad|-\s?\d+\s?°|winter|cold|frost|kalt", "snow"),
     (r"solár|fotovolt|solar panel|panel|photovolt", "panel"),
     (r"veter|turbín|wind|turbine", "turbine"),
@@ -276,7 +276,7 @@ KEYWORDS = [
     (r"sieť|grid|netz|vedenie|blackout", "pylon"),
     (r"leto|slnk|summer|sun|sonne", "sun"),
     (r"plyn|gas|kotol|boiler|kessel|drev|pelet", "flame"),
-    (r"elektr|prúd|kwh|strom|electric|power", "bolt"),
+    (r"elektr|prúd|kwh|strom|electric|electricity", "bolt"),
     (r"teplá voda|voda|water|wasser|bojler|zásobník", "drop"),
     (r"hluk|tich|db|noise|quiet|leise", "sound"),
     (r"aplik|app|mobil|telefón|phone", "phone"),
@@ -305,12 +305,19 @@ def _num(s):
         return None
 
 
-def guess(onscreen, visual=""):
-    """Bez AI: z textu scény urobí jednoduchý diagram (ikony alebo číslo)."""
+def guess(onscreen, visual="", lang="en"):
+    """Bez AI: z textu scény urobí jednoduchý diagram (ikony alebo číslo).
+    Po anglicky sa slovo hľadá celé („happens“ nie je app, „important“ nie je port) a ikona musí sedieť k scéne (auto_visual.icon_fit)."""
+    from . import auto_visual
     txt = f"{onscreen} {visual}".lower()
     icons = []
     for rx, name in KEYWORDS:
-        if re.search(rx, txt) and name not in icons:
+        if name in icons:
+            continue
+        if lang == "en":
+            if re.search(r"(?<![a-zà-ž])(?:" + rx + r")(?:s|es|e|ed|ing)?(?![a-zà-ž])", txt) and auto_visual.icon_fit(name, "", txt):
+                icons.append(name)
+        elif re.search(rx, txt):
             icons.append(name)
     if "=" in (onscreen or "") and re.search(r"\d", onscreen):
         l, r = onscreen.split("=", 1)
@@ -348,23 +355,23 @@ def from_old(a, onscreen=""):
     return None
 
 
-def board_of(scene):
+def board_of(scene, lang="en"):
     a = scene.get("anim")
     d = from_old(a, scene.get("onscreen", "")) if isinstance(a, dict) else None
     if not d or d.get("k") not in KINDS:
-        d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
+        d = guess(scene.get("onscreen", ""), scene.get("visual", ""), lang)
     if d.get("k") == "svg" and not clean_svg(d.get("svg")):
-        d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
+        d = guess(scene.get("onscreen", ""), scene.get("visual", ""), lang)
     if d.get("k") == "draw":
         # voľná kresba len z hotových dielov: bez krivých čiar od AI a aspoň jeden skutočný objekt, inak radšej jednoduchý diagram
         els = [e for e in (d.get("e") or []) if isinstance(e, dict) and e.get("s") != "path"]
         if not any(e.get("s") in ("turbine", "icon") for e in els):
-            return guess(scene.get("onscreen", ""), scene.get("visual", ""))
+            return guess(scene.get("onscreen", ""), scene.get("visual", ""), lang)
         d = dict(d, e=els)
     if d.get("k") == "scene":
         ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and icon_ok(x[0])]
         if len(ok) < 2 or len(ok) != len(d.get("n") or []):
-            d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
+            d = guess(scene.get("onscreen", ""), scene.get("visual", ""), lang)
     return auto_map(scene, d)
 
 
@@ -734,6 +741,7 @@ globe:'<circle cx="50" cy="50" r="36"/><path d="M14 50 H86"/><path d="M50 14 C34
 window:'<rect x="20" y="14" width="60" height="72" rx="3"/><path d="M50 14 V86 M20 50 H80"/><path d="M28 24 L38 34 M60 60 L70 70"/>',
 factory:'<path d="M10 88 V48 L34 60 V48 L58 60 V48 L70 54 V18 H84 V88 Z"/><path d="M22 74 H30 M44 74 H52 M64 74 H72"/><path d="M72 10 C76 6 82 8 84 4"/>',
 cloud:'<path d="M28 70 A16 16 0 0 1 30 38 A22 22 0 0 1 72 42 A14 14 0 0 1 72 70 Z"/><path d="M36 80 L32 90 M52 80 L48 90 M68 80 L64 90"/>',
+dot:'<circle cx="50" cy="50" r="30"/><circle cx="50" cy="50" r="9"/>',
 compressor:'<circle cx="50" cy="50" r="34"/><path d="M26 26 L82 40 M26 74 L82 60"/><path d="M4 50 H16 M84 50 H96"/>',
 fridge:'<rect x="26" y="8" width="48" height="84" rx="6"/><path d="M26 38 H74"/><path d="M36 18 V28 M36 48 V64"/>',
 fan:'<circle cx="50" cy="40" r="32"/><g class="spin"><circle cx="50" cy="40" r="4"/><path d="M50 36 C58 30 58 18 50 12 C46 20 46 30 50 36 Z"/><path d="M53.5 42 C63 44 72 52 74 58 C64 58 56 50 53.5 42 Z"/><path d="M46.5 42 C44 50 36 58 26 58 C28 50 37 44 46.5 42 Z"/></g><path d="M38 70 L32 90 H68 L62 70"/>',
@@ -1189,7 +1197,7 @@ def _overlap(pg, over, k):
         print("kontrola prekrývania:", e)
 
 
-def check(sc_data, cover, over=None):
+def check(sc_data, cover, over=None, badic=None):
     """Kontrola pred zverejnením. Vráti {"ok", "why": [dôvody po slovensky], ...}.
     Neprejde: prázdna scéna, stroj bez presného modelu, priveľa scén len s ikonami či textom."""
     from . import auto_visual
@@ -1205,6 +1213,8 @@ def check(sc_data, cover, over=None):
         why.append("Stroj bez presného modelu: " + ", ".join(crude))
     for k, bad in sorted((over or {}).items()):
         why.append(f"Prekrývanie v scéne {k + 1}: " + ", ".join(sorted(bad)))
+    if badic:
+        why.append("Ikona nesedí k scéne: " + ", ".join(map(str, badic)))
     # krátke video má len 4–5 scén: jedna slabá scéna navyše (2 zo 4) ešte neznamená „len ikony“ (16.11.)
     if body and len(weak) / len(body) > (WEAK_MAX if len(body) > 8 else 0.5):
         why.append(f"Slabý obraz (len ikony alebo text) v {len(weak)} z {len(body)} scén")
@@ -1229,23 +1239,23 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
         total = media.duration(voice) or 10
         words = media.word_times(voice, text)
     times = timeline(scenes, words, total)
-    sc_data, pcache, used, prev = [], {}, {}, None
+    sc_data, pcache, used, prev, badic = [], {}, {}, None, []
     seen_mech = set()
     from . import auto_visual
     # stroj, o ktorom je celé video (ak má presný model): podľa názvu videa, inak podľa toho, čo v texte prevláda
     topic = auto_visual.topic(" . ".join([text] + [f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''}" for sc in scenes]), title, strict=True)
     for i, (sc, (t0, t1)) in enumerate(zip(scenes, times)):
         spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
-        b0 = board_of(sc)
+        b0 = board_of(sc, lang)
         if not topic and (b0.get("k") == "svg" or (b0.get("k") == "mech" and b0.get("m") not in auto_visual.PRECISE)):
             # kresba od AI či stará hrubá schéma sa neukazuje: video nie je o stroji s presným modelom, scéna dostane obraz odhadnutý z textu
-            b0 = guess(sc.get("onscreen") or "", sc.get("visual") or "")
+            b0 = guess(sc.get("onscreen") or "", sc.get("visual") or "", lang)
         v = auto_visual.upgrade(b0, sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text,
                                 topic=topic, last=i == len(scenes) - 1 and len(scenes) > 2)
         prev = v.get("m") if v.get("k") == "mech" else None
         v = prepare(v, lang)
         if v.get("k") == "text" and not str(v.get("w") or "").strip():   # mapa, ktorú sa nepodarilo nájsť, či iný obraz bez obsahu: nikdy prázdna scéna
-            v = prepare(guess(sc.get("onscreen") or "", ""), lang)
+            v = prepare(guess(sc.get("onscreen") or "", "", lang), lang)
             if v.get("k") == "text" and not str(v.get("w") or "").strip():
                 v = {"k": "text", "w": str(sc.get("onscreen") or sc.get("visual") or "")[:60]}
         if v.get("k") == "mech":  # réžia: dĺžka scény a úvodný záber „kde to je“ len pri prvom výskyte stroja
@@ -1266,6 +1276,8 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             h = ""  # rovnaký text ako nadpis: ukáž ho len raz, veľkým
         sc_data.append({"h": h, "v": v, "t0": round(t0, 3), "t1": round(t1, 3),
                         "steps": STEPS.get(v.get("k"), lambda d: 2)(v)})
+        if lang == "en" and auto_visual.bad_icons(v, f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''} . {spoken}"):
+            badic.append(i + 1)   # poistka: ikona, ktorá nesedí k scéne, sa nesmie dostať von (kontrola video nepustí)
     loop = bool(loop and not wide and len(sc_data) > 2)   # krátke video: koniec nadviaže na začiatok (bez záverečnej karty, logo ostáva v rohu)
     tail = 0 if loop else TAIL if (logo_end or logo) else 0
     data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
@@ -1339,9 +1351,9 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
                 proc.kill()
             b.close()
     if check_only:
-        return check(sc_data, cover, over)
+        return check(sc_data, cover, over, badic)
     EVENTS[str(out)] = auto_visual.sound_events(sc_data)   # zvuky k obrazu (domieša audio.finish)
-    QA[str(out)] = check(sc_data, cover, over)
+    QA[str(out)] = check(sc_data, cover, over, badic)
     if _all_black(out, length):
         raise RuntimeError("Video vyšlo celé čierne, skús ho vyrobiť znova")
     return str(out)
