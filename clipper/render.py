@@ -17,7 +17,8 @@ from . import env, source, store
 
 W, H, FPS = 1080, 1920, 30
 SAFE_TOP, SAFE_RIGHT = 300, 180
-CAP_Y = {"crop": 1180, "full": 1180, "fit": 1200, "duo": 925}
+CAP_Y = {"crop": 1180, "full": 1180, "fit": 1200, "duo": 925, "wide": 1230}
+WIDE_KEEP, WIDE_Y = 0.7, 560     # klip podľa obrazu: stredných 70 % šírky, väčší obraz než pri celom zábere
 HOOK_SEC = 4.0
 FIT_Y = 570
 ACCENT = (255, 107, 0)
@@ -94,12 +95,16 @@ def _x_expr(keys, sw, cw):
     return f"if(lt(t,{keys[0][0]}),{px(keys[0][1])},{expr})"
 
 
-def plan(src_path, t0, dur, work):
+def plan(src_path, t0, dur, work, whole=False):
     """Rozdelí klip na zábery a pre každý vyberie rozloženie. Vráti (zoznam záberov, šírka, výška zdroja)."""
     fj = Path(work) / "faces.json"
     try:
+        if whole:        # klip podľa obrazu (trailer, hra, šport): neorezáva sa na tvár, ukáže sa celý záber
+            raise LookupError
         env.tool("faces", [src_path, f"{t0:.3f}", f"{t0 + dur:.3f}", fj], timeout=900)
         data = json.loads(fj.read_text())
+    except LookupError:
+        data = {"w": 0, "h": 0, "samples": []}
     except Exception as e:
         print("Clipper tváre:", str(e)[:200])
         data = {"w": 0, "h": 0, "samples": []}
@@ -109,11 +114,11 @@ def plan(src_path, t0, dur, work):
                            stdin=subprocess.DEVNULL, start_new_session=True)
         m = re.search(r"Video:.*?(\d{3,5})x(\d{3,5})", r.stderr)
         sw, sh = (int(m.group(1)), int(m.group(2))) if m else (1920, 1080)
-    bounds = [0.0] + _scene_cuts(src_path, t0, dur) + [dur]
+    bounds = [0.0] + ([] if whole else _scene_cuts(src_path, t0, dur)) + [dur]
     shots = []
     for a, b in zip(bounds, bounds[1:]):
         sm = [s for s in data["samples"] if a <= s["t"] < b]
-        shot = {"a": a, "b": b, "layout": "fit"}
+        shot = {"a": a, "b": b, "layout": "wide" if whole else "fit"}
         if sh >= sw * 1.2:
             shot["layout"] = "full"
         elif len(sm) >= 2:
@@ -143,6 +148,11 @@ def _vf(shot, sw, sh):
             y = max(0, min(sh - ch, round(p["cy"] * sh - ch * 0.42)))
             parts.append(f"[s{i}]crop={cw}:{ch}:{x}:{y},scale={W}:{H // 2}[p{i}]")
         return f"[0:v]split=2[s0][s1];{parts[0]};{parts[1]};[p0][p1]vstack=inputs=2,{tail}[v]"
+    if lay == "wide":
+        cw = int(sw * WIDE_KEEP) // 2 * 2
+        fh = min(H - WIDE_Y - 300, int(W * sh / cw) // 2 * 2)
+        return (f"[0:v]split=2[b0][f0];[b0]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                f"boxblur=26:3,eq=brightness=-0.22[bg];[f0]crop={cw}:{sh},scale={W}:{fh}[fg];[bg][fg]overlay=0:{WIDE_Y},{tail}[v]")
     fh = int(W * sh / sw) // 2 * 2
     return (f"[0:v]split=2[b0][f0];[b0]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
             f"boxblur=26:3,eq=brightness=-0.22[bg];[f0]scale={W}:{fh}[fg];[bg][fg]overlay=0:{min(FIT_Y, (H - fh) // 2)},{tail}[v]")
@@ -215,7 +225,7 @@ def _captions(words, hook, lang, dur, shots, sw, sh, tmp):
     """Priehľadná video vrstva s titulkami slovo po slove a s úvodným titulkom.
     Poloha textov sa riadi záberom, ktorý práve beží, aby nikdy nezakryli tvár.
     Titulok ostáva celý čas len vtedy, keď je celý klip na rozmazanom pozadí; inak prvé 4 sekundy."""
-    hook_until = dur + 9 if all(s["layout"] == "fit" for s in shots) else HOOK_SEC
+    hook_until = dur + 9 if all(s["layout"] in ("fit", "wide") for s in shots) else HOOK_SEC
 
     def place(t):
         s = next((x for x in shots if x["a"] <= t < x["b"]), shots[-1])
@@ -268,7 +278,8 @@ def render(clip):
     out = store.DIR / "clips" / f"klip-{clip['id']}.mp4"
     with tempfile.TemporaryDirectory(dir=store.DIR / "work") as tmp:
         tmp = Path(tmp)
-        shots, sw, sh = plan(src["path"], t0, dur, tmp)
+        visual = (src.get("kind") or "speech") == "visual"
+        shots, sw, sh = plan(src["path"], t0, dur, tmp, whole=visual)
         parts, done = [], 0
         total_frames = round(dur * FPS)
         for i, s in enumerate(shots):
@@ -301,6 +312,6 @@ def render(clip):
     real = media.duration(out)
     if not out.exists() or out.stat().st_size < 50_000 or abs(real - dur) > 1.0:
         raise RuntimeError(f"Klip nevyšiel správne (dĺžka {real:.1f} s namiesto {dur:.1f} s).")
-    if not words:
+    if not words and not visual:
         raise RuntimeError("V klipe nie je žiadna reč.")
     return str(out), real, layout

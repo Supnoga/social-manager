@@ -117,10 +117,10 @@ function vPrehlad(){
 }
 function stTag(s){return {active:'<span class="tag ok">Beží</span>',paused:'<span class="tag warn">Pozastavená</span>',ended:'<span class="tag">Ukončená</span>'}[s]||''}
 
-function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:15,clip_max:45,name:'',url:'',tags:'',rules:'',about:'',sources:''};render()}
+function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:15,clip_max:45,kind:'auto',name:'',url:'',tags:'',rules:'',about:'',sources:''};render()}
 function edCamp(id){const c=S.campaigns.find(x=>x.id==id);editCamp=id;form={...c,sources:''};render()}
 function fv(k){const e=document.getElementById('f_'+k);return e?e.value:form[k]}
-function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','lang','per_day','clip_min','clip_max','sources'])form[k]=fv(k);
+function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','lang','per_day','clip_min','clip_max','kind','sources'])form[k]=fv(k);
   form.networks=[...document.querySelectorAll('.net:checked')].map(e=>e.value)}
 async function fillBrief(){const text=document.getElementById('brief').value;if(text.trim().length<40){toast('Vlož text zo stránky kampane.',true);return}
   readForm();toast('Čítam pravidlá kampane…');try{const d=await api('/api/clip/brief',{text});
@@ -144,7 +144,8 @@ function campForm(){
    ${fld('tags','Povinné značky v popise (napr. #znacka @tvorca)')}
    <div class="f"><label>Pravidlá kampane pre klipy</label><textarea id="f_rules">${esc(form.rules)}</textarea></div>
    ${fld('about','O kom alebo o čom sú zdrojové videá')}</div>
-  <div class="card"><h2>Výroba</h2><div class="fg">${fld('per_day','Klipov denne z tejto kampane','number')}${fld('clip_min','Dĺžka klipu od (s)','number')}${fld('clip_max','Dĺžka klipu do (s)','number')}</div>
+  <div class="card"><h2>Výroba</h2><div class="fg">${fld('per_day','Klipov denne z tejto kampane','number')}${fld('clip_min','Dĺžka klipu od (s)','number')}${fld('clip_max','Dĺžka klipu do (s)','number')}
+   <div class="f"><label>Podľa čoho vyberať momenty</label><select id="f_kind">${[['auto','Automaticky'],['speech','Podľa reči (podcast, rozhovor, streamer)'],['visual','Podľa obrazu (trailer, hra, šport)']].map(([k,v])=>`<option value="${k}" ${(form.kind||'auto')==k?'selected':''}>${v}</option>`).join('')}</select></div></div>
    <div class="f"><label>${editCamp?'Pridať zdrojové videá':'Zdrojové videá'} (odkazy, každý na nový riadok)</label><textarea id="f_sources" placeholder="https://www.youtube.com/watch?v=…">${esc(form.sources)}</textarea></div>
    <div class="row"><button class="btn" onclick="saveCamp()">Uložiť kampaň</button><button class="btn sec" onclick="editCamp=null;render()">Zrušiť</button></div></div>`;
 }
