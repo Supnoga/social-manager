@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clipper</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.kpi{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));margin-bottom:14px}
+.note{border:1px solid var(--accLine);background:var(--accSoft);border-radius:var(--rs);padding:12px 14px;display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.note.bad{border-color:rgba(240,68,56,.4);background:var(--badSoft)}
+.note .sp{flex:1}
+table.t{width:100%;border-collapse:collapse}
+table.t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+table.t td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.t tr:last-child td{border-bottom:0}
+.tag{display:inline-block;font-size:11px;font-weight:650;padding:2px 8px;border-radius:99px;background:var(--panel3);color:#ddd;white-space:nowrap}
+.tag.ok{background:var(--okSoft);color:var(--ok)}.tag.warn{background:var(--warnSoft);color:var(--warn)}
+.tag.bad{background:var(--badSoft);color:var(--bad)}.tag.acc{background:var(--accSoft);color:var(--acc)}
+.clips{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.clip{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.clip video,.clip .ph{width:100%;aspect-ratio:9/16;background:#000;display:block;max-height:440px;object-fit:contain}
+.clip .ph{display:grid;place-items:center;color:var(--dim);font-size:13px;text-align:center;padding:20px}
+.clip .b{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}
+.clip .b b{font-size:14px;line-height:1.3}
+.f{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.f label{font-size:12px;color:var(--muted);font-weight:600}
+.f input,.f select,.f textarea,.in{background:var(--panel2);border:1px solid var(--line2);color:#fff;border-radius:var(--rs);padding:9px 11px;font:inherit;width:100%}
+.f textarea{min-height:84px;resize:vertical}
+.in.n{width:84px}
+.fg{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.chip{padding:6px 12px;border-radius:99px;background:var(--panel2);border:1px solid var(--line2);cursor:pointer;font-weight:600;font-size:13px;color:#ccc}
+.chip.on{background:var(--accSoft);border-color:var(--accLine);color:var(--acc)}
+.links{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--rs);padding:10px 12px;font:12px/1.7 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-all;max-height:240px;overflow:auto;margin:10px 0}
+.ck{display:inline-flex;gap:6px;align-items:center;margin-right:14px;cursor:pointer}
+.toast{position:fixed;right:22px;bottom:22px;background:var(--panel3);border:1px solid var(--line2);padding:12px 16px;border-radius:var(--rs);z-index:99;max-width:420px}
+.toast.bad{border-color:var(--bad)}
+.live{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--dim)}.live i.on{background:var(--acc);animation:pu 1.2s infinite}
+@keyframes pu{50%{opacity:.35}}
+.sw{position:relative;width:40px;height:22px;border-radius:99px;background:var(--panel3);border:1px solid var(--line2);cursor:pointer;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#aaa;transition:.15s}
+.sw.on{background:var(--acc);border-color:var(--acc)}.sw.on::after{left:20px;background:#000}
+</style>
+</head>
+<body>
+<aside class="side" id="side"></aside>
+<main id="main"></main>
+<div id="toast"></div>
+<script>
+const IC={
+ home:'<path d="M3 11 12 3l9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+ camp:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>',
+ src:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>',
+ clip:'<circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M8.6 8.6 21 19M8.6 15.4 21 5"/>',
+ send:'<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+ acc:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+ set:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+ back:'<path d="M15 18l-6-6 6-6"/>', ok:'<path d="M20 6 9 17l-5-5"/>', x:'<path d="M18 6 6 18M6 6l12 12"/>',
+ copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>', ext:'<path d="M14 4h6v6M20 4 10 14M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+ eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', usd:'<path d="M12 2v20M17 6.5C17 4.600 14.800 4 12 4S7 5 7 7.500 9 11 12 11.500s5 1.500 5 4S14.800 20 12 20s-5-.6-5-2.500"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>', edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>', redo:'<path d="M3 12a9 9 0 1 0 3-6.700L3 8M3 3v5h5"/>'
+};
+const ic=(n,c='')=>`<svg class="i ${c}" viewBox="0 0 24 24">${IC[n]}</svg>`;
+const NET={youtube:'YouTube',instagram:'Instagram',tiktok:'TikTok',facebook:'Facebook'};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=n=>Number(n||0).toLocaleString('sk-SK');
+const usd=n=>Number(n||0).toLocaleString('sk-SK',{minimumFractionDigits:2,maximumFractionDigits:2})+' $';
+const when=s=>{if(!s)return'';const d=new Date(s.replace(' ','T'));return d.toLocaleString('sk-SK',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})};
+let S=null,tab=(location.hash.slice(2)||'prehlad'),clipFilter='ready',editCamp=null,form={},busy=false;
+
+function toast(t,bad){const e=document.getElementById('toast');e.innerHTML=`<div class="toast ${bad?'bad':''}">${esc(t)}</div>`;clearTimeout(toast.t);toast.t=setTimeout(()=>e.innerHTML='',bad?7000:2600)}
+async function api(path,body){
+  const r=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({error:'Appka neodpovedá.'}));
+  if(!r.ok||d.error){toast(d.error||'Nepodarilo sa.',true);throw new Error(d.error||r.status)}
+  return d;
+}
+async function load(force){
+  const a=document.activeElement;
+  if(!force&&a&&['INPUT','TEXTAREA','SELECT'].includes(a.tagName))return;
+  if(!force&&[...document.querySelectorAll('video')].some(v=>!v.paused))return;
+  try{S=await api('/api/clip/state');render(!force)}catch(e){}
+}
+function go(t){tab=t;location.hash='#/'+t;editCamp=null;render();window.scrollTo(0,0)}
+async function act(path,body,msg){if(busy)return;busy=true;try{await api(path,body);if(msg)toast(msg);await load(true)}catch(e){}busy=false}
+
+function side(){
+  const s=S.summary,items=[['prehlad','home','Prehľad'],['kampane','camp','Kampane',S.campaigns.filter(c=>c.status=='active').length],
+   ['zdroje','src','Zdrojové videá'],['klipy','clip','Klipy',s.review||''],['odoslat','send','Na odoslanie',s.todo||''],['ucty','acc','Účty',S.accounts.length],['nastavenia','set','Nastavenia']];
+  const w=S.worker,t=S.tools;
+  const live=S.settings.paused?'Pozastavené':t.installing?('Pripravujem nástroje: '+(t.step||'')):w.busy?w.step:'Čaká na prácu';
+  document.getElementById('side').innerHTML=`<div class="logo"><span class="mark">${ic('clip')}</span>Clipper</div>`+
+   items.map(i=>`<div class="nav ${tab==i[0]?'on':''}" onclick="go('${i[0]}')">${ic(i[1])}${i[2]}${i[3]?`<span class="cnt">${i[3]}</span>`:''}</div>`).join('')+
+   `<div class="side-foot"><div class="live"><i class="${(w.busy||t.installing)&&!S.settings.paused?'on':''}"></i>${esc(live)}</div>
+    <div style="margin-top:10px"><a href="/">${ic('back','s')} Social Manager</a></div></div>`;
+}
+function stat(icn,val,label){return `<div class="card stat"><div class="ic">${ic(icn)}</div><div><b>${val}</b><span>${label}</span></div></div>`}
+
+function vPrehlad(){
+  const s=S.summary,t=S.tools;let n='';
+  if(t.error)n+=`<div class="note bad"><div>Nástroje na strih sa nepodarilo pripraviť: ${esc(t.error)}</div></div>`;
+  if(S.worker.error)n+=`<div class="note bad"><div>${esc(S.worker.error)}</div></div>`;
+  if(!S.campaigns.length)n+=`<div class="note"><div>Začni kampaňou: vlož text zo stránky kampane a odkazy na zdrojové videá.</div><span class="sp"></span><button class="btn" onclick="newCamp()">${ic('plus','s')}Pridať kampaň</button></div>`;
+  if(!S.accounts.length)n+=`<div class="note"><div>Zatiaľ nie je pripojený žiadny účet. Klipy sa dajú strihať aj bez neho, zverejňovať sa začnú po pripojení.</div><span class="sp"></span><button class="btn sec" onclick="go('ucty')">Účty</button></div>`;
+  if(s.review)n+=`<div class="note"><div><b>${s.review}</b> klipov čaká na tvoje schválenie.</div><span class="sp"></span><button class="btn" onclick="go('klipy')">Pozrieť klipy</button></div>`;
+  if(s.todo)n+=`<div class="note"><div><b>${s.todo}</b> zverejnených klipov treba vložiť do kampane, aby sa začali platiť.</div><span class="sp"></span><button class="btn" onclick="go('odoslat')">Odoslať odkazy</button></div>`;
+  if(s.failed)n+=`<div class="note bad"><div><b>${s.failed}</b> zverejnení sa nepodarilo.</div><span class="sp"></span><button class="btn sec" onclick="go('odoslat')">Pozrieť</button></div>`;
+  const rows=S.campaigns.map(c=>`<tr><td><b>${esc(c.name)}</b><div class="small muted">${esc(c.site_name)} · ${usd(c.rate)} za 1 000 pozretí</div></td>
+    <td>${stTag(c.status)}</td><td>${c.totals.posted}<span class="muted small"> + ${c.totals.queued} v rade</span></td><td>${num(c.totals.views)}</td><td>${usd(c.totals.est)}</td><td>${usd(c.totals.paid)}</td></tr>`).join('');
+  return `<div class="top"><div><h1>Prehľad</h1><p class="sub">Platený clipping: od kampane po vyplatený klip.</p></div></div>${n}
+  <div class="kpi">${stat('eye',num(s.views),'pozretí spolu')}${stat('usd',usd(s.est),'odhad zárobku')}${stat('ok',usd(s.paid),'vyplatené')}
+  ${stat('clip',s.posted,'zverejnených klipov, dnes '+s.today)}${stat('send',s.queued,'naplánovaných')}</div>
+  <div class="card"><h2>Kampane</h2>${rows?`<table class="t"><tr><th>Kampaň</th><th>Stav</th><th>Klipy</th><th>Pozretia</th><th>Odhad</th><th>Vyplatené</th></tr>${rows}</table>`:'<p class="muted">Žiadna kampaň.</p>'}
+  <p class="small muted" style="margin:12px 0 0">Odhad počíta appka z pozretí a pravidiel kampane. Platí suma, ktorú ukáže stránka kampane po schválení klipu.</p></div>`;
+}
+function stTag(s){return {active:'<span class="tag ok">Beží</span>',paused:'<span class="tag warn">Pozastavená</span>',ended:'<span class="tag">Ukončená</span>'}[s]||''}
+
+function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:20,clip_max:55,name:'',url:'',tags:'',rules:'',about:'',sources:''};render()}
+function edCamp(id){const c=S.campaigns.find(x=>x.id==id);editCamp=id;form={...c,sources:''};render()}
+function fv(k){const e=document.getElementById('f_'+k);return e?e.value:form[k]}
+function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','lang','per_day','clip_min','clip_max','sources'])form[k]=fv(k);
+  form.networks=[...document.querySelectorAll('.net:checked')].map(e=>e.value)}
+async function fillBrief(){const text=document.getElementById('brief').value;if(text.trim().length<40){toast('Vlož text zo stránky kampane.',true);return}
+  readForm();toast('Čítam pravidlá kampane…');try{const d=await api('/api/clip/brief',{text});
+   for(const k in d){if(k=='sources'){if(d.sources.length)form.sources=d.sources.join('\n')}else if(k!='risk'&&d[k]!==''&&d[k]!==null)form[k]=d[k]}
+   form.risk=d.risk||'';render();toast('Vyplnené, skontroluj čísla.')}catch(e){}}
+async function saveCamp(){readForm();if(!String(form.name).trim()){toast('Daj kampani názov.',true);return}
+  const b={...form};if(editCamp)b.id=editCamp;delete b.totals;delete b.clips;delete b.risk;
+  try{await api('/api/clip/campaign',b);editCamp=null;toast('Uložené.');await load(true)}catch(e){}}
+function fld(k,label,type='text',extra=''){return `<div class="f"><label>${label}</label><input id="f_${k}" type="${type}" value="${esc(form[k])}" ${extra}></div>`}
+function campForm(){
+  return `<div class="top"><div><div class="crumb"><a onclick="editCamp=null;render()">Kampane</a> /</div><h1>${editCamp?'Upraviť kampaň':'Nová kampaň'}</h1></div></div>
+  ${editCamp?'':`<div class="card"><h2>Rýchle vyplnenie</h2><p class="muted" style="margin-top:0">Na stránke kampane označ celý text, skopíruj ho a vlož sem. Appka z neho vyčíta sadzbu, pravidlá aj povinné značky.</p>
+   <div class="f"><textarea id="brief" placeholder="Vlož text zo stránky kampane"></textarea></div><button class="btn sec" onclick="fillBrief()">Vyplniť z textu</button></div>`}
+  ${form.risk?`<div class="note bad" style="margin-top:14px"><div>${esc(form.risk)}</div></div>`:''}
+  <div class="card"><h2>Kampaň</h2><div class="fg">${fld('name','Názov')}
+   <div class="f"><label>Platforma</label><select id="f_site">${Object.entries(S.sites).map(([k,v])=>`<option value="${k}" ${form.site==k?'selected':''}>${v}</option>`).join('')}</select></div>
+   ${fld('url','Odkaz na stránku kampane')}${fld('rate','Sadzba v $ za 1 000 pozretí','number','step="0.01"')}${fld('min_views','Minimum pozretí na klip','number')}
+   ${fld('max_payout','Strop v $ na jeden klip (0 = bez)','number')}${fld('budget','Rozpočet kampane v $ (0 = neviem)','number')}${fld('lang','Jazyk videí (en, de, …)')}</div>
+   <div class="f"><label>Siete, ktoré kampaň platí</label><div>${Object.entries(NET).map(([k,v])=>`<label class="ck"><input type="checkbox" class="net" value="${k}" ${form.networks.includes(k)?'checked':''}>${v}</label>`).join('')}</div></div>
+   ${fld('tags','Povinné značky v popise (napr. #znacka @tvorca)')}
+   <div class="f"><label>Pravidlá kampane pre klipy</label><textarea id="f_rules">${esc(form.rules)}</textarea></div>
+   ${fld('about','O kom alebo o čom sú zdrojové videá')}</div>
+  <div class="card"><h2>Výroba</h2><div class="fg">${fld('per_day','Klipov denne z tejto kampane','number')}${fld('clip_min','Dĺžka klipu od (s)','number')}${fld('clip_max','Dĺžka klipu do (s)','number')}</div>
+   <div class="f"><label>${editCamp?'Pridať zdrojové videá':'Zdrojové videá'} (odkazy, každý na nový riadok)</label><textarea id="f_sources" placeholder="https://www.youtube.com/watch?v=…">${esc(form.sources)}</textarea></div>
+   <div class="row"><button class="btn" onclick="saveCamp()">Uložiť kampaň</button><button class="btn sec" onclick="editCamp=null;render()">Zrušiť</button></div></div>`;
+}
+function vKampane(){
+  if(editCamp!==null)return campForm();
+  const cards=S.campaigns.map(c=>{const k=c.clips;return `<div class="card"><div class="row"><h2 style="margin:0">${esc(c.name)}</h2>${stTag(c.status)}<span class="tag">${esc(c.site_name)}</span><span class="sp"></span>
+    ${c.url?`<a class="btn sec" href="${esc(c.url)}" target="_blank" rel="noopener">${ic('ext','s')}Stránka kampane</a>`:''}<button class="btn sec" onclick="edCamp(${c.id})">${ic('edit','s')}Upraviť</button>
+    ${c.status=='active'?`<button class="btn sec" onclick="act('/api/clip/campaign/${c.id}/status',{status:'paused'})">Pozastaviť</button>`:`<button class="btn sec" onclick="act('/api/clip/campaign/${c.id}/status',{status:'active'})">Spustiť</button>`}
+    ${c.status!='ended'?`<button class="btn sec" onclick="if(confirm('Ukončiť kampaň? Nové klipy sa už nebudú robiť, zverejnené ostanú.'))act('/api/clip/campaign/${c.id}/status',{status:'ended'})">Ukončiť</button>`:''}</div>
+    <p class="muted" style="margin:8px 0 12px">${usd(c.rate)} za 1 000 pozretí${c.min_views?` · od ${num(c.min_views)} pozretí`:''}${c.max_payout?` · najviac ${usd(c.max_payout)} na klip`:''}${c.budget?` · rozpočet ${usd(c.budget)}`:''} · ${c.networks.map(n=>NET[n]).join(', ')}</p>
+    <div class="row small"><span class="tag">${c.sources} zdrojov čaká</span><span class="tag">${k.picked||0} v strihu</span><span class="tag acc">${k.ready||0} na schválenie</span><span class="tag">${c.totals.queued} v rade</span><span class="tag ok">${c.totals.posted} zverejnených</span><span class="tag">${num(c.totals.views)} pozretí</span><span class="tag ok">odhad ${usd(c.totals.est)}</span></div></div>`}).join('');
+  return `<div class="top"><div><h1>Kampane</h1><p class="sub">Kampaň si vyberieš na stránke platformy, tu jej nastavíš pravidlá a zdrojové videá.</p></div><span class="sp"></span><button class="btn" onclick="newCamp()">${ic('plus','s')}Nová kampaň</button></div>${cards||'<div class="card muted">Zatiaľ žiadna kampaň.</div>'}`;
+}
+
+const SRC={new:['Čaká',''],fetching:['Sťahuje sa','acc'],transcribing:['Prepisuje sa reč','acc'],ready:['Pripravené','ok'],used:['Vyťažené',''],failed:['Chyba','bad']};
+async function addSrc(){const campaign_id=document.getElementById('s_c').value,urls=document.getElementById('s_u').value;try{await api('/api/clip/source',{campaign_id,urls});toast('Pridané.');await load(true)}catch(e){}}
+function vZdroje(){
+  const act_=S.campaigns.filter(c=>c.status!='ended');
+  const rows=S.sources.map(s=>{const t=SRC[s.status]||[s.status,''];return `<tr><td><b>${esc(s.title||s.url)}</b>${s.title?`<div class="small muted">${esc(s.url)}</div>`:''}${s.error?`<div class="small" style="color:var(--bad)">${esc(s.error)}</div>`:''}</td>
+   <td>${esc(s.campaign)}</td><td>${s.duration?Math.round(s.duration/60)+' min':''}</td><td><span class="tag ${t[1]}">${t[0]}</span></td><td>${s.clips}</td>
+   <td>${s.status=='failed'||s.status=='used'?`<button class="btn sec" onclick="act('/api/clip/source/${s.id}/retry')">${ic('redo','s')}${s.status=='used'?'Vyťažiť znova':'Skúsiť znova'}</button>`:''}</td></tr>`}).join('');
+  return `<div class="top"><div><h1>Zdrojové videá</h1><p class="sub">Dlhé videá tvorcu, z ktorých sa strihajú klipy. Stiahnutie, prepis reči aj výber momentov ide samo.</p></div></div>
+  ${act_.length?`<div class="card"><h2>Pridať videá</h2><div class="f"><label>Kampaň</label><select id="s_c">${act_.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+   <div class="f"><label>Odkazy na videá (každý na nový riadok)</label><textarea id="s_u" placeholder="https://www.youtube.com/watch?v=…"></textarea></div><button class="btn" onclick="addSrc()">Pridať</button></div>`:''}
+  <div class="card">${rows?`<table class="t"><tr><th>Video</th><th>Kampaň</th><th>Dĺžka</th><th>Stav</th><th>Klipy</th><th></th></tr>${rows}</table>`:'<p class="muted" style="margin:0">Žiadne zdrojové video.</p>'}</div>`;
+}
+
+const CF=[['ready','Na schválenie'],['picked','V strihu'],['planned','Schválené'],['failed','Chyby'],['rejected','Zamietnuté']];
+function editClip(id){const c=S.clips.find(x=>x.id==id);const hook=prompt('Titulok v obraze (najviac 7 slov):',c.hook);if(hook===null)return;
+  const title=prompt('Názov príspevku:',c.title);if(title===null)return;const caption=prompt('Popis príspevku:',c.caption);if(caption===null)return;
+  act('/api/clip/clip/'+id,{hook,title,caption,action:hook!=c.hook?'redo':''},hook!=c.hook?'Uložené, klip sa vystrihne znova.':'Uložené.')}
+function vKlipy(){
+  const cnt=k=>S.clips.filter(c=>k=='planned'?['approved','planned'].includes(c.status):c.status==k).length;
+  const list=S.clips.filter(c=>clipFilter=='planned'?['approved','planned'].includes(c.status):c.status==clipFilter);
+  const cards=list.map(c=>{const has=['ready','approved','planned'].includes(c.status);
+   return `<div class="clip">${has?`<video controls preload="metadata" src="/api/clip/file/${c.id}#t=0.5"></video>`:`<div class="ph">${c.status=='picked'?'Čaká na strih':c.status=='failed'?esc(c.error):'Bez náhľadu'}</div>`}
+   <div class="b"><b>${esc(c.hook||c.title)}</b><div class="small muted">${esc(c.title)}</div><div class="small">${esc(c.caption)}</div>
+   <div class="row small"><span class="tag">${esc(c.campaign)}</span><span class="tag">${Math.round(c.duration||(c.t1-c.t0))} s</span><span class="tag acc">sila ${c.score}</span></div>
+   ${c.why?`<div class="small dim">${esc(c.why)}</div>`:''}
+   ${c.posts.length?`<div class="small">${c.posts.map(p=>`${NET[p.platform]}: ${p.status=='posted'?(p.url?`<a href="${esc(p.url)}" target="_blank" rel="noopener">vonku</a>, ${num(p.views)} pozretí`:'vonku'):p.status=='failed'?'chyba':when(p.when)}`).join('<br>')}</div>`:''}
+   <span class="sp"></span><div class="row">
+   ${c.status=='ready'?`<button class="btn" onclick="act('/api/clip/clip/${c.id}',{action:'approve'})">${ic('ok','s')}Schváliť</button>`:''}
+   ${['ready','picked','failed'].includes(c.status)?`<button class="btn sec" onclick="act('/api/clip/clip/${c.id}',{action:'reject'})">${ic('x','s')}Zamietnuť</button>`:''}
+   ${['ready','picked'].includes(c.status)?`<button class="btn sec" onclick="editClip(${c.id})">${ic('edit','s')}</button>`:''}
+   ${['failed','rejected'].includes(c.status)?`<button class="btn sec" onclick="act('/api/clip/clip/${c.id}',{action:'redo'})">${ic('redo','s')}Skúsiť znova</button>`:''}</div></div></div>`}).join('');
+  return `<div class="top"><div><h1>Klipy</h1><p class="sub">${S.settings.autopublish?'Klipy idú von samy, bez schvaľovania.':'Von ide len to, čo schváliš.'}</p></div><span class="sp"></span>
+  ${clipFilter=='ready'&&list.length?`<button class="btn" onclick="if(confirm('Schváliť všetkých ${list.length} klipov?'))act('/api/clip/approve_all',{})">${ic('ok','s')}Schváliť všetky</button>`:''}</div>
+  <div class="chips">${CF.map(f=>`<span class="chip ${clipFilter==f[0]?'on':''}" onclick="clipFilter='${f[0]}';render()">${f[1]} ${cnt(f[0])||''}</span>`).join('')}</div>
+  ${cards?`<div class="clips">${cards}</div>`:'<div class="card muted">Nič tu nie je.</div>'}`;
+}
+
+const SUB={todo:'Neodoslané',submitted:'Odoslané, čaká na schválenie',approved:'Schválené',rejected:'Zamietnuté',paid:'Vyplatené'};
+function copyLinks(cid){const t=document.getElementById('lk_'+cid).innerText;navigator.clipboard.writeText(t).then(()=>toast('Odkazy sú skopírované.'),()=>toast('Kopírovanie zlyhalo, označ ich ručne.',true))}
+function markSent(cid){const ids=S.posts.filter(p=>p.campaign_id==cid&&p.status=='posted'&&p.submit=='todo'&&p.url).slice(0,25).map(p=>p.id);act('/api/clip/submitted',{ids},'Označené ako odoslané.')}
+function setUrl(id){const url=prompt('Odkaz na zverejnený klip:');if(url)act('/api/clip/post/'+id,{url})}
+function setPaid(id){const v=prompt('Koľko dolárov kampaň za tento klip vyplatila?');if(v!==null&&v!=='')act('/api/clip/post/'+id,{paid:v})}
+function vOdoslat(){
+  let out='';
+  for(const c of S.campaigns){
+    const todo=S.posts.filter(p=>p.campaign_id==c.id&&p.status=='posted'&&p.submit=='todo'&&p.url);
+    if(!todo.length)continue;const first=todo.slice(0,25);
+    out+=`<div class="card"><div class="row"><h2 style="margin:0">${esc(c.name)}</h2><span class="tag">${esc(c.site_name)}</span><span class="tag acc">${todo.length} odkazov</span><span class="sp"></span>
+     ${c.url?`<a class="btn sec" href="${esc(c.url)}" target="_blank" rel="noopener">${ic('ext','s')}Otvoriť kampaň</a>`:''}</div>
+     <div class="links" id="lk_${c.id}">${first.map(p=>esc(p.url)).join('\n')}</div>
+     <div class="row"><button class="btn" onclick="copyLinks(${c.id})">${ic('copy','s')}Kopírovať odkazy</button><button class="btn sec" onclick="markSent(${c.id})">${ic('ok','s')}Už som ich vložil</button>
+     ${todo.length>25?`<span class="small muted">Naraz ide najviac 25, zvyšok sa ukáže potom.</span>`:''}</div></div>`;
+  }
+  const nourl=S.posts.filter(p=>p.status=='posted'&&!p.url);
+  const failed=S.posts.filter(p=>p.status=='failed');
+  const rest=S.posts.filter(p=>p.status=='posted'&&p.submit!='todo');
+  const queued=S.posts.filter(p=>['queued','posting'].includes(p.status)).reverse();
+  const row=p=>`<tr><td><b>${esc(p.hook||p.clip_title)}</b><div class="small muted">${esc(p.campaign)} · ${NET[p.platform]} · ${esc(p.account)}</div></td>`;
+  return `<div class="top"><div><h1>Na odoslanie</h1><p class="sub">Platformy nemajú napojenie pre appky, odkazy sa do kampane vkladajú ručne. Tu ich máš pripravené na jedno skopírovanie.</p></div></div>
+  ${out||'<div class="card muted">Žiadne odkazy na odoslanie.</div>'}
+  ${nourl.length?`<div class="card"><h2>Chýba odkaz</h2><p class="muted" style="margin-top:0">Tieto klipy sú vonku, ale sieť nevrátila odkaz. Doplň ho, aby sa dal odoslať do kampane.</p><table class="t">${nourl.map(p=>row(p)+`<td><button class="btn sec" onclick="setUrl(${p.id})">Doplniť odkaz</button></td></tr>`).join('')}</table></div>`:''}
+  ${failed.length?`<div class="card"><h2>Nepodarilo sa zverejniť</h2><table class="t">${failed.map(p=>row(p)+`<td class="small" style="color:var(--bad)">${esc(p.error)}</td><td><button class="btn sec" onclick="act('/api/clip/post/${p.id}',{retry:true})">${ic('redo','s')}Skúsiť znova</button></td></tr>`).join('')}</table></div>`:''}
+  ${rest.length?`<div class="card"><h2>Odoslané klipy</h2><table class="t"><tr><th>Klip</th><th>Pozretia</th><th>Odhad</th><th>Stav v kampani</th><th>Vyplatené</th></tr>${rest.map(p=>row(p)+`<td>${num(p.views)}</td><td>${usd(p.est)}</td>
+   <td><select class="in" style="width:auto" onchange="act('/api/clip/post/${p.id}',{submit:this.value})">${Object.entries(SUB).map(([k,v])=>`<option value="${k}" ${p.submit==k?'selected':''}>${v}</option>`).join('')}</select></td>
+   <td>${p.paid?usd(p.paid):''} <a onclick="setPaid(${p.id})">${p.paid?'zmeniť':'zapísať'}</a></td></tr>`).join('')}</table></div>`:''}
+  ${queued.length?`<div class="card"><h2>Naplánované zverejnenia</h2><table class="t">${queued.slice(0,60).map(p=>row(p)+`<td>${when(p.scheduled_at)}</td><td class="small muted">${esc(p.error||'')}</td></tr>`).join('')}</table></div>`:''}`;
+}
+
+function vUcty(){
+  const rows=S.accounts.map(a=>`<tr><td><b>${esc(a.name)}</b><div class="small muted">${NET[a.platform]||a.platform}</div></td><td>${a.broken?'<span class="tag bad">Treba pripojiť znova</span>':'<span class="tag ok">Pripojený</span>'}</td>
+   <td><div class="row"><span class="sw ${a.active?'on':''}" onclick="act('/api/clip/account/${a.id}',{active:${a.active?0:1},per_day:${a.per_day}})"></span><span class="small muted">${a.active?'zverejňuje':'vypnutý'}</span></div></td>
+   <td><input class="in n" type="number" min="1" max="40" value="${a.per_day}" onchange="act('/api/clip/account/${a.id}',{active:${a.active},per_day:this.value})"> <span class="small muted">klipov denne</span></td></tr>`).join('');
+  return `<div class="top"><div><h1>Účty</h1><p class="sub">Účty, na ktoré idú klipy. Každá sieť dostane každý klip raz.</p></div><span class="sp"></span><a class="btn" href="/#/p/${S.project_id}/ucty">${ic('plus','s')}Pripojiť účet</a></div>
+  <div class="note"><div>Tlačidlo Pripojiť účet ťa prenesie do Social Managera na účty projektu <b>Clipper</b>, tam sa prihlásiš do siete. Používaj len nové účty založené na clipping. Kanály Xplained a N2N sem nikdy nepripájaj, klipy z cudzích videí by im mohli zobrať zárobok.</div></div>
+  <div class="card">${rows?`<table class="t"><tr><th>Účet</th><th>Stav</th><th>Zverejňovanie</th><th>Tempo</th></tr>${rows}</table>`:'<p class="muted" style="margin:0">Žiadny účet. Klipy sa zatiaľ len strihajú.</p>'}</div>
+  ${S.accounts.some(a=>a.platform=='tiktok')&&!S.public_ok?'<div class="note bad" style="margin-top:14px"><div>TikTok si klipy sťahuje cez verejnú adresu appky a tá teraz nie je zapnutá.</div></div>':''}`;
+}
+
+async function saveSet(o){try{await api('/api/clip/settings',o);await load(true)}catch(e){}}
+function vNastavenia(){
+  const s=S.settings;
+  const line=(t,d,c)=>`<div class="row" style="padding:12px 0;border-bottom:1px solid var(--line)"><div><b>${t}</b><div class="small muted">${d}</div></div><span class="sp"></span>${c}</div>`;
+  return `<div class="top"><div><h1>Nastavenia</h1></div></div><div class="card">
+  ${line('Zverejňovať bez schvaľovania','Vypnuté: každý klip najprv uvidíš a schváliš. Zapnuté: hotové klipy idú von samy.',`<span class="sw ${s.autopublish?'on':''}" onclick="saveSet({autopublish:${!s.autopublish}})"></span>`)}
+  ${line('Pozastaviť Clipper','Nič sa nestrihá ani nezverejňuje, čísla sa načítavajú ďalej.',`<span class="sw ${s.paused?'on':''}" onclick="saveSet({paused:${!s.paused}})"></span>`)}
+  ${line('Kedy zverejňovať','Hodiny cez deň, medzi ktoré sa klipy rovnomerne rozložia.',`<input class="in n" type="number" min="0" max="22" value="${s.window[0]}" onchange="saveSet({window:[this.value,${s.window[1]}]})"> až <input class="in n" type="number" min="1" max="24" value="${s.window[1]}" onchange="saveSet({window:[${s.window[0]},this.value]})">`)}
+  ${line('Výbery momentov denne','Každý výber je jedno krátke čítanie prepisu cez tvoj Max. Jeden výber dá až 12 klipov. Dnes: '+S.summary.ai_today+'.',`<input class="in n" type="number" min="0" max="40" value="${s.ai_per_day}" onchange="saveSet({ai_per_day:this.value})">`)}
+  ${line('Najslabší moment, ktorý ešte berieme','Sila od 1 do 10. Vyššie číslo znamená menej klipov, ale lepších.',`<input class="in n" type="number" min="1" max="10" value="${s.min_score}" onchange="saveSet({min_score:this.value})">`)}
+  ${line('Pozretia','Načítavajú sa samy každé 3 hodiny.',`<button class="btn sec" onclick="saveSet({refresh_stats:true});toast('Načítavam čísla.')">Načítať teraz</button>`)}</div>`;
+}
+
+function render(keep){if(!S)return;side();const v={prehlad:vPrehlad,kampane:vKampane,zdroje:vZdroje,klipy:vKlipy,odoslat:vOdoslat,ucty:vUcty,nastavenia:vNastavenia}[tab]||vPrehlad;
+  if(keep&&tab=='kampane'&&editCamp!==null&&document.getElementById('f_name')){readForm();const b=document.getElementById('brief'),bt=b?b.value:'';document.getElementById('main').innerHTML=v();if(bt&&document.getElementById('brief'))document.getElementById('brief').value=bt;return}
+  document.getElementById('main').innerHTML=v()}
+load(true);setInterval(()=>load(false),6000);
+</script>
+</body>
+</html>

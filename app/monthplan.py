@@ -126,12 +126,20 @@ def _set_rhythm(ids):
     return {str(pid): pp[str(pid)]["offset"] for pid in ids}
 
 
+def _clip_pid():
+    """Projekt „Clipper“ drží len účty pre platený clipping: nevyrába sa v ňom nič, do plánu ani zásoby nepatrí."""
+    try:
+        return int(db.get_setting("clip_project_id") or 0)
+    except Exception:
+        return 0
+
+
 def build(project_ids=None, start=None, days=30):
     start = start or (dt.date.today() + dt.timedelta(days=1)).isoformat()
     days = max(1, min(62, int(days or 30)))
     plan = db.get_setting("month_plan", {}) or {}
     if not project_ids:   # celý plán: kanály, ktoré sa plánujú (plan_projects), inak všetky
-        project_ids = [int(k) for k in (db.get_setting("plan_projects", {}) or {})] or [r["id"] for r in db.q("SELECT id FROM projects ORDER BY id")]
+        project_ids = [int(k) for k in (db.get_setting("plan_projects", {}) or {})] or [r["id"] for r in db.q("SELECT id FROM projects ORDER BY id") if r["id"] != _clip_pid()]
         plan["projects"] = {}
     ids = project_ids
     plan.setdefault("projects", {})
@@ -213,4 +221,5 @@ def stock_days(pid, today=None):
 
 def stock_all():
     """Zásoba dní pre všetky kanály (aj tie, ktoré ešte nemajú plán: 0)."""
-    return [{"id": r["id"], "name": r["name"], "days": stock_days(r["id"])} for r in db.q("SELECT id, name FROM projects ORDER BY id")]
+    return [{"id": r["id"], "name": r["name"], "days": stock_days(r["id"])} for r in db.q("SELECT id, name FROM projects ORDER BY id")
+            if r["id"] != _clip_pid()]

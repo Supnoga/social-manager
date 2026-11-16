@@ -59,6 +59,8 @@ def video_token(video_id):
 
 
 def public_url(video):
+    if video.get("public_url"):   # Clipper: klip má vlastný tajný odkaz (/pub/c/...)
+        return video["public_url"]
     ext = Path(video["file_path"]).suffix.lower() or ".mp4"
     return f"{public_base()}/pub/{video['id']}/{video_token(video['id'])}{ext}"
 

@@ -98,6 +98,11 @@ def _start():
     db.con()
     scheduler.start()
     tunnel.start()
+    if os.environ.get("SM_VERIFY") != "1" and _clip_worker():
+        try:
+            _clip_worker().start()
+        except Exception as e:
+            print("Clipper sa nespustil:", e)
 
 
 def _page():
@@ -1686,6 +1691,8 @@ def _drain(on):
     """Pred aktualizáciou: výroba dokončí rozrobené a nové nezačne. Keď sa aktualizácia nekoná, pustí ju ďalej."""
     for st in (MPROD, PROD, SCRIPTS):
         st["drain"] = bool(on)
+    if _clip_worker():
+        _clip_worker().STATE["drain"] = bool(on)
     if not on:
         job = db.get_setting("month_plan_job")
         if job and not MPROD["running"]:
@@ -2693,6 +2700,19 @@ try:
 except Exception as _e:
     print("oprava R290:", _e)
 app.include_router(brand.router)
+try:  # Clipper (platený clipping) je oddelená časť: keby sa nenačítal, Social Manager beží ďalej
+    from clipper import api as _clip_api
+    app.include_router(_clip_api.router)
+except Exception as _e:
+    print("Clipper sa nenačítal:", _e)
+
+
+def _clip_worker():
+    try:
+        from clipper import worker
+        return worker
+    except Exception:
+        return None
 
 
 def main():
@@ -2744,7 +2764,8 @@ def main():
         pass
     updater.background_checker(lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
                                or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
-                               or brand._fix_state["running"] or _RERENDER["running"], drain=_drain)
+                               or brand._fix_state["running"] or _RERENDER["running"]
+                               or bool(_clip_worker() and _clip_worker().busy()), drain=_drain)
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     try:
         _autostart_setup()
