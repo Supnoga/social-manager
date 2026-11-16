@@ -124,7 +124,7 @@ def _num(v, default=0.0):
 
 
 FIELDS = ("name", "site", "url", "rate", "min_views", "max_payout", "budget", "networks", "tags", "rules", "about", "lang",
-          "per_day", "clip_min", "clip_max")
+          "per_day", "clip_min", "clip_max", "kind")
 
 
 def _clean(d):
@@ -146,6 +146,8 @@ def _clean(d):
         out["networks"] = json.dumps([n for n in NETS if n in [str(x).lower() for x in nets]] or ["youtube", "instagram", "tiktok"])
     if "lang" in d:
         out["lang"] = (str(d["lang"] or "en").strip().lower() or "en")[:2]
+    if "kind" in d:
+        out["kind"] = d["kind"] if d["kind"] in ("auto", "speech", "visual") else "auto"
     if "per_day" in d:
         out["per_day"] = int(min(60, max(1, _num(d["per_day"], 6))))
     if "clip_min" in d:
@@ -200,6 +202,8 @@ async def brief(request: Request):
         '"sources" (array of URLs of source videos or channels found in the text), '
         '"spent" (USD already paid out or used from the budget, 0 if not shown), "clippers" (number of creators who joined or submitted, 0 if not shown), '
         '"age_days" (how many days the campaign has been running, 0 if not shown), '
+        '"kind" ("speech" if clips are cut from people talking: podcasts, interviews, talks, streamers; "visual" for trailers, gameplay, '
+        'sport, music or product footage; "auto" if unclear), "gambling" (true if it promotes a casino, betting, poker or other gambling), '
         '"risk" ("" or one short Slovak sentence if the campaign is about gambling, betting, casino, crypto trading, adult content or looks like a scam).\n\n'
         "TEXT:\n" + text)
     try:
@@ -214,6 +218,9 @@ async def brief(request: Request):
     out["risk"] = str(data.get("risk") or "")[:200]
     out["grade"], out["verdict"] = track.judge(out.get("rate"), out.get("budget"), _num(data.get("spent")), _num(data.get("clippers")),
                                                _num(data.get("age_days")))
+    if data.get("gambling") is True:       # rozhodnutie Olivera 16.11.2026: kasína a stávkovanie nebrať
+        out["grade"] = "bad"
+        out["verdict"].insert(0, "Kasína a stávkovanie neberieme: platia najmenej a siete za ne mažú videá aj účty.")
     return out
 
 

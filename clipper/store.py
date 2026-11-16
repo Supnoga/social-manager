@@ -97,6 +97,10 @@ def con():
         _con.row_factory = sqlite3.Row
         _con.execute("PRAGMA journal_mode=WAL")
         _con.executescript(SCHEMA)
+        if "kind" not in [r[1] for r in _con.execute("PRAGMA table_info(campaigns)")]:
+            _con.execute("ALTER TABLE campaigns ADD COLUMN kind TEXT DEFAULT 'auto'")      # auto | speech | visual
+        if "kind" not in [r[1] for r in _con.execute("PRAGMA table_info(sources)")]:
+            _con.execute("ALTER TABLE sources ADD COLUMN kind TEXT DEFAULT 'speech'")      # speech | visual
         if "posted_at" not in [r[1] for r in _con.execute("PRAGMA table_info(posts)")]:
             _con.execute("ALTER TABLE posts ADD COLUMN posted_at TEXT DEFAULT ''")
             _con.execute("UPDATE posts SET posted_at=updated_at WHERE status='posted'")

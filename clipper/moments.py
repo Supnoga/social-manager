@@ -106,6 +106,9 @@ def _learned():
 
 def pick(src, want):
     """Vyberie až `want` nových momentov zo zdroja a uloží ich ako klipy na strih. Vráti počet."""
+    if (src.get("kind") or "speech") == "visual":
+        from . import vision
+        return vision.pick(src, want)
     camp = store.campaign(src["campaign_id"])
     words = source.words(src)
     if not words or want <= 0:

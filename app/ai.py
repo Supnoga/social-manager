@@ -93,10 +93,12 @@ def _log(purpose, model, it=0, ot=0, cached=0, ok=1, note=""):
            (purpose, model, it, ot, cached, ok, note[:500]))
 
 
-def ask(prompt, purpose, kind="creative", use_cache=True, timeout=600):
-    """Pošle prompt Claudovi a vráti JSON. kind: creative|cheap."""
+def ask(prompt, purpose, kind="creative", use_cache=True, timeout=600, image=None):
+    """Pošle prompt Claudovi a vráti JSON. kind: creative|cheap.
+    image: cesta k jednému obrázku, na ktorý sa má Claude pozrieť (smie prečítať len ten, iné nástroje nemá)."""
     model = models()[kind]
-    h = hashlib.sha256(f"{model}|{SYSTEM}|{prompt}".encode()).hexdigest()
+    img_hash = hashlib.sha256(Path(image).read_bytes()).hexdigest() if image else ""
+    h = hashlib.sha256(f"{model}|{SYSTEM}|{prompt}|{img_hash}".encode()).hexdigest()
     if use_cache:
         c = db.one("SELECT response FROM ai_cache WHERE hash=?", (h,))
         if c:
@@ -114,12 +116,17 @@ def ask(prompt, purpose, kind="creative", use_cache=True, timeout=600):
     env.pop("ANTHROPIC_AUTH_TOKEN", None)
     # Premýšľanie modelu sa ráta do limitu Max plánu a pri scenári tvorilo ~80 % spotreby: stačí stredné (lacné úlohy nízke).
     env["CLAUDE_CODE_EFFORT_LEVEL"] = "low" if kind == "cheap" else (db.get_setting("ai_effort", "medium") or "medium")
-    cmd = [path, "-p", "--model", model, "--system-prompt", SYSTEM, "--tools", "",
+    cmd = [path, "-p", "--model", model, "--system-prompt", SYSTEM, "--tools", "Read" if image else "",
            "--strict-mcp-config", "--setting-sources", "", "--no-session-persistence",
            "--output-format", "json"]
+    cwd = str(db.DATA_DIR)
+    if image:        # Claude beží v priečinku obrázka a smie len čítať; obrázok si otvorí sám
+        cmd += ["--allowedTools", "Read"]
+        cwd = str(Path(image).resolve().parent)
+        prompt = f"First open the image file ./{Path(image).name} with the Read tool, then answer.\n\n" + prompt
     try:
         r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout,
-                           env=env, cwd=str(db.DATA_DIR), encoding="utf-8", start_new_session=True)
+                           env=env, cwd=cwd, encoding="utf-8", start_new_session=True)
     except subprocess.TimeoutExpired:
         _log(purpose, model, ok=0, note="timeout")
         raise AIError("Claude neodpovedal včas, skús znova.")

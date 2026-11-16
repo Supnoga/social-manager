@@ -82,7 +82,8 @@ def fetch(src):
     store.run("UPDATE sources SET path=?, title=?, duration=?, status='transcribing', error='' WHERE id=?",
               (str(path), title[:300], dur, src["id"]))
     words = _from_json3(subs) if subs else []
-    if len(words) < max(30, dur / 6):   # titulky chýbajú alebo sú deravé: prepis reči na tomto počítači
+    want = camp.get("kind") or "auto"
+    if want != "visual" and len(words) < max(30, dur / 6):   # titulky chýbajú alebo sú deravé: prepis reči na tomto počítači
         wav = out_dir / "audio.wav"
         media._run_ff([media.ffmpeg(), "-y", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", str(wav)])
         wj = out_dir / "stt.json"
@@ -90,11 +91,13 @@ def fetch(src):
         words = json.loads(wj.read_text(encoding="utf-8"))
         wav.unlink(missing_ok=True)
         lang = (r.get("lang") or lang)[:2]
-    if len(words) < 20:
-        raise RuntimeError("Vo videu som nenašiel reč, z ktorej by sa dali vybrať momenty.")
+    per_min = len(words) / max(1.0, dur / 60)
+    kind = "visual" if want == "visual" or (want == "auto" and per_min < 60) else "speech"   # rozhovor má 130 až 180 slov za minútu
+    if kind == "speech" and len(words) < 20:
+        raise RuntimeError("Vo videu som nenašiel reč. Ak je to trailer, hra alebo šport, nastav v kampani zdroj „obraz“.")
     wp = out_dir / "words.json"
     wp.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
-    store.run("UPDATE sources SET words_path=?, lang=?, status='ready', error='' WHERE id=?", (str(wp), lang, src["id"]))
+    store.run("UPDATE sources SET words_path=?, lang=?, kind=?, status='ready', error='' WHERE id=?", (str(wp), lang, kind, src["id"]))
     return store.one("SELECT * FROM sources WHERE id=?", (src["id"],))
 
 
