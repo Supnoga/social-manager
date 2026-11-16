@@ -375,7 +375,7 @@ def _voice_now():
 
 
 def _posts(where, order, limit, args=()):
-    return db.q(f"""SELECT p.*, {FUTURE} future, a.platform, a.name account_name, v.title, v.original_name, v.lang, v.project_id,
+    return db.q(f"""SELECT p.*, {FUTURE} future, a.platform, a.name account_name, a.external_id acc_ext, v.title, v.original_name, v.lang, v.project_id,
                    pr.name project_name, pr.color, {db.fmt_sql('v')} fmt FROM posts p JOIN accounts a ON a.id=p.account_id
                    JOIN videos v ON v.id=p.video_id LEFT JOIN projects pr ON pr.id=v.project_id
                    WHERE {where} ORDER BY {order} LIMIT {int(limit)}""", args)
@@ -508,7 +508,11 @@ def projects():
                    (SELECT COUNT(*) FROM posts po JOIN videos v ON v.id=po.video_id WHERE v.project_id=p.id AND po.status='review') review,
                    (SELECT COUNT(*) FROM posts po JOIN videos v ON v.id=po.video_id WHERE v.project_id=p.id AND po.status='failed') failed
                    FROM projects p ORDER BY p.id""")
+    accs = {}
+    for a in db.q("SELECT platform, name, external_id, project_id FROM accounts ORDER BY platform, name"):
+        accs.setdefault(a["project_id"], []).append({"platform": a["platform"], "name": a["name"], "external_id": a["external_id"]})
     for r in rows:
+        r["accounts"] = accs.get(r["id"], [])  # na odkazy „otvoriť kanál“ priamo z appky
         r["languages"] = json.loads(r["languages"] or "[]")
         r["strategy"] = json.loads(r["strategy"]) if r["strategy"] else None
         r["design_colors"] = json.loads(r.get("design_colors") or "[]")

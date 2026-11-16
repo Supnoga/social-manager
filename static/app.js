@@ -54,6 +54,20 @@ const IC = {
 const I = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24">${IC[n] || ''}</svg>`;
 const PL = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', facebook: 'Facebook', linkedin: 'LinkedIn' };
 const PLATS = Object.keys(PL);
+// adresa kanála / profilu na sieti (z údajov, ktoré appka o účte má); '' keď sa nedá zistiť
+const accUrl = (pl, ext, name) => {
+  ext = ext || ''; const at = (name || '').startsWith('@') ? name.slice(1) : '';
+  if (pl === 'youtube' && ext) return 'https://www.youtube.com/channel/' + ext;
+  if (pl === 'facebook' && ext) return 'https://www.facebook.com/' + ext;
+  if (pl === 'instagram' && at) return 'https://www.instagram.com/' + at;
+  if (pl === 'tiktok' && at) return 'https://www.tiktok.com/@' + at;
+  if (pl === 'linkedin' && ext.startsWith('urn:li:organization:')) return 'https://www.linkedin.com/company/' + ext.split(':').pop();
+  return '';
+};
+// meno účtu ako odkaz, ktorý otvorí kanál na sieti
+const accA = (pl, ext, name) => { const u = accUrl(pl, ext, name); return u ? `<a href="${esc(u)}" target="_blank" title="Otvoriť na sieti">${esc(name || '')}</a>` : esc(name || ''); };
+// ikonky sietí projektu: klik otvorí kanál
+const projLinks = p => (p.accounts || []).map(a => { const u = accUrl(a.platform, a.external_id, a.name); return u ? `<a class="btn ghost sm" href="${esc(u)}" target="_blank" title="Otvoriť ${esc(a.name || '')} na sieti" onclick="event.stopPropagation()">${I(a.platform, 's')}${I('ext', 's')}</a>` : ''; }).join('');
 const plat = (p, withName = true) => `<span class="plat-ic">${I(p)}${withName ? PL[p] : ''}</span>`;
 const ST = { review: ['Na schválenie', 'warn'], queued: ['Naplánované', 'acc'], uploading: ['Nahráva sa', 'warn'], done: ['Zverejnené', 'ok'], failed: ['Chyba', 'bad'], hold: ['Podržané', ''], future: ['Nahraté, čaká na svoj čas', 'acc'] };
 // skutočný stav príspevku: 'done' s časom v budúcnosti ešte nie je verejné, len leží na sieti s nastaveným časom
@@ -162,7 +176,7 @@ function sidebar() {
 // aktuálny projekt (ak je stránka otvorená v projekte) – pre filtre a nadpisy
 const PF = () => S.pf ? S.projects.find(x => x.id === S.pf) : null;
 const here = () => location.hash.split('?')[0];
-const pTitle = t => { const p = PF(); return p ? `<div class="crumb"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color};margin-right:6px"></span>${esc(p.name)}</div><h1>${t}</h1>` : `<h1>${t}</h1>`; };
+const pTitle = t => { const p = PF(); return p ? `<div class="crumb"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color};margin-right:6px"></span>${esc(p.name)}</div><h1>${t}</h1>${projLinks(p) ? `<div class="row" style="gap:6px;margin:6px 0 2px">${projLinks(p)}</div>` : ''}` : `<h1>${t}</h1>`; };
 
 const PROJ_SECS = ['kalendar', 'kontrola', 'komentare', 'spravy', 'radar', 'dashboard', 'profily', 'ucty'];
 async function render(keep) {
@@ -766,7 +780,7 @@ async function pCalendar(m) {
     <button class="btn ${paused ? '' : 'sec'}" onclick="api('/api/settings',{method:'POST',body:{paused:${!paused}}}).then(render)">${I(paused ? 'play' : 'pause')}${paused ? 'Spustiť plánovač' : 'Pozastaviť'}</button></div>
   <div class="row" style="margin-bottom:16px;gap:10px;flex-wrap:wrap"><div class="seg">${[['review', 'Na schválenie'], ['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash=here()+'?f=${k}'">${n}</button>`).join('')}</div>${fmtSeg(pAll)}</div>
   ${Object.keys(days).length ? Object.entries(days).map(([d, list]) => `<div class="card"><h2>${I('calendar', 's')}${dn(d)} <span class="chip">${list.length}</span></h2><table>${list.map(p => `<tr>
-    <td style="width:60px" class="muted">${p.scheduled_at.slice(11, 16)}</td><td style="width:150px">${plat(p.platform)}<div class="small dim">${esc(p.account_name)}</div></td>
+    <td style="width:60px" class="muted">${p.scheduled_at.slice(11, 16)}</td><td style="width:150px">${plat(p.platform)}<div class="small dim">${accA(p.platform, p.acc_ext, p.account_name)}</div></td>
     <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color || '#666'};margin-right:6px"></span>${FMT(p.fmt)} ${esc(p.title || p.original_name)} <span class="chip">${esc((p.lang || '').toUpperCase())}</span>${p.error ? `<div class="small ${p.status === 'failed' ? 'bad-t' : 'dim'}">${esc(p.error.slice(0, 260))}</div>` : ''}${p.url && !p.url.startsWith('http') ? `<div class="small muted">${esc(p.url)}</div>` : ''}</td>
     <td style="text-align:right;white-space:nowrap"><span class="chip ${stOf(p)[1]}">${stOf(p)[0]}</span>
       ${p.url && p.url.startsWith('http') ? `<a class="btn ghost sm" href="${esc(p.url)}" target="_blank">${I('ext', 's')}</a>` : ''}
@@ -790,7 +804,7 @@ async function pAccounts(m) {
     <div class="row small" style="margin-bottom:8px;gap:8px"><span class="dim">Označeným:</span><select id="bkP" style="max-width:200px"><option value="">presunúť do projektu…</option>${S.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
       <select id="bkC" style="max-width:190px"><option value="">krajina…</option>${S.meta.countries.map(c => `<option value="${c.code}">${c.name}</option>`).join('')}</select><select id="bkL" style="max-width:180px"><option value="">jazyk…</option><option value="-">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select><button class="btn sec sm" onclick="accBulk()">${I('check', 's')}Nastaviť</button></div>
     <table id="accT"><tr><th><input type="checkbox" onchange="$$('#accT tr:not([hidden]) .aS').forEach(c=>c.checked=this.checked)"></th><th>Sieť</th><th>Účet</th><th>Projekt</th><th>Krajina</th><th>Jazyk videí</th><th></th></tr>${accs.map(a => `<tr data-pf="${a.platform}" data-pr="${a.project_id || 0}" data-n="${esc((a.name || '').toLowerCase())}">
-    <td><input type="checkbox" class="aS" value="${a.id}"></td><td>${plat(a.platform)}</td><td><input value="${esc(a.name)}" onchange="api('/api/accounts/${a.id}',{method:'PUT',body:{name:this.value}}).then(()=>toast('Uložené'))">${a.broken ? `<div class="small bad-t" style="margin-top:4px">Sieť odmietla prihlásenie, pripoj účet znova.</div>` : ''}${a.days_left !== null && a.days_left !== undefined && a.days_left <= 10 ? `<div class="small" style="margin-top:4px"><span class="${a.days_left <= 3 ? 'bad-t' : ''}" style="color:${a.days_left <= 3 ? '' : 'var(--acc)'}">${a.days_left ? `Prihlásenie vyprší o ${a.days_left} ${a.days_left === 1 ? 'deň' : a.days_left < 5 ? 'dni' : 'dní'}` : 'Prihlásenie vypršalo'}</span> <a class="btn sm" href="/api/accounts/linkedin/connect${a.org ? '?org=1' : ''}">${I('refresh', 's')}Prihlásiť znova</a></div>` : ''}</td>
+    <td><input type="checkbox" class="aS" value="${a.id}"></td><td>${plat(a.platform)}</td><td><input value="${esc(a.name)}" onchange="api('/api/accounts/${a.id}',{method:'PUT',body:{name:this.value}}).then(()=>toast('Uložené'))">${accUrl(a.platform, a.external_id, a.name) ? ` <a class="btn ghost sm" href="${esc(accUrl(a.platform, a.external_id, a.name))}" target="_blank" title="Otvoriť na sieti">${I('ext', 's')}Otvoriť</a>` : ''}${a.broken ? `<div class="small bad-t" style="margin-top:4px">Sieť odmietla prihlásenie, pripoj účet znova.</div>` : ''}${a.days_left !== null && a.days_left !== undefined && a.days_left <= 10 ? `<div class="small" style="margin-top:4px"><span class="${a.days_left <= 3 ? 'bad-t' : ''}" style="color:${a.days_left <= 3 ? '' : 'var(--acc)'}">${a.days_left ? `Prihlásenie vyprší o ${a.days_left} ${a.days_left === 1 ? 'deň' : a.days_left < 5 ? 'dni' : 'dní'}` : 'Prihlásenie vypršalo'}</span> <a class="btn sm" href="/api/accounts/linkedin/connect${a.org ? '?org=1' : ''}">${I('refresh', 's')}Prihlásiť znova</a></div>` : ''}</td>
     <td><select class="aP" onchange="accSet(${a.id},this.closest('tr'))">${S.projects.map(p => `<option value="${p.id}" ${p.id === a.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td>
     <td><select class="aC" onchange="accCountry(${a.id},this.value)"><option value="">krajina…</option>${S.meta.countries.map(c => `<option value="${c.code}" ${c.code === a.country ? 'selected' : ''}>${c.name}</option>`).join('')}</select></td>
     <td><select class="aL" onchange="accSet(${a.id},this.closest('tr'))"><option value="">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}" ${l.code === a.lang ? 'selected' : ''}>${l.name}</option>`).join('')}</select></td>
