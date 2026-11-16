@@ -188,6 +188,7 @@ MIGRATIONS = [
     "ALTER TABLE post_stats ADD COLUMN watch_min REAL DEFAULT 0",
     "ALTER TABLE post_stats ADD COLUMN avg_pct REAL DEFAULT 0",
     "ALTER TABLE post_stats ADD COLUMN subs INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN grp TEXT DEFAULT ''",
 ]
 
 
@@ -209,6 +210,8 @@ def con():
         for sql in MIGRATIONS:
             try:
                 _con.execute(sql)
+                if "projects ADD COLUMN grp" in sql:  # prvé spustenie: Xplained kanály do jednej skupiny v menu
+                    _con.execute("UPDATE projects SET grp='Xplained' WHERE name LIKE '%Xplained%'")
             except sqlite3.OperationalError:
                 pass  # stĺpec už existuje
         _accounts_to_projects(_con)

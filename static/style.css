@@ -207,6 +207,8 @@ input[type=range]{accent-color:var(--acc);width:100%}
 .subnav{margin:2px 0 8px 14px;padding-left:10px;border-left:1px solid var(--line)}
 .nav.sub{padding:7px 10px;font-size:13px}
 .nav.sub svg{width:15px;height:15px}
+.nav.grp svg{width:15px;height:15px}.nav.grp .chev{transition:transform .18s;margin-right:-6px;color:var(--dim)}.nav.grp .chev.open{transform:rotate(90deg);color:var(--acc)}
+.grp-in{margin:0 0 6px 16px;padding-left:6px;border-left:1px solid var(--line)}.grp-in .nav.gi{padding:7px 10px;font-size:13px}.grp-in .subnav{margin-left:8px}
 
 /* dashboard */
 .dfilters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px}
