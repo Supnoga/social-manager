@@ -119,6 +119,8 @@ def fetch(src):
         r = env.tool("fetch", [url, out_dir, media.ffmpeg() or "ffmpeg", lang, store.get("max_height", 1080)], timeout=3 * 3600)
         path, title, dur, subs = Path(r["path"]), r.get("title") or "", float(r.get("duration") or 0), r.get("subs") or ""
         dur = dur or _probe(path)
+        for f in (r.get("files") or [])[1:]:          # priečinok na Google Drive: každé ďalšie video je samostatný zdroj
+            add(src["campaign_id"], f)
     store.run("UPDATE sources SET path=?, title=?, duration=?, status='transcribing', error='' WHERE id=?",
               (str(path), title[:300], dur, src["id"]))
     words = _from_json3(subs) if subs else []

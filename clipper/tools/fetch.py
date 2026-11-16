@@ -7,8 +7,29 @@ import sys
 from pathlib import Path
 
 
+VIDEO = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
+
+
+def drive(url, out):
+    """Google Drive: priečinok (stiahne všetky videá) alebo jeden súbor. Kampane tam často dávajú zábery."""
+    import gdown
+    out.mkdir(parents=True, exist_ok=True)
+    if "/folders/" in url:
+        got = gdown.download_folder(url, output=str(out), quiet=True, remaining_ok=True) or []
+    else:
+        got = [gdown.download(url, output=str(out) + "/", quiet=True, fuzzy=True)]
+    files = sorted(str(Path(f)) for f in got if f and Path(f).suffix.lower() in VIDEO and Path(f).exists())
+    if not files:
+        print(json.dumps({"error": "na Google Drive som nenašiel video (alebo priečinok nie je zdieľaný odkazom)"}))
+        return
+    p = Path(files[0])
+    print(json.dumps({"path": str(p), "title": p.stem, "duration": 0, "subs": "", "lang": "", "id": p.stem, "files": files}))
+
+
 def main():
     url, out, ff, lang, height = sys.argv[1:6]
+    if "drive.google.com" in url:
+        return drive(url, Path(out))
     import yt_dlp
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
