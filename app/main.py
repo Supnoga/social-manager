@@ -1488,6 +1488,8 @@ def _mp_long(slot, tried):
         if not iid:
             cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and r["has_script"]   # len hotové scenáre (bez AI)
                     and monthplan._cover(r["title"] or "")[0] != "gap"]
+            if not cand:   # 16.11.: kanál bez hotového scenára (napr. Borders, Flags) by ostal na 0: vezmi tému bez scenára (1 lacné AI volanie)
+                cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and monthplan._cover(r["title"] or "")[0] != "gap"][:3]
             cand.sort(key=lambda r: (monthplan._cover(r["title"] or "")[0] != "model", not r["has_script"], -r["score"]))
             if not cand:
                 return None
