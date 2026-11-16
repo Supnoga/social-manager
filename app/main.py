@@ -386,6 +386,72 @@ def _yt_unplan(where, args=()):
     return n
 
 
+# ---------- Zložiť znova vybrané videá (16.11.: oprava ikon, ktoré nesedeli k scéne) ----------
+_RERENDER = {"running": False, "done": [], "errors": [], "current": None}
+_rerender_lock = threading.Lock()
+
+
+@app.post("/api/rerender")
+def rerender(data: dict = Body(...)):
+    """Zloží znova videá daných skriptov (bez AI) a nahradí súbor. Kým sa skladá, video sa nenahráva (rerender_todo).
+    Video nahraté vopred a ešte neverejné: na YouTube sa mu zruší čas zverejnenia (ostane súkromné, nič sa nemaže)
+    a po zložení sa nahrá nanovo. Verejné videá sa nemenia. Poradie: čo ide von najskôr, ide prvé."""
+    sids = [int(x) for x in data.get("script_ids") or []]
+    now = scheduler.now_str()
+    todo, skipped = [], []
+    for sid in sids:
+        for v in db.q("SELECT * FROM videos WHERE script_id=?", (sid,)):
+            ps = db.q("SELECT * FROM posts WHERE video_id=?", (v["id"],))
+            if any(p["status"] == "done" and (p["scheduled_at"] or "") <= now for p in ps) or any(p["status"] == "uploading" for p in ps):
+                skipped.append(v["id"])
+                continue
+            _yt_unplan("p.video_id=?", (v["id"],))
+            db.run("""UPDATE posts SET status='queued', external_id='', url='', error='' WHERE video_id=? AND status='done'""", (v["id"],))
+            db.run("UPDATE posts SET stash_id='' WHERE video_id=?", (v["id"],))
+            t = min([p["scheduled_at"] or "9999" for p in ps] or ["9999"])
+            todo.append((t, v["id"], sid))
+    todo.sort()
+    db.set_setting("rerender_todo", sorted(set(db.get_setting("rerender_todo", []) or []) | {vid for _, vid, _ in todo}))
+
+    def run():
+        with _rerender_lock:
+            _RERENDER["running"] = True
+            try:
+                for _, vid, sid in todo:
+                    _RERENDER["current"] = vid
+                    try:
+                        v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+                        r = script_to_video(int(sid), {})
+                        new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
+                        old = Path(v["file_path"])
+                        db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0, qa=?, status=? WHERE id=?",
+                               (new["file_path"], new["size"], new["duration"], new.get("qa") or "", new.get("status") or "ready", vid))
+                        db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                        for f in (old, old.with_suffix(".jpg")):
+                            if f != Path(new["file_path"]) and f.exists():
+                                f.unlink(missing_ok=True)
+                        for k in ("unlogo_done", "remap_done"):
+                            db.set_setting(k, (db.get_setting(k, []) or []) + [vid])
+                        db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != vid])
+                        _RERENDER["done"].append(vid)
+                    except Exception as e:
+                        _RERENDER["errors"].append([vid, str(e)[:300]])
+                        traceback.print_exc()
+                    finally:
+                        db.set_setting("rerender_todo", [i for i in (db.get_setting("rerender_todo", []) or []) if i != vid])
+            finally:
+                _RERENDER["running"] = False
+                _RERENDER["current"] = None
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"started": len(todo), "videos": [vid for _, vid, _ in todo], "skipped_public": skipped}
+
+
+@app.get("/api/rerender")
+def rerender_status():
+    return dict(_RERENDER, todo=len(db.get_setting("rerender_todo", []) or []))
+
+
 # ---------------- Projekty ----------------
 PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned", "brand_tags"]
 
