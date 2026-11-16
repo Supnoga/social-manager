@@ -5,12 +5,25 @@ import json
 import sys
 
 
+def _load(src):
+    """16 kHz mono WAV (pripravený ffmpegom) -> pole čísel; bez PyAV, ktorého novšie verzie faster-whisper nevedia otvoriť."""
+    import wave
+    import numpy as np
+    if not src.lower().endswith(".wav"):
+        return src
+    with wave.open(src, "rb") as w:
+        if w.getsampwidth() != 2 or w.getnchannels() != 1 or w.getframerate() != 16000:
+            return src
+        data = w.readframes(w.getnframes())
+    return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 def main():
     src, out, lang, model = sys.argv[1:5]
     try:
         from faster_whisper import WhisperModel
         m = WhisperModel(model, device="cpu", compute_type="int8")
-        segs, info = m.transcribe(src, language=None if lang in ("", "auto") else lang, word_timestamps=True,
+        segs, info = m.transcribe(_load(src), language=None if lang in ("", "auto") else lang, word_timestamps=True,
                                   vad_filter=True, beam_size=1, condition_on_previous_text=False)
         words = []
         for s in segs:
