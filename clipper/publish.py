@@ -169,11 +169,15 @@ def next_slot(account_id, per_day):
     return (now + timedelta(days=120)).strftime(FMT)
 
 
+LIVE = ("JOIN clips c ON c.id=p.clip_id JOIN campaigns k ON k.id=c.campaign_id "
+        "WHERE p.status='queued' AND k.status='active'")      # pozastavená kampaň drží svoje klipy, nič z nej nejde von
+
+
 def batch_now():
-    """Zverejní dávku hneď: z každého účtu jeho najbližší naplánovaný klip. Vráti počet."""
-    n = 0
-    for r in store.q("SELECT account_id, MIN(scheduled_at) m FROM posts WHERE status='queued' GROUP BY account_id"):
-        p = store.one("SELECT id FROM posts WHERE status='queued' AND account_id=? AND scheduled_at=? LIMIT 1", (r["account_id"], r["m"]))
+    """Zverejní dávku hneď: z každého účtu jeho najbližší naplánovaný klip (ktorý ešte nečaká na zverejnenie). Vráti počet."""
+    n, now = 0, store.now()
+    for r in store.q(f"SELECT p.account_id, MIN(p.scheduled_at) m FROM posts p {LIVE} AND p.scheduled_at>? GROUP BY p.account_id", (now,)):
+        p = store.one(f"SELECT p.id FROM posts p {LIVE} AND p.account_id=? AND p.scheduled_at=? LIMIT 1", (r["account_id"], r["m"]))
         if p:
             store.run("UPDATE posts SET scheduled_at=? WHERE id=?", (store.now(), p["id"]))
             n += 1
@@ -201,7 +205,7 @@ def plan(clip):
 
 # ---------- zverejnenie ----------
 def due():
-    return store.one("SELECT * FROM posts WHERE status='queued' AND scheduled_at<=? ORDER BY scheduled_at LIMIT 1", (store.now(),))
+    return store.one(f"SELECT p.* FROM posts p {LIVE} AND p.scheduled_at<=? ORDER BY p.scheduled_at LIMIT 1", (store.now(),))
 
 
 def publish(post):
