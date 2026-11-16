@@ -124,7 +124,7 @@ def _num(v, default=0.0):
 
 
 FIELDS = ("name", "site", "url", "rate", "min_views", "max_payout", "budget", "networks", "tags", "rules", "about", "lang",
-          "per_day", "clip_min", "clip_max", "kind")
+          "per_day", "clip_min", "clip_max", "kind", "winners")
 
 
 def _clean(d):
@@ -133,7 +133,7 @@ def _clean(d):
         out["name"] = str(d["name"] or "").strip()[:120] or "Kampaň"
     if "site" in d:
         out["site"] = d["site"] if d["site"] in SITES else "other"
-    for k in ("url", "tags", "rules", "about"):
+    for k in ("url", "tags", "rules", "about", "winners"):
         if k in d:
             out[k] = str(d[k] or "").strip()[:4000]
     for k in ("rate", "max_payout", "budget"):
@@ -199,6 +199,7 @@ async def brief(request: Request):
         '"clip_min" and "clip_max" (required clip length in seconds, only if the text states it), '
         '"rules" (the content rules a clip editor must follow, max 600 characters, in English), '
         '"about" (who or what the source content is, max 200 characters), "lang" (2-letter language of the content), '
+        '"winners" (headlines and view counts of the top / most viewed clips if the page lists them, max 400 characters, "" if none), '
         '"sources" (array of URLs of source videos or channels found in the text), '
         '"spent" (USD already paid out or used from the budget, 0 if not shown), "clippers" (number of creators who joined or submitted, 0 if not shown), '
         '"age_days" (how many days the campaign has been running, 0 if not shown), '

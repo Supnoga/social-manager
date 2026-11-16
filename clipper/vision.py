@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app import ai, media
 
-from . import env, source, store
+from . import env, moments, source, store
 
 MAX_CAND = 12
 TW, TH = 256, 144        # jeden záber na obrázku
@@ -45,6 +45,9 @@ def candidates(sig, lo, hi, taken, n=MAX_CAND):
     if dur < max(8, lo) or len(loud) < dur:
         return []
     score = [a + b for a, b in zip(_z(loud), _z((sig.get("motion") or [0.0] * dur)[:dur]))]
+    for h0, h1, v in sig.get("heat") or []:                  # najviac prehrávané časti podľa YouTube: silný hlas divákov
+        for t in range(max(0, int(h0)), min(dur, int(h1) + 1)):
+            score[t] += 2.0 * v
     length = int(max(lo, min(hi, (lo + hi) / 2, dur)))
     sums, acc = [], sum(score[:length])
     for s in range(0, dur - length + 1):
@@ -112,7 +115,8 @@ def pick(src, want):
     taken = [(c["t0"], c["t1"]) for c in store.q("SELECT t0, t1 FROM clips WHERE source_id=?", (src["id"],))]
     seen_key = f"vision_seen_{src['id']}"          # úseky, ktoré už Claude videl a nevybral, sa neukazujú znova
     taken += [tuple(x) for x in (store.get(seen_key, []) or [])]
-    cands = candidates(scan(src), lo, hi, taken, min(MAX_CAND, want + 4))
+    sig = dict(scan(src), heat=moments.hot(src, n=20))
+    cands = candidates(sig, lo, hi, taken, min(MAX_CAND, want + 4))
     if not cands:
         store.run("UPDATE sources SET status='used' WHERE id=?", (src["id"],))
         return 0
@@ -132,6 +136,7 @@ def pick(src, want):
         "Prefer segments where something visibly happens (action, reveal, reaction, a striking image, a result) and that make sense "
         "with zero context. Skip logos, title cards, credits, menus, loading screens and near-duplicate segments.\n"
         + (f"About the source / campaign rules: {(camp.get('about') or '')[:400]} {(camp.get('rules') or '')[:600]}\n" if (camp.get("about") or camp.get("rules")) else "")
+        + moments.proven(src, camp)
         + "Segments:\n" + "\n".join(rows) + "\n"
         f"Write hook, title and caption in this language: {lang}. Describe only what is really visible; never invent facts.\n"
         'Return JSON: {"moments":[{"n":<segment number>,"hook":"on-screen headline, max 7 words, a statement not a question, makes people '

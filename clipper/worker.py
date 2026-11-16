@@ -173,6 +173,7 @@ def _loop():
     try:
         publish.recover()
         store.run("UPDATE sources SET status='new' WHERE status IN ('fetching','transcribing')")
+        moments.fix_ends()
     except Exception:
         traceback.print_exc()
     while True:
