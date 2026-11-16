@@ -1135,7 +1135,8 @@ def check(sc_data, cover, over=None):
         why.append("Stroj bez presného modelu: " + ", ".join(crude))
     for k, bad in sorted((over or {}).items()):
         why.append(f"Prekrývanie v scéne {k + 1}: " + ", ".join(sorted(bad)))
-    if body and len(weak) / len(body) > WEAK_MAX:
+    # krátke video má len 4–5 scén: jedna slabá scéna navyše (2 zo 4) ešte neznamená „len ikony“ (16.11.)
+    if body and len(weak) / len(body) > (WEAK_MAX if len(body) > 8 else 0.5):
         why.append(f"Slabý obraz (len ikony alebo text) v {len(weak)} z {len(body)} scén")
     return {"ok": not why, "why": why, "scenes": len(sc_data), "weak": len(weak),
             "precise": sum(1 for s in body if s["v"].get("k") == "map" or (s["v"].get("k") == "mech" and s["v"].get("m") in auto_visual.PRECISE))}
