@@ -60,17 +60,18 @@ async function load(){
       const pr = await (await fetch("/api/projects")).json();
       const pm = {}; (pr.projects || pr).forEach(p => pm[p.id] = [p.name, p.color]);
       const vs = await (await fetch("/api/videos")).json();
-      const seen = {};
+      const seen = {}, cnt = {};
       list = [];
       vs.forEach(v => {
         if (!(v.duration > 0 && v.duration <= 70) || v.project_id < 3) return;
         if (v.removed && !v.preview_path) return;
         const k = v.project_id + "|" + v.title; if (seen[k]) return; seen[k] = 1;
+        cnt[v.project_id] = (cnt[v.project_id] || 0) + 1; if (cnt[v.project_id] > 3) return;
         list.push([v.id, v.title, v.file_path, (pm[v.project_id] || [""])[0], (pm[v.project_id] || ["", ""])[1]]);
       });
     } catch (e) { list = BAKED.slice(); }
   } else list = BAKED.slice();
-  document.getElementById("sub").textContent = list.length + " Shorts z kanálov Xplained v náhodnom poradí";
+  document.getElementById("sub").textContent = list.length + " najnovších Shorts (3 z každého kanála) v náhodnom poradí";
   document.getElementById("go").disabled = !list.length;
   build();
 }
