@@ -312,9 +312,9 @@ def _fb(acc):
 
 
 def _ig(acc):
-    t = tokens(acc)
+    U, tok, ig = meta.ig_ctx(acc)
     with client() as c:
-        r = c.get(meta.G(acc["external_id"]), params={"access_token": t["page_token"], "fields": "followers_count,media_count"})
+        r = c.get(U(ig if ig == "me" else acc["external_id"]), params={"access_token": tok, "fields": "followers_count,media_count"})
     if r.status_code != 200:
         raise RuntimeError(_gerr(r))
     d = r.json()

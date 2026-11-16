@@ -4,7 +4,7 @@ import os
 import time
 
 from .. import db
-from .common import PlatformError, check, client, file_chunks, text_for, tokens
+from .common import PlatformError, check, client, file_chunks, save_tokens, text_for, tokens
 
 
 def ver():
@@ -13,6 +13,47 @@ def ver():
 
 def G(path):
     return f"https://graph.facebook.com/{ver()}/{path.lstrip('/')}"
+
+
+def IGH(path):
+    """Adresa pre Instagram účet pripojený priamym prihlásením cez Instagram (bez Facebook stránky)."""
+    return f"https://graph.instagram.com/{ver()}/{path.lstrip('/')}"
+
+
+def connect_instagram(token, project_id=None, lang=""):
+    """Instagram bez Facebook stránky: token z Meta appky (Instagram, „API setup with Instagram login“).
+    Účet musí byť firemný alebo tvorca a mať v appke rolu testera. Token platí 60 dní a appka si ho predlžuje sama."""
+    token = (token or "").strip()
+    with client() as c:
+        r = c.get(IGH("me"), params={"fields": "user_id,username,account_type", "access_token": token})
+    if r.status_code >= 400:
+        raise PlatformError("Instagram token neprijal. Skontroluj, či je celý a či je účet firemný. " + r.text[:200])
+    d = r.json()
+    ig_id = str(d.get("user_id") or d.get("id") or "")
+    if not ig_id:
+        raise PlatformError("Instagram nevrátil účet k tomuto tokenu.")
+    t = {"ig_login": True, "ig_token": token, "ig_id": ig_id, "ig_at": time.time()}
+    return _upsert("instagram", "@" + (d.get("username") or ig_id), ig_id, t, project_id, lang)
+
+
+def ig_ctx(account):
+    """Kadiaľ sa volá Instagram pre tento účet: (funkcia na adresu, token, účet v adrese).
+    Cez Facebook stránku (firemné účty) alebo priamym prihlásením (klipové účty)."""
+    t = tokens(account)
+    if not t.get("ig_login"):
+        return G, t["page_token"], t["ig_id"]
+    if time.time() - float(t.get("ig_at") or 0) > 7 * 86400:       # token žije 60 dní, predĺž ho raz za týždeň
+        try:
+            with client() as c:
+                r = c.get("https://graph.instagram.com/refresh_access_token",
+                          params={"grant_type": "ig_refresh_token", "access_token": t["ig_token"]})
+            if r.status_code == 200 and r.json().get("access_token"):
+                t["ig_token"] = r.json()["access_token"]
+            t["ig_at"] = time.time()
+            save_tokens(account["id"], t)
+        except Exception:
+            pass
+    return IGH, t["ig_token"], "me"
 
 
 def connect(user_token, project_id=None, lang=""):
@@ -74,13 +115,13 @@ def upload_facebook(account, video, privacy="public"):
 
 
 def upload_instagram(account, video, privacy="public"):
-    t = tokens(account)
-    tok, ig = t["page_token"], t["ig_id"]
+    U, tok, ig = ig_ctx(account)
     _, text = text_for(video, "instagram", account)
     size = os.path.getsize(video["file_path"])
     auth = {"Authorization": f"OAuth {tok}"}
+    q = {"access_token": tok}
     with client(timeout=3600) as c:
-        r = check(c.post(G(f"{ig}/media"), headers=auth, json={
+        r = check(c.post(U(f"{ig}/media"), headers=auth, params=q, json={
             "media_type": "REELS", "upload_type": "resumable", "caption": text, "share_to_feed": True}), "IG kontajner")
         cont = r.json()
         cid = cont["id"]
@@ -89,7 +130,7 @@ def upload_instagram(account, video, privacy="public"):
                      content=file_chunks(video["file_path"])), "IG nahrávanie")
         # čakanie na spracovanie
         for _ in range(120):
-            s = check(c.get(G(cid), headers=auth, params={"fields": "status_code,status"}), "IG stav").json()
+            s = check(c.get(U(cid), headers=auth, params=dict(q, fields="status_code,status")), "IG stav").json()
             code = s.get("status_code")
             if code == "FINISHED":
                 break
@@ -98,11 +139,11 @@ def upload_instagram(account, video, privacy="public"):
             time.sleep(10)
         else:
             raise PlatformError("Instagram spracováva video príliš dlho, skúsim neskôr.")
-        r = check(c.post(G(f"{ig}/media_publish"), headers=auth, data={"creation_id": cid}), "IG publikovanie")
+        r = check(c.post(U(f"{ig}/media_publish"), headers=auth, params=q, data={"creation_id": cid}), "IG publikovanie")
         mid = r.json()["id"]
         link = ""
         try:
-            link = c.get(G(mid), headers=auth, params={"fields": "permalink"}).json().get("permalink", "")
+            link = c.get(U(mid), headers=auth, params=dict(q, fields="permalink")).json().get("permalink", "")
         except Exception:
             pass
     return mid, link

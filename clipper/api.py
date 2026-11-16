@@ -309,6 +309,21 @@ def batch_now():
 
 
 # ---------- účty a nastavenia ----------
+@router.post("/api/clip/instagram")
+async def instagram_connect(request: Request):
+    """Klipový Instagram bez Facebook stránky: vloží sa token z Meta appky (priame prihlásenie cez Instagram)."""
+    from app.platforms import meta
+    from app.platforms.common import PlatformError
+    tok = str((await request.json()).get("token") or "").strip()
+    if len(tok) < 40:
+        raise RuntimeError("Vlož celý token z Meta appky.")
+    try:
+        aid = await run_in_threadpool(lambda: meta.connect_instagram(tok, store.project_id()))
+    except PlatformError as e:
+        raise RuntimeError(str(e)[:300])
+    return {"ok": True, "id": aid}
+
+
 @router.post("/api/clip/account/{account_id}")
 async def account_edit(account_id: int, request: Request):
     d = await request.json()
