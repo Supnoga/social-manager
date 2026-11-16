@@ -162,8 +162,7 @@ function sidebar() {
     ${nav('plan', 'calendar', 'Mesačný plán', cur === 'plan')}
     <a class="nav" href="/clip">${I('layers')}Clipper</a>
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
-    ${S.projects.map(p => `<a class="nav ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
-      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'plan', 'calendar', 'Plán na mesiac')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'ucty', 'link', 'Účty a siete')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
+    ${sideProjects(inP, sub) || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Nastavenie</div>
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
     <div class="side-foot">
@@ -173,6 +172,27 @@ function sidebar() {
       <div class="small dim" style="margin-top:10px;display:flex;align-items:center;gap:6px"><svg width="18" height="13" viewBox="0 0 18 13"><rect width="18" height="13" rx="3" fill="#FF0000"/><polygon points="7,3.5 12.5,6.5 7,9.5" fill="#fff"/></svg>Uses YouTube API Services</div>
       <div class="small" style="margin-top:4px"><a href="https://github.com/Supnoga/social-manager/blob/main/PRIVACY.md" target="_blank" style="color:var(--muted)">Privacy Policy</a> · <a href="https://github.com/Supnoga/social-manager/blob/main/TERMS.md" target="_blank" style="color:var(--muted)">Terms of Service</a></div>
     </div>`;
+}
+// projekty v menu: samostatné + rozbaľovacie skupiny (napr. Xplained); stav zbalenia si pamätá prehliadač
+let SIDE_OPEN = {}; try { SIDE_OPEN = JSON.parse(localStorage.getItem('sideOpen') || '{}'); } catch (e) { }
+function sideToggle(g) { SIDE_OPEN[g] = !sideIsOpen(g); try { localStorage.setItem('sideOpen', JSON.stringify(SIDE_OPEN)); } catch (e) { } sidebar(); }
+const sideIsOpen = g => { const r = R(), cur = r[0] === 'p' ? +r[1] : 0; return g in SIDE_OPEN ? SIDE_OPEN[g] : S.projects.some(p => p.grp === g && p.id === cur); };
+const gLabel = (n, g) => { const k = n.toLowerCase().indexOf(g.toLowerCase()); const t = k < 0 ? n : (n.slice(0, k) + n.slice(k + g.length)).replace(/\s+/g, ' ').trim(); return t || n; };
+function sideProjects(inP, sub) {
+  const one = (p, g) => `<a class="nav ${g ? 'gi' : ''} ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(g ? gLabel(p.name, g) : p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
+      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'plan', 'calendar', 'Plán na mesiac')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'ucty', 'link', 'Účty a siete')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`;
+  const seen = new Set(), out = [];
+  for (const p of S.projects) {
+    const g = (p.grp || '').trim();
+    if (!g) { out.push(one(p)); continue; }
+    if (seen.has(g)) continue;
+    seen.add(g);
+    const ps = S.projects.filter(x => (x.grp || '').trim() === g).sort((a, b) => a.name.localeCompare(b.name));
+    const open = sideIsOpen(g), n = ps.reduce((a, x) => a + x.review + x.inbox, 0), here = ps.some(x => x.id === inP);
+    out.push(`<a class="nav grp ${here && !open ? 'on' : ''}" onclick="sideToggle(${esc(JSON.stringify(g))})">${I('right', 's chev' + (open ? ' open' : ''))}${I('folder', 's')}${esc(g)}<span class="cnt" ${n ? 'style="color:var(--acc);font-weight:700"' : ''}>${open ? ps.length : (n || ps.length)}</span></a>
+      ${open ? `<div class="grp-in">${ps.map(p => one(p, g)).join('')}<a class="nav gi dim small" href="#/novy?g=${encodeURIComponent(g)}">${I('plus', 's')}Pridať do skupiny</a></div>` : ''}`);
+  }
+  return out.join('');
 }
 // aktuálny projekt (ak je stránka otvorená v projekte) – pre filtre a nadpisy
 const PF = () => S.pf ? S.projects.find(x => x.id === S.pf) : null;
@@ -345,11 +365,12 @@ function tStrategy(b, p) {
 // ---------- popis + dizajn projektu ----------
 function pProjectForm(m, p) {
   const isNew = !p;
-  p = p || { name: '', description: '', audience: '', tone: '', goals: '', source_lang: 'sk', languages: ['sk', 'cs', 'en', 'de'], color: '#FF6B00', voice_gender: 'F', platforms: ['youtube', 'tiktok', 'instagram', 'facebook'], design_colors: [] };
+  p = p || { name: '', description: '', audience: '', tone: '', goals: '', source_lang: 'sk', languages: ['sk', 'cs', 'en', 'de'], color: '#FF6B00', grp: (location.hash.match(/[?&]g=([^&]*)/) || [])[1] ? decodeURIComponent(location.hash.match(/[?&]g=([^&]*)/)[1]) : '', voice_gender: 'F', platforms: ['youtube', 'tiktok', 'instagram', 'facebook'], design_colors: [] };
   m.innerHTML = `${isNew ? `<div class="top"><div><div class="crumb"><a href="#/">Prehľad</a>${I('right', 's')}Nový projekt</div><h1>Nový projekt</h1><p class="sub">Každý projekt = jedna značka. Má svoje jazyky, siete, štýl a videá.</p></div></div>` : ''}
   <div class="g2" style="align-items:start">
   <div class="card"><h2>${I('file')}Popis projektu</h2>
     <div class="g2"><div><label class="l">Názov</label><input id="pName" value="${esc(p.name)}"></div><div><label class="l">Farba v appke</label><input id="pColor" type="color" value="${p.color}"></div></div>
+    <label class="l">Skupina v menu (napr. Xplained; prázdne = samostatne)</label><input id="pGrp" list="grpList" value="${esc(p.grp || '')}"><datalist id="grpList">${[...new Set(S.projects.map(x => x.grp).filter(Boolean))].map(g => `<option value="${esc(g)}">`).join('')}</datalist>
     <label class="l">O čom je projekt (čím viac detailov, tým lepšie nápady)</label><textarea id="pDesc" style="min-height:120px">${esc(p.description)}</textarea>
     <label class="l">Pre koho (publikum)</label><textarea id="pAud" style="min-height:70px">${esc(p.audience)}</textarea>
     <div class="g2"><div><label class="l">Štýl / tón</label><input id="pTone" value="${esc(p.tone)}" placeholder="vtipný, odborný…"></div><div><label class="l">Cieľ</label><input id="pGoals" value="${esc(p.goals)}" placeholder="sledovatelia, predaj…"></div></div>
@@ -413,7 +434,7 @@ async function srcAdd(pid) { const urls = $('#srcUrls').value, text = $('#srcTex
 async function srcFiles(pid, files) { const fd = new FormData(); [...files].forEach(f => fd.append('files', f)); srcDone(await api(`/api/projects/${pid}/sources`, { method: 'POST', body: fd }, 'Čítam súbory…')); }
 async function srcRemove(pid, i) { if (!confirm('Odstrániť tento zdroj?')) return; srcDone(await api(`/api/projects/${pid}/sources`, { method: 'POST', body: { remove: i } }, 'Aktualizujem…')); }
 async function saveProject(id) {
-  const body = { name: $('#pName').value, color: $('#pColor').value, description: $('#pDesc').value, audience: $('#pAud').value, tone: $('#pTone').value, goals: $('#pGoals').value, source_lang: $('#pSrc').value, voice_gender: $('#pVoice').value, glossary: $('#pGloss').value, banned: $('#pBan') ? $('#pBan').value : '', brand_tags: $('#pBrandTags') ? $('#pBrandTags').value : '', ...($('#pRate') ? { voice_rate: +$('#pRate').value, voices: Object.fromEntries($$('[data-vl]').map(x => [x.dataset.vl, x.value])) } : {}), languages: $$('[name=lang]:checked').map(c => c.value), platforms: $$('[name=pl]:checked').map(c => c.value) };
+  const body = { name: $('#pName').value, color: $('#pColor').value, description: $('#pDesc').value, audience: $('#pAud').value, tone: $('#pTone').value, goals: $('#pGoals').value, source_lang: $('#pSrc').value, voice_gender: $('#pVoice').value, glossary: $('#pGloss').value, banned: $('#pBan') ? $('#pBan').value : '', brand_tags: $('#pBrandTags') ? $('#pBrandTags').value : '', grp: $('#pGrp') ? $('#pGrp').value.trim() : '', ...($('#pRate') ? { voice_rate: +$('#pRate').value, voices: Object.fromEntries($$('[data-vl]').map(x => [x.dataset.vl, x.value])) } : {}), languages: $$('[name=lang]:checked').map(c => c.value), platforms: $$('[name=pl]:checked').map(c => c.value) };
   if (!body.name) return toast('Zadaj názov projektu', true);
   if (!body.languages.includes(body.source_lang)) body.languages.unshift(body.source_lang);
   const r = await api(id ? '/api/projects/' + id : '/api/projects', { method: id ? 'PUT' : 'POST', body });

@@ -501,7 +501,7 @@ def rerender_status():
 
 
 # ---------------- Projekty ----------------
-PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned", "brand_tags"]
+PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned", "brand_tags", "grp"]
 
 
 @app.get("/api/projects")
