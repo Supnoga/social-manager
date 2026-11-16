@@ -20,12 +20,12 @@ def IGH(path):
     return f"https://graph.instagram.com/{ver()}/{path.lstrip('/')}"
 
 
-def connect_instagram(token, project_id=None, lang=""):
+def connect_instagram(token, project_id=None, lang="", ig_id=None):
     """Instagram bez Facebook stránky: token z Meta appky (Instagram, „API setup with Instagram login“).
     Účet musí byť firemný alebo tvorca a mať v appke rolu testera. Token platí 60 dní a appka si ho predlžuje sama."""
     token = (token or "").strip()
     if token.startswith("EAA"):
-        return _connect_instagram_fb(token, project_id, lang)
+        return _connect_instagram_fb(token, project_id, lang, ig_id)
     with client() as c:
         r = c.get(IGH("me"), params={"fields": "user_id,username,account_type", "access_token": token})
     if r.status_code >= 400:
@@ -38,7 +38,7 @@ def connect_instagram(token, project_id=None, lang=""):
     return _upsert("instagram", "@" + (d.get("username") or ig_id), ig_id, t, project_id, lang)
 
 
-def _connect_instagram_fb(token, project_id=None, lang=""):
+def _connect_instagram_fb(token, project_id=None, lang="", ig_id=None):
     """Novšie Meta appky dávajú pri Instagrame token cez „Unified login“ (začína EAA, nevyprší): volá sa graph.facebook.com
     s číslom Instagram účtu, Facebook stránka netreba. Číslo účtu sa zistí z tokenu (debug_token)."""
     with client() as c:
@@ -48,6 +48,13 @@ def _connect_instagram_fb(token, project_id=None, lang=""):
             for sc in (r.json().get("data") or {}).get("granular_scopes") or []:
                 if str(sc.get("scope", "")).startswith("instagram"):
                     ids += [str(x) for x in sc.get("target_ids") or []]
+        if ig_id:                      # token systémového používateľa debug_token nedovolí: číslo účtu príde zvonku
+            ids.insert(0, str(ig_id))
+        if not ids:                    # alebo cez stránky, ku ktorým token patrí
+            r = c.get(G("me/accounts"), params={"fields": "instagram_business_account", "access_token": token})
+            if r.status_code == 200:
+                ids += [str(p["instagram_business_account"]["id"]) for p in r.json().get("data") or []
+                        if p.get("instagram_business_account")]
         ids = list(dict.fromkeys(ids))
         if not ids:
             raise PlatformError("Z tokenu sa nedá zistiť Instagram účet. Vygeneruj token znova pri účte v Meta appke.")
