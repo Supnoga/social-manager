@@ -1,6 +1,6 @@
 // ================= MESAČNÝ PLÁN (1.64) =================
 // Každý kanál: každý deň 1 dlhé video + jeho 3 krátke. Zostavuje sa bez AI z nápadov v appke.
-const MP_COVER = { model: ['ok', 'presný model'], verify: ['warn', 'overí sa pri skladaní'], gap: ['bad', 'chýba téma'] };
+const MP_COVER = { done: ['ok', 'hotové, prešlo kontrolou'], model: ['ok', 'presný model'], verify: ['warn', 'overí sa pri skladaní'], gap: ['bad', 'chýba téma'] };
 const mpDay = d => { const x = new Date(d + 'T12:00:00'); return ['ne', 'po', 'ut', 'st', 'št', 'pi', 'so'][x.getDay()] + ' ' + d.slice(8, 10) + '.' + d.slice(5, 7) + '.'; };
 const mpStock = n => `<span class="chip ${n >= 7 ? 'ok' : n >= 3 ? 'warn' : 'bad'}" title="Koľko dní dopredu má kanál hotové videá">zásoba ${n} ${n === 1 ? 'deň' : n >= 2 && n <= 4 ? 'dni' : 'dní'}</span>`;
 const mpModel = m => m ? (({ piston: 'piestový motor', wankel: 'rotačný motor', rotary: 'rotačný motor', gears: 'ozubené kolesá', turbo: 'turbo', camshaft: 'vačkový hriadeľ', car_brake: 'brzda', gearbox: 'prevodovka', differential: 'diferenciál', heatpump: 'tepelné čerpadlo', wind_turbine: 'veterná turbína', solar: 'solárny panel' })[m] || m) : '';
@@ -38,7 +38,7 @@ async function pMonthPlan(m) {
 async function pProjectPlan(m, p) {
   const d = await api('/api/month-plan?project_id=' + p.id);
   const x = d.projects[0];
-  const chip = c => c && !(c.made || c.done) ? `<span class="chip ${MP_COVER[c.cover][0]}">${c.cover === 'model' ? esc(mpModel(c.model)) : MP_COVER[c.cover][1]}</span>` : '';
+  const chip = c => c && !c.done ? `<span class="chip ${MP_COVER[c.cover][0]}">${c.cover === 'model' ? esc(mpModel(c.model)) : MP_COVER[c.cover][1]}</span>` : '';
   const shortTxt = (s, r) => !s ? (r && r.wait ? '<span class="small dim">kanál začína až svojím prvým dlhým videom</span>' : '<span class="small" style="color:#ff8080">krátke chýba</span>')
     : s.done ? `${FMT('short')} <span class="small">${s.cut ? 'výrez z „' + esc(s.title) + '“' : esc(s.title)}</span> <span class="chip ok">hotové</span>`
     : s.idea_id ? `${FMT('short')} <span class="small">${esc(s.title)}</span>${s.script ? '' : ' <span class="small dim">· scenár až pri výrobe</span>'}`
@@ -51,6 +51,6 @@ async function pProjectPlan(m, p) {
     <p class="muted">1 krátke video denne o 18:00, dlhé každý 3. deň o 14:00 a jeho 3 krátke v ten deň po ňom a 2 dni potom. ${x ? `Od ${esc(d.start)} na ${d.days} dní.` : ''}</p></div>
     <span class="sp"></span><a class="btn ghost" href="#/plan">${I('layers')}Všetky kanály</a><button class="btn" onclick="mpBuild(${p.id})">${I('refresh')}Zostaviť znova</button></div>
     ${x ? `<div class="card">${(() => { const s = x.summary; const miss = Object.entries(s.missing || {}).map(([k, c]) => esc(mpModel(k)) + ' ' + c).join(', ');
-      return `<div class="row" style="gap:10px;margin-bottom:10px">${mpStock(x.stock || 0)}<span class="chip">${s.longs} dlhých · ${s.shorts} krátkych</span><span class="chip ok">${s.model} s modelom</span><span class="chip warn">${s.verify} overí sa</span>${s.gap ? `<span class="chip bad">${s.gap} chýba</span>` : ''}<span class="chip">${s.scripts_ready} dlhých má hotový scenár</span>${x.spare ? `<span class="chip">${x.spare} tém v zálohe</span>` : ''}</div>${miss ? `<p class="small dim">Témy čakajú na modely: ${miss}.</p>` : ''}`; })()}
+      return `<div class="row" style="gap:10px;margin-bottom:10px">${mpStock(x.stock || 0)}<span class="chip">${s.longs} dlhých · ${s.shorts} krátkych</span><span class="chip ok">${s.model} s modelom</span><span class="chip warn">${s.verify} overí sa</span>${s.gap ? `<span class="chip bad">${s.gap} chýba</span>` : ''}<span class="chip ok">${s.made || 0} dlhých hotových</span><span class="chip">${s.scripts_ready} dlhých má hotový scenár</span>${x.spare ? `<span class="chip">${x.spare} tém v zálohe</span>` : ''}</div>${miss ? `<p class="small dim">Témy čakajú na modely: ${miss}.</p>` : ''}`; })()}
       <table>${x.days.map(row).join('')}</table></div>` : empty('calendar', 'Plán pre tento kanál ešte nie je zostavený.')}`;
 }

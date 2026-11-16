@@ -154,18 +154,29 @@ def get(project_id=0):
     def live(k, v):
         """Plán sa ukladá pri zostavení; čo sa odvtedy vyrobilo, sa doplní tu (Oliver 16.11.: hotové video ukazovalo „scenár až pri výrobe“)."""
         v = dict(v)
+        ids = {x["idea_id"] for r in v.get("days") or [] for x in (r.get("long"), r.get("short")) if x and x.get("idea_id")}
+        scripted = {r["idea_id"] for r in db.q(f"SELECT DISTINCT idea_id FROM scripts WHERE is_source=1 AND idea_id IN ({','.join('?' * len(ids))})", tuple(ids))} if ids else set()
         days, cur, idx = [], None, 0
         for r in v.get("days") or []:
             r = dict(r)
+            if r.get("short") and r["short"].get("idea_id"):
+                r["short"] = dict(r["short"], script=r["short"]["idea_id"] in scripted)
             if r.get("long"):
                 cur, idx = made_all.get(f"{k}:{r['date']}") or {}, 0
-                r["long"] = dict(r["long"], made=bool(cur.get("long")))
+                mk = bool(cur.get("long"))
+                r["long"] = dict(r["long"], made=mk, script=mk or r["long"]["idea_id"] in scripted, cover="model" if r["long"].get("cover") == "model" else ("done" if mk else r["long"].get("cover")))
             if r.get("short") and cur is not None:
+                if cur.get("long") and r["short"].get("cover") == "verify":
+                    r["short"] = dict(r["short"], cover="done")   # dlhé už prešlo kontrolou obrazu
                 if idx < int(cur.get("shorts") or 0):
                     r["short"] = dict(r["short"], done=True)
                 idx += 1
             days.append(r)
         v["days"] = days
+        nl = [d["long"] for d in days if d.get("long")]
+        v["summary"] = dict(v.get("summary") or {}, longs=len(nl), made=sum(1 for x in nl if x["made"]),
+                            scripts_ready=sum(1 for x in nl if x["script"]),
+                            model=sum(1 for x in nl if x.get("cover") == "model"), verify=sum(1 for x in nl if x.get("cover") == "verify"))
         return v
     return {"start": plan.get("start", ""), "days": plan.get("days", 30), "built": plan.get("built", ""),
             "projects": [dict(live(k, v), id=int(k), name=names.get(k, k), stock=stock_days(int(k))) for k, v in sorted(projs.items(), key=lambda kv: int(kv[0]))]}
