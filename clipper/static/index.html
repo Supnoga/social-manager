@@ -124,10 +124,10 @@ function readForm(){for(const k of ['name','site','url','rate','min_views','max_
   form.networks=[...document.querySelectorAll('.net:checked')].map(e=>e.value)}
 async function fillBrief(){const text=document.getElementById('brief').value;if(text.trim().length<40){toast('Vlož text zo stránky kampane.',true);return}
   readForm();toast('Čítam pravidlá kampane…');try{const d=await api('/api/clip/brief',{text});
-   for(const k in d){if(k=='sources'){if(d.sources.length)form.sources=d.sources.join('\n')}else if(k!='risk'&&d[k]!==''&&d[k]!==null)form[k]=d[k]}
-   form.risk=d.risk||'';render();toast('Vyplnené, skontroluj čísla.')}catch(e){}}
+   for(const k in d){if(k=='sources'){if(d.sources.length)form.sources=d.sources.join('\n')}else if(!['risk','verdict','grade'].includes(k)&&d[k]!==''&&d[k]!==null)form[k]=d[k]}
+   form.risk=d.risk||'';form.verdict=d.verdict||[];form.grade=d.grade||'';render();toast('Vyplnené, skontroluj čísla.')}catch(e){}}
 async function saveCamp(){readForm();if(!String(form.name).trim()){toast('Daj kampani názov.',true);return}
-  const b={...form};if(editCamp)b.id=editCamp;delete b.totals;delete b.clips;delete b.risk;
+  const b={...form};if(editCamp)b.id=editCamp;delete b.totals;delete b.clips;delete b.risk;delete b.verdict;delete b.grade;
   try{await api('/api/clip/campaign',b);editCamp=null;toast('Uložené.');await load(true)}catch(e){}}
 function fld(k,label,type='text',extra=''){return `<div class="f"><label>${label}</label><input id="f_${k}" type="${type}" value="${esc(form[k])}" ${extra}></div>`}
 function campForm(){
@@ -135,6 +135,7 @@ function campForm(){
   ${editCamp?'':`<div class="card"><h2>Rýchle vyplnenie</h2><p class="muted" style="margin-top:0">Na stránke kampane označ celý text, skopíruj ho a vlož sem. Appka z neho vyčíta sadzbu, pravidlá aj povinné značky.</p>
    <div class="f"><textarea id="brief" placeholder="Vlož text zo stránky kampane"></textarea></div><button class="btn sec" onclick="fillBrief()">Vyplniť z textu</button></div>`}
   ${form.risk?`<div class="note bad" style="margin-top:14px"><div>${esc(form.risk)}</div></div>`:''}
+  ${form.verdict&&form.verdict.length?`<div class="note ${form.grade=='bad'?'bad':''}" style="margin-top:14px"><div><b>${{good:'Hodnotenie: oplatí sa',ok:'Hodnotenie: dá sa',bad:'Hodnotenie: radšej nie'}[form.grade]||'Hodnotenie'}</b><br>${form.verdict.map(esc).join('<br>')}</div></div>`:''}
   <div class="card"><h2>Kampaň</h2><div class="fg">${fld('name','Názov')}
    <div class="f"><label>Platforma</label><select id="f_site">${Object.entries(S.sites).map(([k,v])=>`<option value="${k}" ${form.site==k?'selected':''}>${v}</option>`).join('')}</select></div>
    ${fld('url','Odkaz na stránku kampane')}${fld('rate','Sadzba v $ za 1 000 pozretí','number','step="0.01"')}${fld('min_views','Minimum pozretí na klip','number')}

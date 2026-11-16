@@ -67,6 +67,55 @@ def earn(views, camp):
     return round(min(e, cap) if cap > 0 else e, 2)
 
 
+def _usd(x):
+    return f"{x:,.0f}".replace(",", " ") + " $"
+
+
+def judge(rate, budget, spent=0, clippers=0, age_days=0):
+    """Hodnotenie kampane pred vstupom: ('good' | 'ok' | 'bad', krátke vety po slovensky).
+    Vychádza z toho, čo ukazujú otvorené kampane (11/2026): bežná kampaň míňa 500 až 1 500 $ denne a vydrží 1 až 4 týždne,
+    na jedného klipera vychádza 30 až 200 $; najlepšie sú vyššia sadzba, dosť rozpočtu a málo kliperov."""
+    rate, budget, spent = float(rate or 0), float(budget or 0), max(0.0, float(spent or 0))
+    clippers, age = int(clippers or 0), float(age_days or 0)
+    bad, good, out = 0, 0, []
+    r = f"{rate:g}".replace(".", ",")
+    if rate >= 2:
+        good += 1
+        out.append(f"Sadzba {r} $ za 1 000 pozretí je nadpriemerná.")
+    elif rate >= 1:
+        out.append(f"Sadzba {r} $ za 1 000 pozretí je bežná.")
+    elif rate > 0:
+        bad += 1
+        out.append(f"Sadzba {r} $ za 1 000 pozretí je nízka.")
+    if rate > 0:
+        out.append("Na 100 $ treba " + f"{int(round(100 / rate * 1000, -3)):,}".replace(",", " ") + " pozretí.")
+    if budget > 0:
+        left = max(0.0, budget - spent)
+        days = left / (spent / age) if spent > 0 and age >= 1 else None
+        out.append(f"Ostáva {_usd(left)} z {_usd(budget)}.")
+        if days is not None:
+            n = round(days)
+            word = "deň" if n == 1 else "dni" if 2 <= n <= 4 else "dní"
+            out.append(f"Míňa sa asi {_usd(spent / age)} denne, rozpočet vystačí " + (f"asi na {n} {word}." if n <= 60 else "na viac ako 60 dní."))
+        if left < 1000 or (days is not None and days < 3) or (spent / budget > 0.7 and (days is None or days < 7)):
+            bad += 2
+            out.append("Peniaze sa čoskoro minú, klipy sa nemusia stihnúť zaplatiť.")
+        elif budget >= 5000 and spent / budget < 0.5:
+            good += 1
+    else:
+        out.append("Rozpočet nie je uvedený, over ho na stránke kampane.")
+    if clippers > 0:
+        if clippers > 300:
+            bad += 1
+            out.append(f"Je tam veľa kliperov ({clippers}), peniaze sa delia na drobné.")
+        elif clippers <= 50:
+            good += 1
+            out.append(f"Kliperov je málo ({clippers}), to je dobre.")
+        if spent > 0:
+            out.append(f"Na jedného klipera zatiaľ vyšlo asi {_usd(spent / clippers)}.")
+    return ("bad" if bad >= 2 else "good" if good >= 2 and not bad else "ok"), out
+
+
 def campaign_totals():
     """Súčty po kampaniach: klipy, zverejnenia, pozretia, odhad zárobku, vyplatené."""
     out = {}
