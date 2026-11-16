@@ -36,6 +36,9 @@ def _logo(camp):
     d = store.DIR / "logos"
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{camp['id']}-{abs(hash(ref)) % 10**8}.png"
+    m = re.search(r"drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([\w-]+)", ref)
+    if m:                                      # odkaz na súbor v Google Drive -> priame stiahnutie
+        ref = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
     if not f.exists():
         import httpx
         r = httpx.get(ref, follow_redirects=True, timeout=60, headers={"User-Agent": "Mozilla/5.0"})

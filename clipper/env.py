@@ -11,7 +11,8 @@ from . import store
 
 VENV = store.DIR / "venv"
 TOOLS = Path(__file__).resolve().parent / "tools"
-PKGS = ["yt-dlp", "opencv-python-headless", "numpy", "faster-whisper"]
+PKGS = ["yt-dlp", "opencv-python-headless", "numpy", "faster-whisper", "gdown"]
+PKGS_V = 2                       # zvýšiť, keď pribudne balík: nainštaluje sa aj do už pripraveného Pythonu
 STATE = {"installing": False, "error": "", "step": ""}
 
 
@@ -36,6 +37,9 @@ def ensure(wait=False):
     if STATE["installing"]:
         return
     if ready():
+        if int(store.get("pkgs_v", 1) or 1) < PKGS_V:
+            store.put("pkgs_v", PKGS_V)
+            threading.Thread(target=_refresh, args=(PKGS,), daemon=True).start()
         if time.time() - float(store.get("ytdlp_at", 0) or 0) > 7 * 86400:
             store.put("ytdlp_at", time.time())
             threading.Thread(target=_refresh, daemon=True).start()
@@ -53,6 +57,7 @@ def ensure(wait=False):
             STATE["step"] = "skúška"
             _sh([str(py()), "-c", "import yt_dlp, cv2, numpy, faster_whisper"], 300)
             (VENV / ".ok").write_text("ok")
+            store.put("pkgs_v", PKGS_V)
             store.put("ytdlp_at", time.time())
             STATE["step"] = ""
         except Exception as e:
@@ -66,9 +71,9 @@ def ensure(wait=False):
         threading.Thread(target=go, daemon=True).start()
 
 
-def _refresh():
+def _refresh(pkgs=("yt-dlp",)):
     try:
-        _sh([sys.executable, "-m", "uv", "pip", "install", "--python", str(py()), "-U", "yt-dlp"], 900)
+        _sh([sys.executable, "-m", "uv", "pip", "install", "--python", str(py()), "-U", *pkgs], 1800)
     except Exception as e:
         print("Clipper: obnova sťahovača:", str(e)[-200:])
 
