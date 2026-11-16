@@ -30,15 +30,26 @@ def _ago(days):
 
 # ---------- sťahovanie čísel ----------
 def _yt(acc, posts):
-    tok = youtube.access_token(acc)
+    """Čísla videí z rezervy kvóty kanála. Keď rezerva nie je, čísla dodá bezplatný kanálový feed a YouTube Analytics."""
+    from .insights import _read_ok, block_today
     out = {}
+    todo = [p["external_id"] for p in posts]
+    tok = None
     with client() as c:
-        for i in range(0, len(posts), 50):
-            ids = [p["external_id"] for p in posts[i:i + 50]]
-            r = c.get("https://www.googleapis.com/youtube/v3/videos", headers={"Authorization": f"Bearer {tok}"},
-                      params={"part": "statistics", "id": ",".join(ids)})
-            r.raise_for_status()
-            for v in r.json().get("items", []):
+        for i in range(0, len(todo), 50):
+            ids = todo[i:i + 50]
+            items = None
+            if _read_ok(acc):
+                tok = tok or youtube.access_token(acc)
+                r = c.get("https://www.googleapis.com/youtube/v3/videos", headers={"Authorization": f"Bearer {tok}"},
+                          params={"part": "statistics", "id": ",".join(ids)})
+                if r.status_code == 200:
+                    items = r.json().get("items", [])
+                elif "quota" in r.text.lower():
+                    block_today(acc)
+            if items is None:
+                continue
+            for v in items:
                 s = v.get("statistics", {})
                 out[v["id"]] = (int(s.get("viewCount", 0) or 0), int(s.get("likeCount", 0) or 0), int(s.get("commentCount", 0) or 0), 0)
     return out
@@ -115,13 +126,13 @@ FETCHERS = {"youtube": _yt, "facebook": _fb, "instagram": _ig, "tiktok": _tt, "l
 
 
 def job():
-    """Raz za 6 h: čísla k videám zverejneným za posledných 30 dní (každé video max raz za 12 h)."""
+    """Raz za 6 h: čísla k videám zverejneným za posledných 90 dní (nové max raz za 12 h, staršie ako 14 dní raz za 2 dni)."""
     linkedin.refresh_all()
     rows = db.q("""SELECT p.*, ps.fetched_at FROM posts p LEFT JOIN post_stats ps ON ps.post_id=p.id
-                   WHERE p.status='done' AND p.external_id!='' AND p.updated_at>=?""", (_ago(30),))
+                   WHERE p.status='done' AND p.external_id!='' AND p.updated_at>=?""", (_ago(90),))
     by_acc = {}
     for r in rows:
-        if r["fetched_at"] and r["fetched_at"] > _ago(0.5):
+        if r["fetched_at"] and r["fetched_at"] > _ago(0.5 if r["updated_at"] > _ago(14) else 2):
             continue
         by_acc.setdefault(r["account_id"], []).append(r)
     for aid, posts in by_acc.items():
@@ -140,10 +151,10 @@ def job():
                 db.run("""INSERT INTO post_stats(post_id, views, likes, comments, shares, fetched_at, error) VALUES(?,?,?,?,?,?,'')
                           ON CONFLICT(post_id) DO UPDATE SET views=excluded.views, likes=excluded.likes, comments=excluded.comments,
                           shares=excluded.shares, fetched_at=excluded.fetched_at, error=''""", (p["id"], *v, _now()))
-            else:
-                db.run("""INSERT INTO post_stats(post_id, fetched_at, error) VALUES(?,?,?)
-                          ON CONFLICT(post_id) DO UPDATE SET fetched_at=excluded.fetched_at, error=excluded.error""",
-                       (p["id"], _now(), err or "bez čísel"))
+            elif not db.one("SELECT 1 x FROM post_stats WHERE post_id=? AND error='' AND fetched_at!=''", (p["id"],)):
+                # bez čísel (napr. vyčerpaný limit): nič sa nezapíše ako stiahnuté, skúsi sa pri ďalšom behu
+                db.run("""INSERT INTO post_stats(post_id, fetched_at, error) VALUES(?,'',?)
+                          ON CONFLICT(post_id) DO UPDATE SET error=excluded.error""", (p["id"], err or "bez čísel"))
         _rescore(aid)
     for p in db.q("SELECT id FROM projects"):
         db.run("UPDATE projects SET learnings=? WHERE id=?", (learnings(p["id"]), p["id"]))
@@ -162,7 +173,7 @@ def _rescore(aid):
 # ---------- vyhodnotenie ----------
 def _rows(pid=None, days=90):
     return db.q(f"""SELECT ps.*, p.account_id, p.scheduled_at, a.platform, a.name account, a.lang acc_lang, v.lang, v.title,
-                          s.idea_id, i.title idea_title, i.hook, i.pillar, i.project_id
+                          s.idea_id, i.title idea_title, i.hook, i.pillar, i.project_id, COALESCE(NULLIF(i.format,''),'short') fmt
                    FROM post_stats ps JOIN posts p ON p.id=ps.post_id JOIN accounts a ON a.id=p.account_id
                    JOIN videos v ON v.id=p.video_id LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
                    WHERE ps.error='' AND p.scheduled_at>=? {'AND v.project_id=?' if pid else ''}""",
@@ -175,7 +186,7 @@ def ideas_perf(pid, days=90):
     for r in _rows(pid, days):
         if not r["idea_id"] or not r["ratio"]:
             continue
-        a = agg.setdefault(r["idea_id"], {"idea_id": r["idea_id"], "title": r["idea_title"], "hook": r["hook"], "pillar": r["pillar"],
+        a = agg.setdefault(r["idea_id"], {"idea_id": r["idea_id"], "title": r["idea_title"], "hook": r["hook"], "pillar": r["pillar"], "fmt": r["fmt"],
                                           "ratios": [], "views": 0, "likes": 0, "comments": 0, "posts": 0})
         a["ratios"].append(r["ratio"])
         a["views"] += r["views"]

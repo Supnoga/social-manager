@@ -56,6 +56,17 @@ const PL = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', faceb
 const PLATS = Object.keys(PL);
 const plat = (p, withName = true) => `<span class="plat-ic">${I(p)}${withName ? PL[p] : ''}</span>`;
 const ST = { review: ['Na schválenie', 'warn'], queued: ['Naplánované', 'acc'], uploading: ['Nahráva sa', 'warn'], done: ['Zverejnené', 'ok'], failed: ['Chyba', 'bad'] };
+// Typ videa: krátke (na výšku: Shorts, Reels, TikTok) alebo dlhé (na šírku, YouTube). Značka + spoločný filter.
+IC.vshort = '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 9.5v5l4-2.5z"/>';
+IC.vlong = '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M10.5 9.5v5l4-2.5z"/>';
+const FMTN = { short: ['Krátke', 'Krátke video na výšku: Shorts, Reels, TikTok'], long: ['Dlhé', 'Dlhé video na šírku: YouTube'] };
+const fmtOf = f => f === 'long' ? 'long' : 'short';
+const FMT = f => { f = fmtOf(f); return `<span class="fmt ${f === 'long' ? 'l' : 's'}" title="${FMTN[f][1]}">${I(f === 'long' ? 'vlong' : 'vshort', 's')}${FMTN[f][0]}</span>`; };
+try { S.fmt = localStorage.getItem('fmtF') || ''; } catch (e) { S.fmt = ''; }
+const fmtOk = f => !S.fmt || fmtOf(f) === S.fmt;
+function setFmt(v) { S.fmt = v; try { localStorage.setItem('fmtF', v); } catch (e) { } render(); }
+const fmtSeg = (list, key = 'fmt') => { const n = f => list ? list.filter(x => fmtOf(x[key]) === f).length : null; const c = v => v === null ? '' : ` <span class="dim">${v}</span>`;
+  return `<div class="seg fmtseg" title="Ukázať len krátke alebo len dlhé videá">${[['', 'Všetky', list ? list.length : null], ['short', 'Krátke', n('short')], ['long', 'Dlhé', n('long')]].map(([k, t, v]) => `<button class="${S.fmt === k ? 'on' : ''}" onclick="setFmt('${k}')">${k ? I(k === 'long' ? 'vlong' : 'vshort', 's') : ''}${t}${c(v)}</button>`).join('')}</div>`; };
 const langName = c => (S.meta?.languages.find(l => l.code === c) || {}).name || (c || '—').toUpperCase();
 const STAGES = [
   ['napad', 'Nápad', 'bulb', 'Čo natočiť'],
@@ -92,7 +103,7 @@ async function api(url, opts = {}, busyText) {
       d = await r.json().catch(() => ({}));
     }
     if (d.manual) { busy(false); return await manualAI(d); }
-    if (!r.ok) throw new Error(d.error || d.detail || 'Chyba ' + r.status);
+    if (!r.ok) throw new Error(d.error || (typeof d.detail === 'string' ? d.detail : '') || (r.status === 422 ? 'Appka nerozumela požiadavke, obnov stránku a skús znova.' : 'Chyba ' + r.status));
     return d;
   } catch (e) { if (e.message !== 'Zrušené') toast(/fetch|Load failed/i.test(e.message) ? 'Appka neodpovedá – skontroluj, či je otvorené čierne okno (Terminál), a skús znova.' : e.message, true); throw e; }
   finally { if (busyText) busy(false); }
@@ -132,15 +143,18 @@ function sidebar() {
   $('#side').innerHTML = `
     <div class="logo"><div class="mark">${I('play')}</div>Social Manager</div>
     ${nav('', 'home', 'Prehľad', !cur)}
+    ${nav('plan', 'calendar', 'Mesačný plán', cur === 'plan')}
     <div class="sec-t">Projekty <a href="#/novy" title="Nový projekt">${I('plus', 's')}</a></div>
     ${S.projects.map(p => `<a class="nav ${inP === p.id ? 'on' : ''}" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}<span class="cnt" ${p.review + p.inbox ? 'style="color:var(--acc);font-weight:700"' : ''}>${inP === p.id ? '' : (p.review + p.inbox || '')}</span></a>
-      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'ucty', 'link', 'Účty a siete')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
+      ${inP === p.id ? `<div class="subnav">${sub(p, 'videa', 'layers', 'Videá')}${sub(p, 'plan', 'calendar', 'Plán na mesiac')}${sub(p, 'kontrola', 'eye', 'Kontrola', p.review)}${sub(p, 'kalendar', 'calendar', 'Publikovanie', p.failed ? '!' : '')}${sub(p, 'dashboard', 'chart', 'Dashboard')}${sub(p, 'radar', 'radar', 'Radar', p.inbox)}${sub(p, 'komentare', 'message', 'Komentáre')}${sub(p, 'spravy', 'inbox', 'Správy')}${sub(p, 'ucty', 'link', 'Účty a siete')}${sub(p, 'profily', 'user', 'Vzhľad účtov')}${sub(p, 'brief', 'palette', 'Popis a dizajn')}</div>` : ''}`).join('') || `<a class="nav" href="#/novy">${I('plus')}Nový projekt</a>`}
     <div class="sec-t">Nastavenie</div>
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
     <div class="side-foot">
       <div class="status"><i class="${ai.cli_found ? '' : 'w'}"></i>Claude ${ai.cli_found ? 'pripojený' : 'v ručnom režime'}</div>
       <div class="status"><i class="${S.meta.settings.paused ? 'w' : ''}"></i>Plánovač ${S.meta.settings.paused ? 'pozastavený' : 'beží'}</div>
       <a class="small dim" style="display:block;margin-top:8px;cursor:pointer" onclick="quitApp()">Vypnúť appku</a>
+      <div class="small dim" style="margin-top:10px;display:flex;align-items:center;gap:6px"><svg width="18" height="13" viewBox="0 0 18 13"><rect width="18" height="13" rx="3" fill="#FF0000"/><polygon points="7,3.5 12.5,6.5 7,9.5" fill="#fff"/></svg>Uses YouTube API Services</div>
+      <div class="small" style="margin-top:4px"><a href="https://github.com/Supnoga/social-manager/blob/main/PRIVACY.md" target="_blank" style="color:var(--muted)">Privacy Policy</a> · <a href="https://github.com/Supnoga/social-manager/blob/main/TERMS.md" target="_blank" style="color:var(--muted)">Terms of Service</a></div>
     </div>`;
 }
 // aktuálny projekt (ak je stránka otvorená v projekte) – pre filtre a nadpisy
@@ -166,12 +180,14 @@ async function render() {
   try {
     if (!r[0]) await pHome(m);
     else if (r[0] === 'nastavenia') await pSettings(m);
+    else if (r[0] === 'plan') await pMonthPlan(m);
     else if (r[0] === 'novy') pProjectForm(m, null);
     else if (r[0] === 'p') {
       const p = S.projects.find(x => x.id === +r[1]);
       if (!p) return go('');
       const sec = r[2] || 'videa';
       if (sec === 'v') await pIdea(m, p, +r[3], r[4] || null);
+      else if (sec === 'plan') await pProjectPlan(m, p);
       else if (sec === 'kontrola') await pReview(m);
       else if (sec === 'kalendar') await pCalendar(m);
       else if (sec === 'radar') await pRadar(m);
@@ -202,10 +218,12 @@ async function pHome(m) {
   m.innerHTML = `<div class="top"><div><h1>Prehľad</h1><p class="sub">Všetky projekty a publikovanie na jednom mieste.</p></div><div class="sp"></div>
     <a class="btn" href="#/novy">${I('plus')}Nový projekt</a></div>
   <div class="grid" style="margin-bottom:14px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))">
-    ${tile('folder', d.projects, 'projektov')}${tile('bulb', d.ideas, 'nápadov v práci')}${tile('film', d.videos, 'videí')}
+    ${tile('folder', d.projects, 'projektov')}${tile('bulb', d.ideas, 'nápadov v práci')}${tile('file', ((d.scripts || {}).short || 0) + ((d.scripts || {}).long || 0), `scenárov pripravených<br><span class="dim">${(d.scripts || {}).short || 0} krátkych · ${(d.scripts || {}).long || 0} dlhých</span>`)}${tile('film', d.videos, 'videí')}
     ${tile('clock', d.posts.queued || 0, 'naplánovaných')}${tile('check', d.posts.done || 0, 'zverejnených')}
     ${tile('bot', ((d.ai.day.inp + d.ai.day.outp) / 1000).toFixed(1) + 'k', 'AI tokenov za 24 h')}
   </div>
+  <div class="card" id="hCm" style="margin-bottom:14px"><h2>${I('message')}Komentáre</h2><div class="small dim">Načítavam…</div></div>
+  <div class="card" id="hProj" style="margin-bottom:14px"><h2>${I('chart')}Ako sa darí projektom</h2><div class="small dim">Načítavam čísla…</div></div>
   ${d.expiring.length ? `<div class="hint" style="margin-bottom:14px">${I('alert')}<div>LinkedIn prihlásenie čoskoro vyprší: ${d.expiring.map(e => `<b>${esc(e.name)}</b> (${e.days} dní)`).join(', ')}. <a class="btn sm" href="/api/accounts/linkedin/connect${d.expiring.some(e => e.org) ? '?org=1' : ''}">Prihlásiť znova</a></div></div>` : ''}
   ${(d.posts.failed || 0) ? `<div class="hint" style="margin-bottom:14px;border-color:rgba(240,68,56,.4);background:var(--badSoft);color:#ffc9c4">${I('alert')}<div>${d.posts.failed} publikovaní skončilo chybou. <a href="#/kalendar?f=failed">Pozrieť</a></div></div>` : ''}
   <div class="g2">
@@ -217,11 +235,12 @@ async function pHome(m) {
     <div class="card"><h2>${I('clock')}Naplánované</h2>${postList(d.upcoming)}</div>
     ${steps.some(s => !s[0]) ? `<div class="card"><h2>${I('check')}Posledné výsledky</h2>${postList(d.recent)}</div>` : `<div class="card"><h2>${I('chart')}AI za 24 h</h2><p class="muted">${d.ai.day.calls} volaní · ${((d.ai.day.inp + d.ai.day.outp) / 1000).toFixed(1)}k tokenov · ${d.ai.day.cached} zadarmo z pamäte</p><a href="#/nastavenia">Detail spotreby</a></div>`}
   </div>`;
+  homeProjects($('#hProj')); homeComments($('#hCm'));
 }
 function postList(list) {
   if (!list.length) return empty('calendar', 'Nič tu nie je.');
   return `<table>${list.map(p => `<tr><td style="width:120px" class="small muted">${esc(p.scheduled_at.slice(5, 16))}</td><td>${plat(p.platform, false)}</td>
-    <td><div style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.title || p.original_name)}</div><div class="small dim">${esc(p.project_name || '')} · ${langName(p.lang)}</div></td>
+    <td><div style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${FMT(p.fmt)} ${esc(p.title || p.original_name)}</div><div class="small dim">${esc(p.project_name || '')} · ${langName(p.lang)}</div></td>
     <td style="text-align:right"><span class="chip ${ST[p.status][1]}">${ST[p.status][0]}</span>${p.url && p.url.startsWith('http') ? ` <a href="${esc(p.url)}" target="_blank" class="btn ghost sm">${I('ext', 's')}</a>` : ''}</td></tr>`).join('')}</table>`;
 }
 
@@ -242,18 +261,19 @@ async function pProject(m, p, tab) {
 }
 
 async function tBoard(b, p) {
-  const ideas = await api(`/api/projects/${p.id}/board`);
+  const all = await api(`/api/projects/${p.id}/board`);
+  const ideas = all.filter(i => fmtOk(i.format));
   const by = k => ideas.filter(i => i.stage === k);
   const nL = p.languages.length;
   b.innerHTML = `<div class="row" style="margin-bottom:16px">
       <button class="btn" onclick="ideasDialog(${p.id})">${I('sparkles')}Vymyslieť nápady</button>
       <button class="btn sec" onclick="ownIdea(${p.id})">${I('pencil')}Vlastný nápad</button>
       <button class="btn sec" onclick="autoDialog(${p.id})">${I('rocket')}Autopilot</button>
-      <span class="sp"></span>${p.strategy ? '' : `<button class="btn ghost" onclick="makeStrategy(${p.id})">${I('target')}Odporúčam najprv stratégiu</button>`}
+      <span class="sp"></span>${fmtSeg(all, 'format')}${p.strategy ? '' : `<button class="btn ghost" onclick="makeStrategy(${p.id})">${I('target')}Odporúčam najprv stratégiu</button>`}
     </div><div id="autoBox"></div>
     <div class="board">${STAGES.map(([k, n, ic], idx) => `<div class="lane"><div class="lane-h"><span class="n">${idx + 1}</span>${n}<span class="c">${by(k).length}</span></div>
       ${by(k).map(i => `<div class="vc" onclick="go('p/${p.id}/v/${i.id}')">
-        <div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="score ${i.score >= 8 ? 'hi' : ''}">${i.score || '–'}</span>${i.status === 'new' ? '<span class="chip">nový</span>' : ''}${i.failed ? `<span class="chip bad">${I('alert', 's')}${i.failed}</span>` : ''}</div>
+        <div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="row" style="gap:6px"><span class="score ${i.score >= 8 ? 'hi' : ''}">${i.score || '–'}</span>${FMT(i.format)}</span>${i.status === 'new' ? '<span class="chip">nový</span>' : ''}${i.failed ? `<span class="chip bad">${I('alert', 's')}${i.failed}</span>` : ''}</div>
         <div class="t">${esc(i.title)}</div><div class="h">${esc(i.hook)}</div>
         <div class="m">${i.langs ? `<span title="jazyky">${I('globe', 's')}${i.langs}/${nL}</span>` : ''}${i.voices ? `<span title="hlasy">${I('mic', 's')}${i.voices}</span>` : ''}${i.videos ? `<span title="videá">${I('film', 's')}${i.videos}</span>` : ''}${i.queued ? `<span title="naplánované">${I('clock', 's')}${i.queued}</span>` : ''}${i.posted ? `<span title="zverejnené" class="ok-t">${I('check', 's')}${i.posted}</span>` : ''}</div>
       </div>`).join('') || (idx === 0 ? empty('bulb', 'Klikni na „Vymyslieť nápady“') : '')}</div>`).join('')}</div>`;
@@ -270,10 +290,11 @@ function ideasDialog(pid) {
 async function genIdeas(pid) { const body = { project_id: pid, count: +$('#iCount').value, format: $('#iFmt').value, focus: $('#iFocus').value }; closeModal(); const r = await api('/api/ai/ideas', { method: 'POST', body }, 'Claude vymýšľa nápady…'); toast(`Pridaných ${r.created} nápadov`); render(); }
 function ownIdea(pid) {
   modal(`<h2>${I('pencil')}Vlastný nápad</h2><label class="l">O čom bude video</label><input id="oT" placeholder="napr. 3 chyby pri varení cestovín">
+  <label class="l">Typ videa</label><select id="oF">${['short', 'long'].map(f => `<option value="${f}" ${S.fmt === f ? 'selected' : ''}>${FMTN[f][1]}</option>`).join('')}</select>
   <label class="l">Úvodná veta (háčik) – nepovinné</label><input id="oH"><label class="l">Poznámka pre AI – nepovinné</label><textarea id="oA"></textarea>
   <div class="row" style="margin-top:16px"><button class="btn" onclick="saveOwnIdea(${pid})">${I('check')}Pridať</button></div>`);
 }
-async function saveOwnIdea(pid) { const r = await api('/api/ideas', { method: 'POST', body: { project_id: pid, title: $('#oT').value, hook: $('#oH').value, angle: $('#oA').value } }); closeModal(); go(`p/${pid}/v/${r.id}`); }
+async function saveOwnIdea(pid) { const r = await api('/api/ideas', { method: 'POST', body: { project_id: pid, title: $('#oT').value, hook: $('#oH').value, angle: $('#oA').value, format: $('#oF').value } }); closeModal(); go(`p/${pid}/v/${r.id}`); }
 async function makeStrategy(id) { await api('/api/ai/strategy', { method: 'POST', body: { project_id: id } }, 'Claude premýšľa nad stratégiou… (cca 1 min)'); toast('Stratégia hotová'); go(`p/${id}/strategia`); }
 
 function autoDialog(pid) {
@@ -354,7 +375,7 @@ function pProjectForm(m, p) {
     const d = await voicesFor(l), sel = $(`[data-vl=${l}]`); if (!sel) return;
     const cur = (p.voices || {})[l] || 'auto';
     const grp = (t, list) => list.length ? `<optgroup label="${t}">${list.map(v => `<option value="${v.id}" ${v.id === cur ? 'selected' : ''}>${esc(v.label)} (${v.gender === 'F' ? 'žena' : 'muž'})</option>`).join('')}</optgroup>` : '';
-    sel.innerHTML = `<option value="auto">Automaticky (najlepší dostupný)</option>` + grp('Google HD – najprirodzenejšie', d.voices.filter(v => v.engine === 'google')) + grp('Microsoft – zadarmo bez kľúča', d.voices.filter(v => v.engine === 'edge'));
+    sel.innerHTML = `<option value="auto">Automaticky (najlepší dostupný)</option>` + grp('Google HD – najprirodzenejšie', d.voices.filter(v => v.engine === 'google')) + grp('Lokálny – zadarmo a bez limitu (beží na tomto počítači)', d.voices.filter(v => v.engine === 'local')) + grp('Microsoft – zadarmo bez kľúča', d.voices.filter(v => v.engine === 'edge'));
   });
   if (p.id && typeof brandCard === 'function') brandCard(p.id);
   if (p.id) tagCard(p.id).catch(() => { });
@@ -393,7 +414,7 @@ async function pIdea(m, p, iid, step) {
   step = step || autoStep;
   const doneIdx = STAGES.findIndex(s => s[0] === autoStep);
   m.innerHTML = `<div class="top"><div style="min-width:0;flex:1"><div class="crumb"><a href="#/p/${p.id}/videa">${esc(p.name)}</a>${I('right', 's')}Video</div>
-    <h1>${esc(src?.title || idea.title)}</h1></div>
+    <h1 class="row" style="gap:10px">${FMT(idea.format)}<span>${esc(src?.title || idea.title)}</span></h1></div>
     <button class="btn ghost" onclick="if(confirm('Zmazať tento nápad aj s jeho jazykmi?'))api('/api/ideas/${iid}',{method:'DELETE'}).then(()=>go('p/${p.id}/videa'))">${I('trash')}</button></div>
   <div class="steps">${STAGES.map(([k, n, ic, sub], i) => `<div class="step ${k === step ? 'on' : i < doneIdx || (i === doneIdx && k !== step) ? 'done' : ''}" onclick="go('p/${p.id}/v/${iid}/${k}')"><span class="b">${i < doneIdx && k !== step ? I('check', 's') : i + 1}</span><div>${n}<small>${sub}</small></div></div>`).join('')}</div>
   <div id="sbody"></div>`;
@@ -405,6 +426,7 @@ async function pIdea(m, p, iid, step) {
 function sIdea(b, { p, idea, src, iid }) {
   b.innerHTML = `<div class="g2" style="align-items:start"><div class="card"><h2>${I('bulb')}Nápad</h2>
     <label class="l">Názov</label><input id="eT" value="${esc(idea.title)}">
+    <label class="l">Typ videa</label><select id="eF">${['short', 'long'].map(f => `<option value="${f}" ${fmtOf(idea.format) === f ? 'selected' : ''}>${FMTN[f][1]}</option>`).join('')}</select>
     <label class="l">Háčik (prvá veta)</label><input id="eH" value="${esc(idea.hook)}">
     <label class="l">Uhol / čím je to iné</label><textarea id="eA">${esc(idea.angle)}</textarea>
     ${idea.why ? `<p class="small muted">${I('chart', 's')} ${esc(idea.why)}</p>` : ''}
@@ -415,7 +437,7 @@ function sIdea(b, { p, idea, src, iid }) {
     ${src ? `<div class="hint">${I('check')}<div>Prototyp už existuje.</div></div><div class="row" style="margin-top:12px"><button class="btn" onclick="go('p/${p.id}/v/${iid}/prototyp')">Otvoriť prototyp${I('right')}</button><button class="btn sec" onclick="mkProto(${p.id},${iid})">${I('refresh')}Napísať znova</button></div>`
       : `<button class="btn" onclick="mkProto(${p.id},${iid})">${I('sparkles')}Vytvoriť prototyp</button>`}</div></div>`;
 }
-async function saveIdea(iid) { await api('/api/ideas/' + iid, { method: 'PATCH', body: { title: $('#eT').value, hook: $('#eH').value, angle: $('#eA').value } }); toast('Uložené'); }
+async function saveIdea(iid) { await api('/api/ideas/' + iid, { method: 'PATCH', body: { title: $('#eT').value, hook: $('#eH').value, angle: $('#eA').value, ...($('#eF') ? { format: $('#eF').value } : {}) } }); toast('Uložené'); }
 async function mkProto(pid, iid) { await saveIdea(iid).catch(() => { }); await api('/api/ideas/' + iid, { method: 'PATCH', body: { status: 'approved' } }); await api('/api/ideas/scripts', { method: 'POST', body: { idea_ids: [iid] } }, 'Claude píše scenár…'); go(`p/${pid}/v/${iid}/prototyp`); }
 
 function sProto(b, { p, src, iid }) {
@@ -649,16 +671,17 @@ async function pubIdea(iid, now) {
 
 // ---------- knižnica ----------
 async function tLibrary(b, p) {
-  const vids = await api(`/api/videos?project_id=${p.id}&lang=${S.vLang || ''}`);
+  const vAll = await api(`/api/videos?project_id=${p.id}&lang=${S.vLang || ''}`);
+  const vids = vAll.filter(v => fmtOk(v.fmt));
   b.innerHTML = `<div class="g2" style="margin-bottom:14px">
     <div class="drop" id="drop">${I('upload', 'l')}<div style="margin-top:6px">Pretiahni sem videá (aj veľa naraz)</div><div class="small dim">jazyk sa spozná z názvu, napr. recept_de.mp4</div><input type="file" id="fileIn" multiple accept="video/*" class="hidden"></div>
     <div class="card"><h3>${I('folder', 's')} Pridať celý priečinok</h3><p class="small muted">Videá sa nekopírujú, šetrí to miesto. Podpriečinky s kódom jazyka (/de/, /pl/) sa rozpoznajú.</p>
       <div class="row"><input id="folder" placeholder="/Users/meno/Videa/Projekt" style="flex:1"><button class="btn sec" onclick="importFolder(${p.id})">Pridať</button></div></div></div>
-  <div class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">${I('library')}Videá <span class="chip">${vids.length}</span></h2><span class="sp"></span>
+  <div class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">${I('library')}Videá <span class="chip">${vids.length}</span></h2><span class="sp"></span>${fmtSeg(vAll)}
     <select style="width:auto" onchange="S.vLang=this.value;render()"><option value="">Všetky jazyky</option>${p.languages.map(l => `<option value="${l}" ${S.vLang === l ? 'selected' : ''}>${langName(l)}</option>`).join('')}</select>
     <button class="btn sm" onclick="scheduleDialog(${p.id})">${I('calendar', 's')}Naplánovať vybrané</button><button class="btn sec sm" onclick="bulkAI()">${I('sparkles', 's')}AI popisy</button><button class="btn sec sm" onclick="bulkLang()">${I('globe', 's')}Jazyk</button><button class="btn bad sm" onclick="bulkDel()">${I('trash', 's')}</button></div>
   ${vids.length ? `<table><tr><th style="width:30px"><input type="checkbox" onclick="$$('.vchk').forEach(c=>c.checked=this.checked)"></th><th>Video</th><th>Jazyk</th><th>Dĺžka</th><th>Siete</th><th></th></tr>
-  ${vids.map(v => `<tr><td><input type="checkbox" class="vchk" value="${v.id}"></td><td><b>${esc(v.title || v.original_name)}</b><div class="small dim">${esc(v.original_name)} · ${(v.size / 1048576).toFixed(1)} MB</div></td>
+  ${vids.map(v => `<tr><td><input type="checkbox" class="vchk" value="${v.id}"></td><td>${FMT(v.fmt)} <b>${esc(v.title || v.original_name)}</b>${v.status === 'hold' ? ` <span class="chip bad" title="Neprešlo kontrolou pred zverejnením, plánovač ho nevezme">Zadržané</span>` : ''}<div class="small dim">${esc(v.original_name)} · ${(v.size / 1048576).toFixed(1)} MB</div>${v.status === 'hold' ? `<div class="small" style="color:var(--bad,#ff6b6b)">${esc(holdWhy(v))} <a href="#" onclick="releaseVideo(${v.id});return false">Pustiť aj tak</a></div>` : ''}</td>
     <td>${langName(v.lang)}</td><td class="muted">${v.duration ? Math.round(v.duration) + ' s' : '—'}</td>
     <td>${(v.posts || '').split(',').filter(Boolean).map(x => { const [pl, st] = x.split(':'); return `<span class="chip ${ST[st]?.[1]}">${I(pl, 's')}</span>`; }).join(' ') || '<span class="dim small">—</span>'}</td>
     <td><button class="btn ghost sm" onclick="editVideo(${v.id})">${I('pencil', 's')}</button></td></tr>`).join('')}</table>` : empty('film', 'Knižnica je prázdna.')}</div>`;
@@ -685,6 +708,8 @@ function editVideo(id) {
   <label class="l">Popis (YouTube)</label><textarea id="vD">${esc(v.description)}</textarea>
   <button class="btn" style="margin-top:14px" onclick="saveVideo(${id})">${I('check')}Uložiť</button>`);
 }
+function holdWhy(v) { try { return (JSON.parse(v.qa || '{}').why || []).join(' · '); } catch (e) { return ''; } }
+async function releaseVideo(id) { await api('/api/videos/' + id + '/release', { method: 'POST' }); toast('Video je uvoľnené na plánovanie'); render(); }
 async function saveVideo(id) { await api('/api/videos/' + id, { method: 'PUT', body: { title: $('#vT').value, description: $('#vD').value, caption: $('#vC').value, hashtags: $('#vH').value, lang: $('#vL').value } }); closeModal(); render(); }
 function scheduleDialog(pid) {
   const ids = selVids(); if (!ids.length) return toast('Najprv zaškrtni videá', true);
@@ -704,19 +729,20 @@ async function doSchedule(ids, now) {
 
 // ================= KONTROLA PRED ZVEREJNENÍM =================
 async function pReview(m) {
-  const groups = (await api('/api/review')).filter(g => !S.pf || g.project_id === S.pf);
+  const gAll = (await api('/api/review')).filter(g => !S.pf || g.project_id === S.pf);
+  const groups = gAll.filter(g => fmtOk(g.fmt));
   const total = groups.reduce((a, g) => a + g.posts, 0);
   m.innerHTML = `<div class="top"><div>${pTitle('Kontrola')}<p class="sub">Pozri si video a pusti ho von jedným klikom – naraz vo všetkých jazykoch a na všetkých účtoch.</p></div>
-    ${groups.length ? `<button class="btn" onclick="revApprove(${S.pf ? `[${groups.map(g => `'${g.key}'`).join(',')}]` : `'all'`})">${I('check')}Schváliť všetko (${groups.length})</button>` : ''}</div>
+    <span class="sp"></span>${gAll.length ? fmtSeg(gAll) : ''}${groups.length ? `<button class="btn" onclick="revApprove(${S.pf || S.fmt ? `[${groups.map(g => `'${g.key}'`).join(',')}]` : `'all'`})">${I('check')}Schváliť všetko (${groups.length})</button>` : ''}</div>
   ${groups.length ? groups.map((g, gi) => { const proj = S.projects.find(p => p.id === g.project_id) || {}; const L = g.langs[0]; return `<div class="card rev" style="margin-bottom:14px">
     <div class="rev-v"><video id="rv${gi}" src="/api/file?path=${encodeURIComponent(L.file)}" controls playsinline preload="metadata"></video></div>
     <div class="rev-b"><div class="small dim"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${proj.color || '#666'};margin-right:6px"></span>${esc(proj.name || '')} · od ${esc(g.first.slice(0, 16).replace('T', ' '))}</div>
-      <h2 style="margin:6px 0 4px">${esc(g.title)}</h2>
+      <h2 class="row" style="margin:6px 0 4px;gap:8px">${FMT(g.fmt)}<span>${esc(g.title)}</span></h2>
       <div class="small muted">${g.langs.length} ${g.langs.length === 1 ? 'jazyk' : g.langs.length < 5 ? 'jazyky' : 'jazykov'} · ${g.accounts} ${g.accounts === 1 ? 'účet' : g.accounts < 5 ? 'účty' : 'účtov'} · ${g.platforms.map(x => I(x, 's')).join(' ')} · spolu ${g.posts} zverejnení</div>
       <div class="pick" style="margin:12px 0">${g.langs.map((l, li) => `<label class="${li ? '' : 'on'}" onclick="revLang(${gi},${li},this)" style="cursor:pointer">${esc(langName(l.lang))}${l.source ? ' ★' : ''}</label>`).join('')}</div>
       <div id="rc${gi}" class="small" style="${L.caption || L.hashtags ? "" : "display:none;"}white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:140px;overflow:auto">${esc((L.caption || '') + (L.hashtags ? '\n' + L.hashtags : ''))}</div>
       <div class="row" style="margin-top:14px"><button class="btn" onclick="revApprove(['${g.key}'])">${I('check')}Schváliť a pustiť</button><button class="btn sec" onclick="revReject('${g.key}')">${I('x')}Vrátiť na úpravu</button><button class="btn sec" onclick="capsModal(window._rev[${gi}].langs[window._rev[${gi}].cur||0].video_id)">${I('type')}Popisky pre siete</button>${L.yt ? `<a class="btn sec" href="${L.yt}" target="_blank">${I('youtube')}Na YouTube (súkromné)</a>` : ''}</div>
-    </div></div>`; }).join('') : `<div class="card empty">${I('check', 'l')}<p>Nič nečaká na schválenie.</p><p class="small dim">Keď naplánuješ videá, objavia sa tu. Kým ich neschváliš, nikam sa neodošlú.</p></div>`}`;
+    </div></div>`; }).join('') : `<div class="card empty">${I('check', 'l')}<p>${gAll.length ? 'V tomto filtri nič nečaká na schválenie.' : 'Nič nečaká na schválenie.'}</p><p class="small dim">Keď naplánuješ videá, objavia sa tu. Kým ich neschváliš, nikam sa neodošlú.</p></div>`}`;
   window._rev = groups;
 }
 function revLang(gi, li, el) { window._rev[gi].cur = li; const l = window._rev[gi].langs[li]; $('#rv' + gi).src = '/api/file?path=' + encodeURIComponent(l.file); $('#rc' + gi).style.display = (l.caption || l.hashtags) ? '' : 'none'; $('#rc' + gi).textContent = (l.caption || '') + (l.hashtags ? '\n' + l.hashtags : ''); el.parentNode.querySelectorAll('label').forEach(x => x.classList.remove('on')); el.classList.add('on'); }
@@ -726,17 +752,18 @@ async function revReject(key) { if (!confirm('Zrušiť naplánovanie tohto videa
 // ================= PUBLIKOVANIE =================
 async function pCalendar(m) {
   const f = new URLSearchParams(location.hash.split('?')[1] || '').get('f') ?? 'queued';
-  const posts = (await api('/api/posts?status=' + f)).filter(p => !S.pf || p.project_id === S.pf);
+  const pAll = (await api('/api/posts?status=' + f)).filter(p => !S.pf || p.project_id === S.pf);
+  const posts = pAll.filter(p => fmtOk(p.fmt));
   const paused = S.meta.settings.paused;
   const days = {}; posts.forEach(p => (days[p.scheduled_at.slice(0, 10)] ||= []).push(p));
   const dn = d => new Date(d + 'T12:00').toLocaleDateString('sk', { weekday: 'long', day: 'numeric', month: 'long' });
   m.innerHTML = `<div class="top"><div>${pTitle('Publikovanie')}<p class="sub">Appka nahráva videá sama v naplánovaný čas, keď je zapnutá. Pri chybe to skúsi ešte 2×.</p></div><span class="sp"></span>
     <button class="btn" onclick="planDialog()">${I('calendar')}Naplánovať týždeň</button>
     <button class="btn ${paused ? '' : 'sec'}" onclick="api('/api/settings',{method:'POST',body:{paused:${!paused}}}).then(render)">${I(paused ? 'play' : 'pause')}${paused ? 'Spustiť plánovač' : 'Pozastaviť'}</button></div>
-  <div class="seg" style="margin-bottom:16px">${[['review', 'Na schválenie'], ['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash=here()+'?f=${k}'">${n}</button>`).join('')}</div>
+  <div class="row" style="margin-bottom:16px;gap:10px;flex-wrap:wrap"><div class="seg">${[['review', 'Na schválenie'], ['queued', 'Naplánované'], ['uploading', 'Nahráva sa'], ['done', 'Zverejnené'], ['failed', 'Chyby'], ['', 'Všetko']].map(([k, n]) => `<button class="${f === k ? 'on' : ''}" onclick="location.hash=here()+'?f=${k}'">${n}</button>`).join('')}</div>${fmtSeg(pAll)}</div>
   ${Object.keys(days).length ? Object.entries(days).map(([d, list]) => `<div class="card"><h2>${I('calendar', 's')}${dn(d)} <span class="chip">${list.length}</span></h2><table>${list.map(p => `<tr>
     <td style="width:60px" class="muted">${p.scheduled_at.slice(11, 16)}</td><td style="width:150px">${plat(p.platform)}<div class="small dim">${esc(p.account_name)}</div></td>
-    <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color || '#666'};margin-right:6px"></span>${esc(p.title || p.original_name)} <span class="chip">${esc((p.lang || '').toUpperCase())}</span>${p.error ? `<div class="small ${p.status === 'failed' ? 'bad-t' : 'dim'}">${esc(p.error.slice(0, 260))}</div>` : ''}${p.url && !p.url.startsWith('http') ? `<div class="small muted">${esc(p.url)}</div>` : ''}</td>
+    <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color || '#666'};margin-right:6px"></span>${FMT(p.fmt)} ${esc(p.title || p.original_name)} <span class="chip">${esc((p.lang || '').toUpperCase())}</span>${p.error ? `<div class="small ${p.status === 'failed' ? 'bad-t' : 'dim'}">${esc(p.error.slice(0, 260))}</div>` : ''}${p.url && !p.url.startsWith('http') ? `<div class="small muted">${esc(p.url)}</div>` : ''}</td>
     <td style="text-align:right;white-space:nowrap"><span class="chip ${ST[p.status][1]}">${ST[p.status][0]}</span>
       ${p.url && p.url.startsWith('http') ? `<a class="btn ghost sm" href="${esc(p.url)}" target="_blank">${I('ext', 's')}</a>` : ''}
       ${p.status === 'queued' || p.status === 'failed' ? `<button class="btn ghost sm" title="Teraz" onclick="api('/api/posts/${p.id}/retry',{method:'POST'}).then(render)">${I('send', 's')}</button>` : ''}
@@ -766,7 +793,7 @@ async function pAccounts(m) {
     <td><button class="btn ghost sm" onclick="if(confirm('Odpojiť účet?'))api('/api/accounts/${a.id}',{method:'DELETE'}).then(render)">${I('trash', 's')}</button></td></tr>`).join('')}</table>` : empty('link', 'Zatiaľ žiadne. Pripoj ich nižšie.')}</div>
   <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
   ${c('youtube', 'YouTube', `<p class="small muted">1) Nahraj JSON z Google Cloud (OAuth klient „Desktop app“). 2) Klikni Pripojiť kanál a v Google okne vyber kanál. Pre ďalší kanál klikni znova – aj keď sú všetky pod jedným Google účtom, Google ti ponúkne na výber každý kanál zvlášť.</p>
-    ${(S.meta.yt_usage || []).length ? `<table class="small">${S.meta.yt_usage.map(u => `<tr><td>Google projekt ${u.n}</td><td>${u.channels} kanálov</td><td>dnes ${u.today}/${u.limit} nahratí</td></tr>`).join('')}</table>` : ''}
+    ${(S.meta.yt_usage || []).length ? `<table class="small">${S.meta.yt_usage.map(u => `<tr><td>Google projekt ${u.n}</td><td>${u.channels} kanálov</td><td>dnes ${u.today}/${u.limit} nahratí</td></tr>`).join('')}</table><div class="small muted">Limit sa obnovuje každý deň ráno. Čo sa dnes nestihne, nahrá sa samo zajtra, netreba nič robiť.</div>` : ''}
     <input type="file" id="ytJson" accept=".json" style="margin:8px 0"><div class="row"><button class="btn sec sm" onclick="uploadYt()">${I('upload', 's')}${h.yt_client ? 'Pridať ďalší Google projekt' : 'Nahrať JSON'}</button><a class="btn sm" href="/api/accounts/youtube/connect">${I('link', 's')}Pripojiť kanál</a></div>
     <p class="small dim">Jeden Google projekt zvládne cca 100 nahratí denne. Pri 40 kanáloch a 1–2 videách denne stačí jeden, pri viac pridaj druhý (rovnaký postup, nový projekt v Google Cloud) – nové kanály sa rozložia samé. Keď sa limit minie, video počká do rána.</p>`)}
   ${c('facebook', 'Facebook + Instagram', `<p class="small muted">Vlož System User token z Meta Business. Appka sama načíta všetky stránky aj prepojené Instagram účty. Na odpisovanie na správy musí mať token aj práva pages_messaging, pages_manage_metadata a instagram_manage_messages.</p>
@@ -939,7 +966,7 @@ async function playVoice(lang, voice, btn) {
 async function loadVoiceList() {
   const lang = $('#tL').value, box = $('#vList'); box.innerHTML = '<span class="small dim">Načítavam…</span>';
   const d = await voicesFor(lang);
-  box.innerHTML = d.voices.map(v => `<div class="vrow"><button class="btn sec sm ic" onclick="playVoice('${lang}','${v.id}',this)">${I('play', 's')}</button><span style="flex:1">${esc(v.label)}</span><span class="tag ${v.engine === 'google' ? 'acc' : ''}">${v.engine === 'google' ? 'Google HD' : 'Microsoft'}</span><span class="small dim">${v.gender === 'F' ? 'žena' : 'muž'}</span></div>`).join('');
+  box.innerHTML = d.voices.map(v => `<div class="vrow"><button class="btn sec sm ic" onclick="playVoice('${lang}','${v.id}',this)">${I('play', 's')}</button><span style="flex:1">${esc(v.label)}</span><span class="tag ${v.engine === 'google' ? 'acc' : ''}">${v.engine === 'google' ? 'Google HD' : v.engine === 'local' ? 'Lokálny' : 'Microsoft'}</span><span class="small dim">${v.gender === 'F' ? 'žena' : 'muž'}</span></div>`).join('');
 }
 // ----- výslovnosť (vlastné slová pre hlas) -----
 let PR = [];

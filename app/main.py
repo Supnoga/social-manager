@@ -1,4 +1,6 @@
 """Social Manager - hlavný server. Spúšťa sa cez start.bat / start.command."""
+import re
+import sys
 import json
 import os
 import random
@@ -68,6 +70,21 @@ async def only_local(request: Request, call_next):
 @app.exception_handler(PlatformError)
 async def _err(request, exc):
     return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.exception_handler(Exception)
+async def _crash(request, exc):
+    """Neočakávaná chyba: zapísať ju a vrátiť jej text, nech sa dá rýchlo nájsť príčina."""
+    import traceback as _tb
+    msg = f"{type(exc).__name__}: {exc}"
+    try:
+        log = (db.get_setting("crash_log", []) or [])[-19:]
+        log.append(time.strftime("%d.%m. %H:%M ") + request.url.path + " " + msg[:300])
+        db.set_setting("crash_log", log)
+    except Exception:
+        pass
+    _tb.print_exc()
+    return JSONResponse({"error": msg[:500]}, status_code=500)
 
 
 @app.exception_handler(ai.NeedManual)
@@ -163,7 +180,7 @@ def verify_file(fname: str):
 
 # ---------------- Dlhé úlohy na pozadí (prehliadač sa len pýta na stav, spojenie sa nepreruší) ----------------
 JOBS = {}
-nightly.BUSY = lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"]  # Mac nezaspí počas ručnej výroby
+nightly.BUSY = lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or MPROD["running"]  # Mac nezaspí počas ručnej výroby
 
 
 @app.post("/api/job")
@@ -246,6 +263,7 @@ def api_meta():
                "followers": db.get_setting("li_followers", 0) or 0},
         "scheduler": scheduler.state,
         "yt_usage": youtube.usage(),
+        "yt_loc": {"log": (db.get_setting("yt_loc_log", []) or [])[-5:], "fixed": len(db.get_setting("yt_loc_done", []) or [])},
         "ffmpeg": bool(media.ffmpeg()),
         "google_tts": voices.google_usage(),
         "mt": __import__("app.translate", fromlist=["usage"]).usage(),
@@ -253,17 +271,18 @@ def api_meta():
         "anim": __import__("app.anim", fromlist=["status"]).status(),
         "review_count": db.one("SELECT COUNT(*) n FROM posts WHERE status='review'")["n"],
         "night": nightly.status(),
+        "render": _render_status(),
     }
 
 
 @app.post("/api/settings")
 def api_settings(data: dict = Body(...)):
-    allowed = {"ai_mode", "model_creative", "model_cheap", "paused", "claude_path", "meta_api_version", "tt_mode",
+    allowed = {"guide", "detail", "precise_only", "ai_mode", "model_creative", "model_cheap", "model_premium", "render_parallel", "paused", "claude_path", "meta_api_version", "tt_mode",
                "public_base_url", "ttb_draft", "ttb_ai_label", "cf_tunnel_token", "jitter_min", "ttb_redirect",
                "update_repo", "auto_update", "google_tts_key", "google_tts_budget", "update_token",
                "mt_deepl_key", "mt_azure_key", "mt_azure_region", "mt_google", "require_approval",
                "pexels_key", "pixabay_key", "cf_account", "cf_ai_token", "ai_images",
-               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce", "night", "ai_effort", "auto_approve_projects", "yt_captions"}
+               "plan_per_day", "auto_plan_week", "radar_enabled", "radar_weekly", "li_page_langs", "li_target", "plan_projects", "auto_produce", "night", "ai_effort", "auto_approve_projects", "yt_captions", "yt_project_client", "autostart"}
     if "verify_name" in data and data.get("verify_name"):
         vf = db.get_setting("verify_files", {}) or {}
         vf[data["verify_name"].strip().split("/")[-1]] = data.get("verify_content", "")
@@ -300,6 +319,10 @@ def dashboard():
         "videos": db.one("SELECT COUNT(*) n FROM videos")["n"],
         "ideas": db.one("SELECT COUNT(*) n FROM ideas WHERE status IN ('new','approved')")["n"],
         "accounts": db.one("SELECT COUNT(*) n FROM accounts")["n"],
+        "scripts": {r["f"]: r["n"] for r in db.q("""SELECT CASE WHEN i.format='long' THEN 'long' ELSE 'short' END f, COUNT(*) n
+                   FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1 AND NOT EXISTS (
+                   SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id
+                   WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY f""")},
         "posts": c,
         "upcoming": _posts("p.status IN ('queued','uploading','review')", "p.scheduled_at", 12),
         "recent": _posts("p.status IN ('done','failed')", "p.updated_at DESC", 12),
@@ -311,7 +334,7 @@ def dashboard():
 
 def _posts(where, order, limit, args=()):
     return db.q(f"""SELECT p.*, a.platform, a.name account_name, v.title, v.original_name, v.lang, v.project_id,
-                   pr.name project_name, pr.color FROM posts p JOIN accounts a ON a.id=p.account_id
+                   pr.name project_name, pr.color, {db.fmt_sql('v')} fmt FROM posts p JOIN accounts a ON a.id=p.account_id
                    JOIN videos v ON v.id=p.video_id LEFT JOIN projects pr ON pr.id=v.project_id
                    WHERE {where} ORDER BY {order} LIMIT {int(limit)}""", args)
 
@@ -342,6 +365,25 @@ def video_save_copy(vid: int, data: dict = Body(default={})):
     dest = Path.home() / "Downloads" / name
     shutil.copy2(v["file_path"], dest)
     return {"ok": True, "path": str(dest)}
+
+
+def _yt_unplan(where, args=()):
+    """Pred zmazaním v appke: videá, ktoré už ležia na YouTube a ešte nie sú verejné (majú tam nastavený čas
+    zverejnenia), tam ostanú súkromné, aby nevyšli samy. Na YouTube sa nič nemaže. Vráti počet."""
+    n = 0
+    now = scheduler.now_str()
+    for p in db.q(f"""SELECT p.id, p.account_id, p.status, p.scheduled_at, COALESCE(p.external_id,'') ext, COALESCE(p.stash_id,'') stash
+                      FROM posts p JOIN accounts a ON a.id=p.account_id LEFT JOIN videos v ON v.id=p.video_id
+                      WHERE a.platform='youtube' AND p.status='done' AND p.scheduled_at>? AND ({where})""", (now, *args)):
+        yid = p["ext"] or p["stash"]
+        if not yid:
+            continue
+        try:
+            youtube.unschedule(db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],)), yid)
+            n += 1
+        except Exception as e:
+            print("zrušenie plánu na YouTube:", yid, str(e)[:200])
+    return n
 
 
 # ---------------- Projekty ----------------
@@ -394,6 +436,7 @@ def update_project(pid: int, data: dict = Body(...)):
 
 @app.delete("/api/projects/{pid}")
 def delete_project(pid: int):
+    _yt_unplan("v.project_id=?", (pid,))
     for t in ("ideas", "scripts", "videos"):
         db.run(f"DELETE FROM {t} WHERE project_id=?", (pid,))
     db.run("DELETE FROM projects WHERE id=?", (pid,))
@@ -708,7 +751,7 @@ def idea_voice_all(iid: int, only_missing: int = 0):
 
 @app.get("/api/voices/{lang}")
 def voice_list(lang: str):
-    return {"voices": voices.catalog(lang), "google": voices.google_usage(), "sample": voices.sample(lang)}
+    return {"voices": voices.catalog(lang), "google": voices.google_usage(), "sample": voices.sample(lang), "local": voices.local_status()}
 
 
 @app.post("/api/voices/preview")
@@ -768,6 +811,14 @@ def _scene_cuts(s, scenes, style):
     return []
 
 
+def _detail():
+    """Úroveň detailu presných modelov vo videu: 1 = základná, 2 = detailná (nastavenie `detail`, mení sa cez /api/settings)."""
+    try:
+        return 2 if int(db.get_setting("detail", 1) or 1) >= 2 else 1
+    except Exception:
+        return 1
+
+
 def _thumb_opts(s):
     """Text a scéna náhľadového obrázka dlhého videa zo scenára (pole thumb)."""
     try:
@@ -782,6 +833,12 @@ def _broll_ready():
     return st["pexels"] or st["pixabay"] or st["own"] > 0 or st["ai"]
 
 
+def _other_voice(s):
+    """Projekt má lokálny hlas, ale scenár je nahovorený iným: pri skladaní sa nahovorí nanovo (zadarmo), nech kanál hovorí jedným hlasom."""
+    p = db.one("SELECT voices FROM projects WHERE id=?", (s["project_id"],)) or {}
+    return voices.project_voice(p, s["lang"]).startswith("local:") and (s.get("voice_engine") or "") != "local"
+
+
 @app.post("/api/scripts/{sid}/to-video")
 def script_to_video(sid: int, data: dict = Body(default={})):
     """Vytvorí video: zábery z internetu/tvoje + titulky slovo po slove (predvolené), tvoje podkladové video, alebo farby dizajnu."""
@@ -789,7 +846,8 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     if data.get("new_voice"):   # tlačidlo „Nový zvuk“: hlas sa nahrá nanovo a video sa zloží podľa neho
         script_voice(sid, {"fresh": True})
         s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
-    elif not s["voice_path"] or not Path(s["voice_path"]).exists() or voices.stale(s["voice_path"], s.get("voice_engine") or "", s["voiceover"], s["lang"]):
+    elif (not s["voice_path"] or not Path(s["voice_path"]).exists() or _other_voice(s)
+          or voices.stale(s["voice_path"], s.get("voice_engine") or "", s["voiceover"], s["lang"])):
         script_voice(sid, {})   # aj starý hlas bez presných časov slov sa urobí nanovo (čistejší, titulky sedia)
         s = db.one("SELECT * FROM scripts WHERE id=?", (sid,))
     want_music = data.get("music", True)
@@ -804,6 +862,7 @@ def script_to_video(sid: int, data: dict = Body(default={})):
     style = data.get("style") or ("base" if base else "explainer" if anim.available() else
                                   "broll" if _broll_ready() or brand.brand_footage(s["project_id"]) else "color")
     done = logo_in = False
+    want_style = style
     # font značky (ak má všetky písmená tohto jazyka)
     font_txt = (s["voiceover"] or "") + " " + " ".join(sc.get("onscreen", "") for sc in scenes)
     brand.use_font(s["project_id"], font_txt, letters_only=style == "explainer")
@@ -819,7 +878,8 @@ def script_to_video(sid: int, data: dict = Body(default={})):
                            logo=brand.logo_data_uri(lg, 680, 176) if lg and bo["logo_corner"] else None,
                            logo_end=brand.logo_data_uri(lg, 1320, 720) if lg and bo["logo_end"] else None,
                            products=brand.product_images(s["project_id"]), wide=wide,
-                           thumb=out.with_suffix(".jpg") if wide else None, **_thumb_opts(s))
+                           thumb=out.with_suffix(".jpg") if wide else None, title=s.get("title") or "",
+                           guide=bool(db.get_setting("guide", True)), detail=_detail(), **_thumb_opts(s))   # guide = sprievodca (líška, maskot kanálov), predvolene zapnutý
             done = logo_in = True
         except Exception as e:
             print("animované video:", e)
@@ -849,11 +909,21 @@ def script_to_video(sid: int, data: dict = Body(default={})):
         print("logo vo videu:", e)
     try:  # zvuk: hudba pod hlasom, jemné prechody, hlasitosť ako na sieťach
         if not base:
-            audio.finish(out, s["voice_path"], _scene_cuts(s, scenes, style if done else ""), s["idea_id"], want_music)
+            audio.finish(out, s["voice_path"], _scene_cuts(s, scenes, style if done else ""), s["idea_id"], want_music,
+                         events=explainer.EVENTS.pop(str(out), None))
     except Exception as e:
         print("zvuk videa:", e)
     vid = _add_video(s["project_id"], str(out), out.name, s["lang"], s)
-    return {"video_id": vid, "style": style if done or style != "broll" else "color"}
+    # kontrola pred zverejnením: slabé alebo prázdne video ostane „zadržané“ a plánovač ho nevezme
+    qa = explainer.QA.pop(str(out), None) if logo_in else None
+    if qa is None and want_style == "explainer":
+        qa = {"ok": False, "why": ["Animované video sa nepodarilo zložiť, vyšla len náhradná verzia"]}
+    if qa:
+        db.run("UPDATE videos SET qa=?, status=? WHERE id=?", (json.dumps(qa, ensure_ascii=False), "ready" if qa.get("ok") else "hold", vid))
+    return {"video_id": vid, "style": style if done or style != "broll" else "color", "qa": qa}
+
+
+brand.RENDER = script_to_video  # oprava videí so zlým logom ich skladá nanovo
 
 
 @app.get("/api/ideas/{iid}/shots")
@@ -1078,9 +1148,11 @@ def _prod_supply(pid, fmt):
 
 def _prod_pick(pid, fmt, n, min_score=0):
     """Najlepšie schválené nápady bez scenára (s hodnotením aspoň min_score); každý z inej série, kým sa dá."""
-    rows = db.q("""SELECT i.id, COALESCE(i.pillar,'') pillar FROM ideas i WHERE i.project_id=? AND i.status='approved'
+    rows = db.q("""SELECT i.id, COALESCE(i.pillar,'') pillar, i.title, i.hook, i.angle FROM ideas i WHERE i.project_id=? AND i.status='approved'
                    AND COALESCE(i.format,'short')=? AND (i.due_date IS NULL OR i.due_date='') AND COALESCE(i.score,0)>=?
                    AND NOT EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id) ORDER BY i.score DESC, i.id""", (pid, fmt, min_score))
+    if _precise_only():   # len témy, ktoré majú presný model: inak by video vyšlo z ikon a neprešlo kontrolou
+        rows = [r for r in rows if _idea_model(r)]
     last = [r["pillar"] for r in db.q("""SELECT COALESCE(i.pillar,'') pillar FROM videos v JOIN scripts s ON s.id=v.script_id
                    JOIN ideas i ON i.id=s.idea_id WHERE v.project_id=? ORDER BY v.id DESC LIMIT 2""", (pid,))]
     out, used = [], set(x for x in last if x)
@@ -1098,7 +1170,7 @@ def _prod_pick(pid, fmt, n, min_score=0):
 def _produce_once():
     import time as _t
     cfg = db.get_setting("auto_produce", {}) or {}
-    if not cfg or PROD["running"] or AUTO["running"] or db.get_setting("paused", False) or _t.time() < PROD["wait_until"]:
+    if not cfg or PROD["running"] or AUTO["running"] or db.get_setting("paused", False) or _t.time() < PROD["wait_until"] or PROD.get("drain"):
         return
     if any(not j.get("done") for j in JOBS.values()):
         return  # používateľ práve niečo vyrába
@@ -1119,7 +1191,7 @@ def _produce_once():
             try:
                 while True:
                     with qlock:
-                        if not queue:
+                        if not queue or PROD.get("drain"):
                             return
                         pid_s, c = queue.pop(0)
                     if cap and _long_today() >= cap:
@@ -1154,10 +1226,393 @@ def _produce_once():
 
 def _prescripted(pid):
     """Dlhé nápady s hotovým scenárom (napísaným vopred), ktoré ešte nemajú video."""
-    return db.q("""SELECT i.id FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
-                   WHERE i.project_id=? AND i.format='long' AND COALESCE(i.ahead,0)=1
+    rows = db.q("""SELECT i.id, i.title, i.hook, i.angle FROM ideas i JOIN scripts s ON s.idea_id=i.id AND s.is_source=1
+                   WHERE i.project_id=? AND i.format='long' AND COALESCE(i.ahead,0) IN (1,2)
                    AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)
                    ORDER BY i.id""", (pid,))
+    # ahead=2 = skladanie sa začalo; ak po ňom nezostalo video (chyba, vypnutie appky), skúsi sa znova, najviac 2x za beh appky
+    rows = [r for r in rows if r["id"] not in _PRE_BUSY and _PRE_FAIL.get(r["id"], 0) < 2]
+    return [r for r in rows if _idea_model(r)] if _precise_only() else rows
+
+
+_PRE_BUSY, _PRE_FAIL = set(), {}
+
+
+def _precise_only():
+    """Výroba berie len nápady o stroji s presným modelom (dá sa vypnúť nastavením precise_only=false)."""
+    return bool(db.get_setting("precise_only", True))
+
+
+def _idea_model(r):
+    """Presný model, o ktorom je nápad (rozhoduje názov, potom háčik a uhol); None = taký model ešte nie je."""
+    from . import auto_visual
+    return auto_visual.topic(" . ".join(str(r[k] or "") for k in ("title", "hook", "angle")), r["title"] or "")
+
+
+def _machine_project(pid):
+    """Kanál o strojoch = aspoň pätina posledných nápadov má v názve stroj. Inde by nápady „len o strojoch“ nedávali zmysel."""
+    from . import auto_visual
+    rows = db.q("SELECT title FROM ideas WHERE project_id=? ORDER BY id DESC LIMIT 60", (pid,))
+    return bool(rows) and sum(1 for r in rows if auto_visual.find(r["title"] or "")) >= max(3, len(rows) * .2)
+
+
+def _models_focus(pid=0):
+    """Zoznam strojov s presným modelom pre dopĺňanie nápadov; kanál dostane len stroje, o ktorých už píše (motory nedostanú tepelné čerpadlo)."""
+    from . import auto_visual
+    mine = set()
+    for r in (db.q("SELECT title FROM ideas WHERE project_id=? ORDER BY id DESC LIMIT 200", (pid,)) if pid else []):
+        hit = auto_visual.find(r["title"] or "")
+        if hit:
+            mine.add(hit[0])
+    use = {m for m in auto_visual.PRECISE if m in mine} or auto_visual.PRECISE
+    names = sorted({auto_visual.NAMES[m] for m in use if m in auto_visual.NAMES})
+    return ("Every idea must explain ONE of these machines (we have exact animated models only for them) and name it in the title: "
+            + ", ".join(names) + ". Find fresh angles: how it works, why it fails, myths, comparisons, numbers.")
+
+
+@app.get("/api/month-plan")
+def month_plan_get(project_id: int = 0):
+    """Mesačný plán po kanáloch: každý deň 1 dlhé + 3 krátke, s tým, čím je téma pokrytá (model / overí sa / medzera)."""
+    from . import monthplan
+    return monthplan.get(project_id)
+
+
+@app.get("/api/stock")
+def stock():
+    """Zásoba: koľko dní hotového obsahu má každý kanál (hlavná merná jednotka, Oliver 15.11.)."""
+    from . import monthplan
+    return monthplan.stock_all()
+
+
+@app.post("/api/month-plan/build")
+def month_plan_build(data: dict = Body(default={})):
+    """Zostaví plán z nápadov v appke, bez AI. Nič nevyrába ani nenahráva."""
+    from . import monthplan
+    monthplan.build(data.get("project_ids") or None, data.get("start") or None, data.get("days") or 30)
+    return monthplan.get(int(data["project_ids"][0]) if data.get("project_ids") and len(data["project_ids"]) == 1 else 0)
+
+
+# ---------- Výroba podľa mesačného plánu (1.66.1) ----------
+# Ide v poradí zverejnenia: dlhé video dňa a potom jeho 3 krátke. Dlhé, ktoré neprejde kontrolou obrazu,
+# ostane zadržané a na jeho miesto ide ďalšia téma kanála. Nič sa nenahráva ani neplánuje.
+MPROD = {"running": False, "stop": False, "step": [], "log": [], "done": {"long": 0, "short": 0}, "failed": {}, "first": {}}
+
+
+def _mp_ok(r):
+    return bool((r or {}).get("qa") and r["qa"].get("ok"))
+
+
+@app.get("/api/ideas/{iid}/precheck")
+def idea_precheck(iid: int):
+    ok, why = _mp_precheck(iid)
+    return {"ok": ok, "why": why}
+
+
+@app.post("/api/ideas/{iid}/strengthen")
+def idea_strengthen(iid: int):
+    """Skúška: slabé scény dostanú silnejší obraz a kontrola sa zopakuje."""
+    ok, why = _mp_precheck(iid)
+    if ok:
+        return {"ok": True, "before": "", "why": ""}
+    ok2, why2 = _mp_fix(iid, why)
+    return {"ok": ok2, "before": why, "why": why2}
+
+
+def _mp_precheck(iid):
+    """Rýchla kontrola obrazu bez hlasu a bez skladania (1–2 min). Vráti (ok, dôvod)."""
+    s = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    if not s:
+        return True, ""
+    try:
+        proj = db.one("SELECT color, design_colors FROM projects WHERE id=?", (s["project_id"],)) or {}
+        colors = json.loads(proj.get("design_colors") or "[]") or [proj.get("color") or "#FF6B00"]
+        wide = ((db.one("SELECT format FROM ideas WHERE id=?", (iid,)) or {}).get("format") == "long")
+        qa = explainer.make(explainer.localized_scenes(s), None, VIDEO_DIR / f"check{iid}.mp4", brand.accent(colors, proj.get("color")),
+                            s["lang"], s["voiceover"], wide=wide, title=s.get("title") or "",
+                            guide=bool(db.get_setting("guide", True)), detail=_detail(), check_only=True)
+    except Exception as e:
+        return True, str(e)[:100]   # kontrolu sa nepodarilo urobiť: rozhodne až kontrola po zložení
+    return bool((qa or {}).get("ok")), "; ".join((qa or {}).get("why") or [])[:200]
+
+
+def _mp_fix(iid, why):
+    """Neprešlo pre slabý, prázdny alebo prekrývajúci sa obraz: tie scény dostanú nový obraz (1 lacné AI volanie) a kontrola sa zopakuje."""
+    if not any(w in (why or "") for w in ("Slabý obraz", "Prázdna scéna", "Prekrývanie", "Stroj bez presného modelu")):
+        return False, why
+    s = db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    try:
+        n = explainer.strengthen(s["id"], why) if s else 0
+    except Exception as e:
+        MPROD["log"].append(f"nápad {iid}: silnejší obraz zlyhal ({str(e)[:100]})")
+        return False, why
+    if not n:
+        return False, why
+    ok, why2 = _mp_precheck(iid)
+    MPROD["log"].append(f"nápad {iid}: {n} scén dostalo silnejší obraz, kontrola {'prešla' if ok else 'stále nie: ' + why2[:120]}")
+    return ok, why2
+
+
+def _mp_long(slot, tried):
+    from . import monthplan
+    pid, iid = slot["pid"], slot["idea"]
+    tried |= set(db.get_setting("month_plan_bad", []) or [])
+    for _ in range(10):
+        if MPROD["stop"] or (len(MPROD["failed"].get(str(pid), [])) >= 10 and str(pid) not in MPROD["first"]):
+            return None   # kanál, ktorému nič neprešlo: bez vhodného obrazu sa nevyrába (Oliver: radšej nerobiť)
+        have = db.one("""SELECT v.status FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=?
+                         ORDER BY v.status='ready' DESC LIMIT 1""", (iid,)) if iid else None
+        if have and have["status"] == "ready" and iid not in tried:   # už vyrobené (napr. pred reštartom appky)
+            tried.add(iid)
+            return iid
+        if iid in tried or have:   # téma už išla (náhrada inde / neprešla kontrolou)
+            iid = 0
+        if not iid:
+            cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and r["has_script"]   # len hotové scenáre (bez AI)
+                    and monthplan._cover(r["title"] or "")[0] != "gap"]
+            cand.sort(key=lambda r: (monthplan._cover(r["title"] or "")[0] != "model", not r["has_script"], -r["score"]))
+            if not cand:
+                return None
+            iid = cand[0]["id"]
+        tried.add(iid)
+        try:
+            if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
+                content.run_task("scripts", {"idea_ids": [iid]})
+            ok, why = _mp_precheck(iid)
+            if not ok:
+                ok, why = _mp_fix(iid, why)
+            if not ok:   # obraz by neprešiel: nevyrába sa, ide ďalšia téma
+                bad = db.get_setting("month_plan_bad", []) or []
+                db.set_setting("month_plan_bad", sorted(set(bad) | {iid}))   # plán ju už neponúkne
+                MPROD["failed"].setdefault(str(pid), []).append({"idea": iid, "why": "kontrola vopred: " + why})
+                MPROD["log"].append(f"kanál {pid}: dlhé {iid} vopred neprešlo ({why})")
+                iid = 0
+                continue
+            r = idea_produce_first(iid, {})
+            if _mp_ok(r):
+                return iid
+            why = "; ".join((r.get("qa") or {}).get("why") or [])[:200]
+        except Exception as e:
+            why = str(e)[:200]
+        MPROD["failed"].setdefault(str(pid), []).append({"idea": iid, "why": why})
+        MPROD["log"].append(f"kanál {pid}: dlhé {iid} neprešlo ({why})")
+        iid = 0
+    return None
+
+
+def _mp_short(pid, lid):
+    from . import monthplan
+    for attempt in range(3):
+        if MPROD["stop"]:
+            return False
+        kids = monthplan._children(lid)
+        if not kids:
+            if attempt == 2:
+                return False
+            try:
+                content.run_task("teasers", {"idea_id": lid, "count": 3})
+            except Exception as e:
+                MPROD["log"].append(f"kanál {pid}: krátke z {lid} sa nepodarili ({str(e)[:120]})")
+                return False
+            continue
+        k = kids[0]
+        try:
+            if not k["has_script"]:
+                content.run_task("scripts", {"idea_ids": [k["id"]]})
+            ok, why = _mp_precheck(k["id"])
+            if not ok:
+                ok, why = _mp_fix(k["id"], why)
+            if not ok:   # slabý obraz sa nevyrába (ušetrí hodinu skladania), ďalšie krátke z toho istého dlhého
+                db.run("UPDATE ideas SET status='rejected' WHERE id=?", (k["id"],))
+                MPROD["log"].append(f"kanál {pid}: krátke {k['id']} vopred neprešlo ({why})")
+                continue
+            r = idea_produce_first(k["id"], {})
+            if _mp_ok(r):
+                return True
+            why = "; ".join(((r or {}).get("qa") or {}).get("why") or [])[:200]
+            MPROD["log"].append(f"kanál {pid}: krátke {k['id']} neprešlo kontrolou ({why})")
+        except Exception as e:
+            MPROD["log"].append(f"kanál {pid}: krátke {k['id']}: {str(e)[:120]}")
+    return False
+
+
+def _mp_mark(lock, pid, date, long=0, short=False):
+    with lock:
+        made = db.get_setting("month_plan_made", {}) or {}
+        m = made.setdefault(f"{pid}:{date}", {"long": 0, "shorts": 0})
+        if long:
+            m["long"] = long
+        if short:
+            m["shorts"] = int(m.get("shorts") or 0) + 1
+        db.set_setting("month_plan_made", made)
+
+
+def _mp_run(workers, until):
+    from . import monthplan
+    plan = monthplan.get()
+    made = db.get_setting("month_plan_made", {}) or {}   # čo už je vyrobené (prežije reštart appky)
+    tasks = []   # (dátum, 0=dlhé/1=krátke, poradie, slot)
+    for p in plan["projects"]:
+        slot = None
+        for d in p["days"]:
+            if until and d["date"] > until:
+                break
+            if d.get("long"):
+                m = made.get(f"{p['id']}:{d['date']}") or {}
+                slot = {"pid": p["id"], "idea": d["long"]["idea_id"], "state": "wait", "final": 0, "date": d["date"],
+                        "skip": int(m.get("shorts") or 0)}
+                if m.get("long"):
+                    slot.update(state="ok", final=m["long"])
+                else:
+                    tasks.append((d["date"], 0, p["id"], slot))
+            if d.get("short") and slot:
+                if slot["skip"]:
+                    slot["skip"] -= 1
+                else:
+                    tasks.append((d["date"], 1, p["id"], slot))
+    tasks.sort(key=lambda t: t[:3])
+    lock, tried = threading.Lock(), {}
+    MPROD.update(running=True, stop=False, total=len(tasks), left=len(tasks))
+
+    def take():
+        with lock:
+            for n, t in enumerate(tasks):
+                if t[1] == 0 or t[3]["state"] in ("ok", "bad"):
+                    if t[1] == 0:
+                        t[3]["state"] = "busy"
+                    return tasks.pop(n)
+            return "wait" if tasks else None
+
+    def work():
+        while not MPROD["stop"] and not MPROD.get("drain"):  # drain = čaká sa na aktualizáciu: dokonči rozrobené, nové nezačínaj
+            t = take()
+            if t is None:
+                return
+            if t == "wait":
+                time.sleep(15)
+                continue
+            date, kind, pid, slot = t
+            MPROD["step"].append(f"{date} kanál {pid} {'dlhé' if kind == 0 else 'krátke'}")
+            try:
+                if kind == 0:
+                    fin = _mp_long(slot, tried.setdefault(pid, set()))
+                    slot["final"], slot["state"] = fin or 0, "ok" if fin else "bad"
+                    if fin:
+                        MPROD["done"]["long"] += 1
+                        MPROD["first"].setdefault(str(pid), date)
+                        _mp_mark(lock, pid, slot["date"], long=fin)
+                elif slot["state"] == "ok" and _mp_short(pid, slot["final"]):
+                    MPROD["done"]["short"] += 1
+                    _mp_mark(lock, pid, slot["date"], short=True)
+                if MPROD.get("publish") and slot["state"] == "ok":   # hotové video hneď do plánu zverejnenia
+                    try:
+                        from . import planner
+                        planner.plan_week([pid], 3)
+                    except Exception as e:
+                        MPROD["log"].append(f"plánovanie kanála {pid}: {str(e)[:120]}")
+            except Exception as e:
+                MPROD["log"].append(f"{date} kanál {pid}: {str(e)[:150]}")
+                if kind == 0:
+                    slot["state"] = "bad"
+            finally:
+                MPROD["left"] = len(tasks)
+                MPROD["step"] = [x for x in MPROD["step"] if not x.startswith(f"{date} kanál {pid} ")]
+
+    try:
+        ths = [threading.Thread(target=work, daemon=True) for _ in range(max(1, min(6, workers)))]
+        for th in ths:
+            th.start()
+            time.sleep(5)
+        for th in ths:
+            th.join()
+    finally:
+        MPROD["running"] = False
+        if not MPROD.get("drain"):  # dokončené alebo zastavené ručne; pri aktualizácii/páde ostáva zapísané a po štarte pokračuje
+            db.set_setting("month_plan_job", None)
+        MPROD["log"].append(f"{dt_now()} koniec: {MPROD['done']['long']} dlhých, {MPROD['done']['short']} krátkych")
+
+
+@app.post("/api/month-plan/produce")
+def month_plan_produce(data: dict = Body(default={})):
+    """Vyrobí videá v poradí mesačného plánu (s kontrolou obrazu). Nič nenahráva ani neplánuje."""
+    if MPROD["running"]:
+        return {"running": True}
+    if data.get("reset_bad"):   # po oprave kontroly: témy zamietnuté vopred sa skúsia znova
+        db.set_setting("month_plan_bad", [])
+    _mp_start(data)
+    return {"started": True}
+
+
+def _mp_start(data):
+    """Spustí mesačnú výrobu a zapíše si ju, aby po reštarte appky (aktualizácia, pád, reštart Macu) pokračovala sama."""
+    if MPROD["running"]:
+        return
+    job = {"workers": int(data.get("workers") or 3), "until": data.get("until") or "", "publish": bool(data.get("publish"))}
+    db.set_setting("month_plan_job", job)
+    MPROD.update(running=True, log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=job["publish"])
+    threading.Thread(target=_mp_run, args=(job["workers"], job["until"]), daemon=True).start()
+
+
+def _mp_autoresume():
+    """Po štarte appky: rozbehnutá mesačná výroba pokračuje (čo už je vyrobené, si pamätá month_plan_made)."""
+    import time as _t
+    _t.sleep(120)
+    job = db.get_setting("month_plan_job")
+    if job is None and not db.get_setting("mp_resume_init", False):
+        # prvý štart s touto verziou: výroba bežala pod starou verziou, ktorá si ju nezapisovala
+        if db.get_setting("month_plan_made", {}):
+            job = {"workers": 4, "until": "", "publish": True}
+    db.set_setting("mp_resume_init", True)
+    if job and not MPROD["running"]:
+        _mp_start(job)
+        MPROD["log"].append(f"{dt_now()} pokračujem po reštarte appky")
+
+
+def _drain(on):
+    """Pred aktualizáciou: výroba dokončí rozrobené a nové nezačne. Keď sa aktualizácia nekoná, pustí ju ďalej."""
+    for st in (MPROD, PROD, SCRIPTS):
+        st["drain"] = bool(on)
+    if not on:
+        job = db.get_setting("month_plan_job")
+        if job and not MPROD["running"]:
+            _mp_start(job)
+
+
+@app.get("/api/month-plan/produce")
+def month_plan_produce_status():
+    return {k: v for k, v in MPROD.items()} | {"log": MPROD["log"][-30:]}
+
+
+@app.post("/api/month-plan/produce/stop")
+def month_plan_produce_stop():
+    MPROD["stop"] = True
+    db.set_setting("month_plan_job", None)
+    return {"ok": True}
+
+
+@app.get("/api/models/demand")
+def models_demand(project_id: int = 0):
+    """Ktoré nápady sa dajú vyrobiť s presným modelom a ktoré stroje chýbajú (podľa názvov čakajúcich nápadov)."""
+    from . import auto_visual
+    out = {"models": sorted(auto_visual.PRECISE - {"versus"}), "precise_only": _precise_only(), "projects": []}
+    for p in db.q("SELECT id, name FROM projects" + (" WHERE id=?" if project_id else "") + " ORDER BY id", (project_id,) if project_id else ()):
+        ready, missing, other = {}, {}, 0
+        for r in db.q("""SELECT i.id, i.title, i.hook, i.angle, COALESCE(i.format,'short') fmt FROM ideas i WHERE i.project_id=?
+                         AND i.status IN ('new','approved','scripted')
+                         AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=i.id)""", (p["id"],)):
+            m = _idea_model(r)
+            if m:
+                k = ready.setdefault(m, {"short": 0, "long": 0})
+                k["long" if r["fmt"] == "long" else "short"] += 1
+                continue
+            hit = auto_visual.find(r["title"] or "")
+            if hit:
+                missing[hit[0]] = missing.get(hit[0], 0) + 1
+            else:
+                other += 1
+        if ready or missing or other:
+            out["projects"].append({"id": p["id"], "name": p["name"], "ready": ready, "ready_total": sum(v["short"] + v["long"] for v in ready.values()),
+                                    "missing": dict(sorted(missing.items(), key=lambda kv: -kv[1])), "no_machine": other})
+    return out
 
 
 def _render_prescripted(pid):
@@ -1166,15 +1621,19 @@ def _render_prescripted(pid):
     if not rows:
         return 0
     iid = rows[0]["id"]
-    db.run("UPDATE ideas SET ahead=2 WHERE id=?", (iid,))  # už sa skladá (nech ho nevezme iný pracovník)
+    _PRE_BUSY.add(iid)  # už sa skladá (nech ho nevezme iný pracovník)
+    db.run("UPDATE ideas SET ahead=2 WHERE id=?", (iid,))
     made = 0
     PROD["step"] = "Skladám dlhé video z hotového scenára"
     try:
         idea_produce_first(iid, {})
         made += 1
     except Exception as e:
+        _PRE_FAIL[iid] = _PRE_FAIL.get(iid, 0) + 1
         PROD["log"].append(f"nápad {iid}: {e}")
         return 0
+    finally:
+        _PRE_BUSY.discard(iid)
     for t in db.q("""SELECT i.id FROM ideas i WHERE i.parent_id=? AND EXISTS (SELECT 1 FROM scripts s WHERE s.idea_id=i.id AND s.is_source=1)
                      AND NOT EXISTS (SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id WHERE s2.idea_id=i.id)""", (iid,)):
         PROD["step"] = "Skladám Shorts z hotových scenárov"
@@ -1250,7 +1709,7 @@ def _script_ahead_loop():
             try:
                 n = int(nightly.cfg().get("script_workers") or 0)
                 cfg = db.get_setting("auto_produce", {}) or {}
-                if not n or db.get_setting("paused", False) or _t.time() < SCRIPTS["pause_until"]:
+                if not n or db.get_setting("paused", False) or _t.time() < SCRIPTS["pause_until"] or SCRIPTS.get("drain"):
                     _t.sleep(60)
                     continue
                 pick = None
@@ -1284,13 +1743,14 @@ def _script_ahead_loop():
                 finally:
                     with lock:
                         busy.discard(pick[1])
+                        SCRIPTS["running"] = bool(busy)
             except Exception as e:
                 print("scenáre do zásoby:", e)
                 _t.sleep(60)
 
     started = 0
     while True:
-        want = min(10, int(nightly.cfg().get("script_workers") or 0))
+        want = min(30, int(nightly.cfg().get("script_workers") or 0))
         while started < want:  # pracovníci sa len pridávajú (zníženie sa prejaví po reštarte)
             threading.Thread(target=worker, daemon=True).start()
             started += 1
@@ -1301,6 +1761,12 @@ def _script_ahead_loop():
 def _prod_project(pid_s, c):
     """Jeden projekt v jednom kole dennej výroby."""
     pid, ahead = int(pid_s), max(1, int(c.get("days_ahead") or 2))
+    last = db.q("""SELECT status FROM videos WHERE project_id=? AND script_id IS NOT NULL
+                   AND created_at > datetime('now','localtime','-1 day') ORDER BY id DESC LIMIT 3""", (pid,))
+    if len(last) == 3 and all(r["status"] == "hold" for r in last):
+        # tri videá po sebe neprešli kontrolou: ďalšie scenáre by len míňali AI, projekt dnes stojí
+        PROD["log"].append(f"projekt {pid}: posledné 3 videá neprešli kontrolou pred zverejnením, výroba pre tento projekt dnes stojí")
+        return
     made = _render_prescripted(pid)
     if made:
         _prod_plan(pid, made)
@@ -1315,12 +1781,16 @@ def _prod_project(pid_s, c):
             continue
         ids, left = _prod_pick(pid, fmt, need, int(c.get('min_score') or 0))
         rk = f"{dt_now()[:6]}:{pid}"
+        if _precise_only() and not _machine_project(pid):
+            PROD["log"].append(f"projekt {pid}: nemá témy s presným modelom, výroba ho zatiaľ preskakuje")
+            continue
         if left < per * 3 and not c.get("no_ideas") and PROD.setdefault("refills", {}).get(rk, 0) < 6:  # zásoba nápadov dochádza: doplň ju jedným volaním (max 6x denne)
             PROD["refills"][rk] = PROD["refills"].get(rk, 0) + 1
             PROD["step"] = "Dopĺňam nápady"
             try:
                 before = {r["id"] for r in db.q("SELECT id FROM ideas WHERE project_id=?", (pid,))}
-                content.run_task("ideas", {"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt})
+                content.run_task("ideas", dict({"project_id": pid, "count": 20 if fmt == "short" else 8, "format": fmt},
+                                               **({"focus": _models_focus(pid)} if _precise_only() else {})))
                 for r in db.q("SELECT id, score FROM ideas WHERE project_id=?", (pid,)):
                     if r["id"] not in before and (r["score"] or 0) >= max(7, int(c.get("min_score") or 0)):
                         db.run("UPDATE ideas SET status='approved' WHERE id=?", (r["id"],))
@@ -1396,6 +1866,48 @@ def _prod_resume(cfg):
 def dt_now():
     import datetime as _d
     return _d.datetime.now().strftime("%d.%m. %H:%M")
+
+
+def _local_voice_setup():
+    """Raz: projekty, ktoré sú len po anglicky, dostanú lokálny hlas (Oliver 14.11.: Xplained lokálne, ostatné jazyky Google).
+    Model hlasu sa stiahne na pozadí; kým nie je, hovorí doterajší hlas."""
+    if not db.get_setting("local_voice_set", False):
+        for p in db.q("SELECT id, languages, voices FROM projects"):
+            try:
+                langs, v = json.loads(p["languages"] or "[]"), json.loads(p.get("voices") or "{}")
+            except Exception:
+                continue
+            if langs == ["en"] and not str(v.get("en") or "").startswith(("local:", "edge:")):
+                v["en"] = "local:am_michael"
+                db.run("UPDATE projects SET voices=? WHERE id=?", (json.dumps(v), p["id"]))
+        db.set_setting("local_voice_set", True)
+    if any("local:" in (p.get("voices") or "") for p in db.q("SELECT voices FROM projects")):
+        voices.local_ensure()
+
+
+def _autostart_setup():
+    """Mac: appka sa zapne sama po prihlásení (po reštarte Macu). Vypína sa nastavením autostart = false."""
+    if sys.platform != "darwin" or os.environ.get("SM_NO_BROWSER") != "1":
+        return  # len appka spustená ikonkou na Macu (nie ručne z Terminálu ani na inom systéme)
+    f = Path.home() / "Library/LaunchAgents/sk.n2n.socialmanager.plist"
+    if not db.get_setting("autostart", True):
+        f.unlink(missing_ok=True)
+        return
+    from xml.sax.saxutils import escape
+    run = db.BASE_DIR / "mac" / "run.sh"
+    body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>sk.n2n.socialmanager</string>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>{escape(str(run))}</string></array>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>{escape(str(db.DATA_DIR / "spustanie.log"))}</string>
+<key>StandardErrorPath</key><string>{escape(str(db.DATA_DIR / "spustanie.log"))}</string>
+</dict></plist>
+"""
+    if not f.exists() or f.read_text(encoding="utf-8") != body:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body, encoding="utf-8")
 
 
 def _produce_loop():
@@ -1490,10 +2002,25 @@ def videos_import(data: dict = Body(...)):
     return {"created": n}
 
 
+@app.post("/api/videos/{vid}/release")
+def video_release(vid: int):
+    """Ručne pustí zadržané video (neprešlo kontrolou pred zverejnením) do plánovania."""
+    db.run("UPDATE videos SET status='ready' WHERE id=? AND status='hold'", (vid,))
+    return {"ok": True}
+
+
+@app.post("/api/videos/{vid}/hold")
+def video_hold(vid: int, data: dict = Body(default={})):
+    """Zadrží hotové video (napr. skúšobné), aby ho plánovač nezobral; dôvod sa ukáže v knižnici."""
+    why = str((data or {}).get("why") or "Zadržané ručne").strip()[:200]
+    db.run("UPDATE videos SET status='hold', qa=? WHERE id=? AND status='ready'", (json.dumps({"ok": False, "why": [why]}, ensure_ascii=False), vid))
+    return {"ok": True}
+
+
 @app.get("/api/videos")
-def videos(project_id: int = 0, lang: str = "", status: str = ""):
-    sql = """SELECT v.*, (SELECT GROUP_CONCAT(a.platform || ':' || p.status) FROM posts p JOIN accounts a ON a.id=p.account_id
-             WHERE p.video_id=v.id) posts FROM videos v WHERE 1=1"""
+def videos(project_id: int = 0, lang: str = "", status: str = "", fmt: str = ""):
+    sql = f"""SELECT v.*, (SELECT GROUP_CONCAT(a.platform || ':' || p.status) FROM posts p JOIN accounts a ON a.id=p.account_id
+             WHERE p.video_id=v.id) posts, {db.fmt_sql('v')} fmt FROM videos v WHERE 1=1"""
     args = []
     if project_id:
         sql += " AND v.project_id=?"
@@ -1502,6 +2029,8 @@ def videos(project_id: int = 0, lang: str = "", status: str = ""):
         sql += " AND v.lang=?"
         args.append(lang)
     rows = db.q(sql + " ORDER BY v.id DESC", args)
+    if fmt in ("short", "long"):
+        rows = [r for r in rows if r["fmt"] == fmt]
     if status == "unposted":
         rows = [r for r in rows if not r["posts"]]
     return rows
@@ -1566,6 +2095,7 @@ def videos_bulk(data: dict = Body(...)):
     if data.get("action") == "delete":
         for i in ids:
             v = db.one("SELECT file_path FROM videos WHERE id=?", (i,))
+            _yt_unplan("p.video_id=?", (i,))
             if v and str(Path(v["file_path"]).resolve()).startswith(str(VIDEO_DIR.resolve())):
                 Path(v["file_path"]).unlink(missing_ok=True)
             db.run("DELETE FROM posts WHERE video_id=? AND status!='done'", (i,))
@@ -1625,6 +2155,7 @@ def account_update(aid: int, data: dict = Body(...)):
 
 @app.delete("/api/accounts/{aid}")
 def account_delete(aid: int):
+    _yt_unplan("p.account_id=?", (aid,))
     db.run("DELETE FROM posts WHERE account_id=? AND status!='done'", (aid,))
     db.run("DELETE FROM accounts WHERE id=?", (aid,))
     return {"ok": True}
@@ -1646,7 +2177,7 @@ async def yt_client(file: UploadFile = File(...)):
 @app.get("/api/accounts/youtube/connect")
 def yt_connect(project_id: int = 0, lang: str = ""):
     st = "yt:" + secrets.token_urlsafe(12)
-    idx = youtube.pick_client()
+    idx = youtube.pick_client(project_id)
     _oauth_states[st] = {"project_id": project_id or None, "lang": lang, "client": idx}
     return RedirectResponse(youtube.auth_url(st, idx))
 
@@ -1795,9 +2326,9 @@ def schedule(data: dict = Body(...)):
 
 # ---------------- Kontrola pred zverejnením ----------------
 def _review_rows():
-    return db.q("""SELECT p.id post_id, p.scheduled_at, a.platform, a.name account, v.id video_id, v.lang, v.title,
+    return db.q(f"""SELECT p.id post_id, p.scheduled_at, a.platform, a.name account, v.id video_id, v.lang, v.title,
                           v.caption, v.hashtags, CASE WHEN COALESCE(v.removed,0)=1 THEN COALESCE(v.preview_path,'') ELSE v.file_path END file_path,
-                          v.project_id, v.original_name, s.idea_id, s.is_source, COALESCE(p.stash_id,'') stash_id
+                          v.project_id, v.original_name, s.idea_id, s.is_source, COALESCE(p.stash_id,'') stash_id, {db.fmt_sql('v')} fmt
                    FROM posts p JOIN videos v ON v.id=p.video_id JOIN accounts a ON a.id=p.account_id
                    LEFT JOIN scripts s ON s.id=v.script_id WHERE p.status='review' ORDER BY p.scheduled_at""")
 
@@ -1808,7 +2339,7 @@ def review_list():
     groups = {}
     for r in _review_rows():
         key = f"i{r['idea_id']}" if r["idea_id"] else f"v{r['video_id']}"
-        g = groups.setdefault(key, {"key": key, "project_id": r["project_id"], "first": r["scheduled_at"],
+        g = groups.setdefault(key, {"key": key, "project_id": r["project_id"], "first": r["scheduled_at"], "fmt": r["fmt"],
                                     "langs": {}, "accounts": set(), "posts": 0, "platforms": set()})
         g["posts"] += 1
         g["accounts"].add(r["account"])
@@ -1822,7 +2353,7 @@ def review_list():
     out = []
     for g in groups.values():
         langs = sorted(g["langs"].values(), key=lambda x: (not x["source"], x["lang"] or ""))
-        out.append({"key": g["key"], "project_id": g["project_id"], "first": g["first"], "posts": g["posts"],
+        out.append({"key": g["key"], "project_id": g["project_id"], "first": g["first"], "posts": g["posts"], "fmt": g["fmt"],
                     "accounts": len(g["accounts"]), "platforms": sorted(g["platforms"]), "langs": langs,
                     "title": langs[0]["title"]})
     return out
@@ -1840,7 +2371,10 @@ def _review_ids(keys):
 @app.post("/api/review/approve")
 def review_approve(data: dict = Body(...)):
     """Schváli a pustí von. Čo už malo byť zverejnené, pôjde hneď (rozložené po minútach)."""
-    ids = _review_ids(data.get("keys") or "all")
+    keys = data.get("keys")
+    if keys != "all" and not (isinstance(keys, list) and keys):
+        return {"approved": 0}  # prázdny výber neschváli nič (predtým schválil všetko)
+    ids = _review_ids(keys)
     now = datetime.now()
     for i, pid in enumerate(ids):
         row = db.one("SELECT scheduled_at FROM posts WHERE id=?", (pid,))
@@ -1877,6 +2411,61 @@ def posts(status: str = "", limit: int = 300):
     return _posts(where, "p.scheduled_at DESC" if status in ("done", "failed") else "p.scheduled_at", limit, args)
 
 
+@app.post("/api/posts/mark-hold")
+def posts_mark_hold(data: dict = Body(...)):
+    """Len v appke: posty (napr. staré videá, ktoré už niekto ručne prepol na súkromné) dostanú stav 'hold',
+    aby neblokovali miesta v pláne. Na YouTube sa nič nemení. Pôvodný stav sa zapamätá v posts_hold."""
+    keep = db.get_setting("posts_hold", {}) or {}
+    n, errors = 0, []
+    for i in data.get("ids") or []:
+        p = db.one("SELECT p.*, a.platform FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.id=?", (int(i),))
+        if p and p["status"] != "hold":
+            if data.get("unschedule") and p["status"] == "done" and p["platform"] == "youtube" and (p["external_id"] or p["stash_id"]):
+                try:   # zruší plán zverejnenia na YouTube (video ostane súkromné), ako hold-all
+                    youtube.unschedule(db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],)), p["external_id"] or p["stash_id"])
+                    if not p["stash_id"]:
+                        db.run("UPDATE posts SET stash_id=? WHERE id=?", (p["external_id"], p["id"]))
+                except Exception as e:
+                    errors.append([p["id"], str(e)[:200]])
+                    continue
+            keep[str(p["id"])] = p["status"]
+            db.run("UPDATE posts SET status='hold', updated_at=? WHERE id=?", (scheduler.now_str(), p["id"]))
+            n += 1
+    db.set_setting("posts_hold", keep)
+    return {"held": n, "errors": errors}
+
+
+@app.post("/api/posts/hold-all")
+def posts_hold_all(data: dict = Body(default={})):
+    """Zastaví všetko, čo ešte nie je verejné: posty dostanú stav 'hold' (pôvodný sa zapamätá v posts_hold) a
+    videám s nastaveným publishAt na YouTube sa plán zruší, ostanú súkromné. Nič sa nemaže. project_ids voliteľne."""
+    now = scheduler.now_str()
+    ids = data.get("project_ids") or []
+    rows = db.q("""SELECT p.*, a.platform, v.project_id vpid FROM posts p JOIN accounts a ON a.id=p.account_id
+                   JOIN videos v ON v.id=p.video_id WHERE p.status IN ('review','queued','failed')
+                   OR (p.status='done' AND p.scheduled_at>?)""", (now,))
+    keep = db.get_setting("posts_hold", {}) or {}
+    held, unsched, errors = 0, 0, []
+    for p in rows:
+        if ids and p["vpid"] not in ids:
+            continue
+        if p["status"] == "done" and p["platform"] == "youtube" and (p["external_id"] or p["stash_id"]):
+            acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
+            try:
+                youtube.unschedule(acc, p["external_id"] or p["stash_id"])
+                unsched += 1
+                if not p["stash_id"]:
+                    db.run("UPDATE posts SET stash_id=? WHERE id=?", (p["external_id"], p["id"]))
+            except Exception as e:
+                errors.append([p["id"], str(e)[:200]])
+                continue
+        keep[str(p["id"])] = p["status"]
+        db.run("UPDATE posts SET status='hold', updated_at=? WHERE id=?", (now, p["id"]))
+        held += 1
+    db.set_setting("posts_hold", keep)
+    return {"held": held, "unscheduled": unsched, "errors": errors}
+
+
 @app.post("/api/posts/{pid}/retry")
 def post_retry(pid: int):
     db.run("UPDATE posts SET status='queued', attempts=0, error='', scheduled_at=? WHERE id=?",
@@ -1893,6 +2482,7 @@ def post_move(pid: int, data: dict = Body(...)):
 
 @app.delete("/api/posts/{pid}")
 def post_delete(pid: int):
+    _yt_unplan("p.id=?", (pid,))
     db.run("DELETE FROM posts WHERE id=? AND status!='uploading'", (pid,))
     return {"ok": True}
 
@@ -1904,6 +2494,34 @@ def update_check():
     except Exception as e:
         r = {"error": str(e)}
     return dict(r, version=updater.version(), repo=db.get_setting("update_repo", "") or updater.DEFAULT_REPO)
+
+
+def _render_status():
+    """Zaťaženie Macu pri skladaní videí (na postupné zvyšovanie render_parallel)."""
+    from . import explainer
+    out = {"active": explainer._lock.active, "limit": explainer._lock.limit(), "cpus": os.cpu_count()}
+    try:
+        out["load"] = [round(x, 2) for x in os.getloadavg()]
+    except Exception:
+        pass
+    try:
+        import subprocess as sp
+        if sys.platform == "darwin":
+            r = sp.run(["memory_pressure", "-Q"], capture_output=True, text=True, timeout=5, stdin=sp.DEVNULL).stdout
+            m = re.search(r"(\d+)%", r)
+            if m:
+                out["mem_free_pct"] = int(m.group(1))
+            t = sp.run(["pmset", "-g", "therm"], capture_output=True, text=True, timeout=5, stdin=sp.DEVNULL).stdout
+            m = re.search(r"CPU_Speed_Limit\s*=\s*(\d+)", t)
+            if m:
+                out["cpu_speed_limit"] = int(m.group(1))
+        else:
+            mi = open("/proc/meminfo").read()
+            tot = int(re.search(r"MemTotal:\s+(\d+)", mi).group(1)); av = int(re.search(r"MemAvailable:\s+(\d+)", mi).group(1))
+            out["mem_free_pct"] = round(100 * av / tot)
+    except Exception:
+        pass
+    return out
 
 
 @app.post("/api/update/github")
@@ -1944,7 +2562,8 @@ app.include_router(weather.router)
 from . import audio  # noqa: E402
 app.include_router(audio.router)
 try:
-    inspire.fix_refrigerant_name()   # „PROLINE R290“ nie je názov, R290 je chladivo (jednorazová oprava textov)
+    if os.environ.get("SM_VERIFY") != "1":  # skúška novej verzie pred aktualizáciou nič nemení
+        inspire.fix_refrigerant_name()   # „PROLINE R290“ nie je názov, R290 je chladivo (jednorazová oprava textov)
 except Exception as _e:
     print("oprava R290:", _e)
 app.include_router(brand.router)
@@ -1989,12 +2608,22 @@ def main():
     except Exception:
         pass
     try:
+        _local_voice_setup()  # anglické kanály hovoria lokálnym hlasom (zadarmo, bez limitu)
+    except Exception as e:
+        print("lokálny hlas:", e)
+    try:
         from . import radar
         radar.start()  # trendy, konkurencia, čísla našich videí (na pozadí, bez AI)
     except Exception:
         pass
-    updater.background_checker(lambda: any(not j.get("done") for j in JOBS.values()) or PROD["running"] or bool(scheduler.state.get("current"))
-                               or AUTO.get("running") or PROD.get("running"))
+    updater.background_checker(lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
+                               or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
+                               or brand._fix_state["running"], drain=_drain)
+    threading.Thread(target=_mp_autoresume, daemon=True).start()
+    try:
+        _autostart_setup()
+    except Exception as e:
+        print("automatický štart:", e)
     threading.Thread(target=_produce_loop, daemon=True).start()
     threading.Thread(target=_script_ahead_loop, daemon=True).start()
     if os.environ.get("SM_NO_BROWSER") != "1":
@@ -2004,6 +2633,82 @@ def main():
     except BaseException as e:
         logging.getLogger("app").error("Server skončil: %r", e, exc_info=True)
         raise
+
+
+
+# ---------- mapy dodatočne do hotových, ešte nenahratých videí (bez AI, bez nového hlasu) ----------
+_remap_busy = threading.Lock()
+_remap_state = {"running": False, "done": 0, "left": 0, "last": ""}
+
+
+def _remap_pending(pid):
+    done = set(db.get_setting(f"remap_done_{pid}", []) or [])
+    rows = db.q("""SELECT v.* FROM videos v WHERE v.project_id=? AND v.script_id IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.video_id=v.id AND (COALESCE(p.stash_id,'')!=''
+                        OR COALESCE(p.external_id,'')!='' OR p.status IN ('done','uploading')))""", (pid,))
+    out = []
+    for v in rows:
+        if v["id"] in done or not v["file_path"] or not Path(v["file_path"]).exists():
+            continue
+        s = db.one("SELECT * FROM scripts WHERE id=?", (v["script_id"],))
+        if not s or not s.get("voice_path") or not Path(s["voice_path"]).exists():
+            continue
+        try:
+            scenes = json.loads(s["scenes"] or "[]")
+            if any(explainer.board_of(sc).get("k") == "map" for sc in scenes):
+                out.append(v)
+        except Exception:
+            pass
+    return out
+
+
+def remap(pids):
+    """Na pozadí, po jednom: video sa zloží znova s mapami (rovnaký hlas a scenár), staré sa nahradí."""
+    def run():
+        if not _remap_busy.acquire(blocking=False):
+            return
+        _remap_state["running"] = True
+        try:
+            for pid in pids:
+                for v in _remap_pending(pid):
+                    if db.one("SELECT 1 FROM posts WHERE video_id=? AND (status='uploading' OR COALESCE(stash_id,'')!='')", (v["id"],)):
+                        continue
+                    try:
+                        r = script_to_video(v["script_id"], {})
+                        nv = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
+                        old = Path(v["file_path"])
+                        # nové video prevezme miesto starého (príspevky a plán ostanú)
+                        db.run("UPDATE videos SET file_path=?, size=?, duration=? WHERE id=?", (nv["file_path"], nv["size"], nv["duration"], v["id"]))
+                        db.run("DELETE FROM videos WHERE id=?", (nv["id"],))
+                        for f in (old, old.with_suffix(".jpg")):
+                            if f.exists() and str(f) != nv["file_path"]:
+                                f.unlink()
+                        _remap_state["done"] += 1
+                        _remap_state["last"] = v.get("title") or ""
+                    except Exception as e:
+                        print("mapy do videa:", e)
+                    db.set_setting(f"remap_done_{pid}", (db.get_setting(f"remap_done_{pid}", []) or []) + [v["id"]])
+        finally:
+            _remap_state["running"] = False
+            _remap_busy.release()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@app.post("/api/maps/remap")
+def remap_api(data: dict = Body(default={})):
+    """{"project_ids":[12,13], "dry": true} = len spočíta, koľko videí by dostalo mapy."""
+    pids = [int(p) for p in data.get("project_ids", [])]
+    left = {p: len(_remap_pending(p)) for p in pids}
+    if not data.get("dry"):
+        _remap_state["left"] = sum(left.values())
+        remap(pids)
+    return {"pending": left, "state": _remap_state}
+
+
+@app.get("/api/maps/remap")
+def remap_status():
+    return _remap_state
 
 
 if __name__ == "__main__":

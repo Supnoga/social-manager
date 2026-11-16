@@ -166,16 +166,32 @@ def yt_key():
     return (db.get_setting("yt_api_key", "") or "").strip()
 
 
+# Radar smie z dennej kvóty YouTube (10 000 jednotiek, delí sa s nahrávaním) minúť len malú časť.
+# Nahrávanie má vždy prednosť: Radar + čísla v dashboarde spolu najviac ~8 %.
+RADAR_YT_DAILY = 500
+
+
+def _gday_start():
+    """Začiatok „Google dňa“ (polnoc v Kalifornii) v našom miestnom čase, napr. dnes 9:00."""
+    try:
+        from zoneinfo import ZoneInfo
+        pt = dt.datetime.now(ZoneInfo("America/Los_Angeles"))
+        since = pt - dt.timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second, microseconds=pt.microsecond)
+        return since.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return dt.date.today().strftime("%Y-%m-%d")
+
+
 def yt_units_today():
     return db.one("SELECT COALESCE(SUM(units),0) n FROM fetch_log WHERE source LIKE 'yt%' AND ts>=?",
-                  (dt.date.today().strftime("%Y-%m-%d"),))["n"]
+                  (_gday_start(),))["n"]
 
 
 def _yt(path, units=1, **params):
     if not yt_key():
         raise RuntimeError("Chýba YouTube API kľúč (Nastavenia → Radar)")
-    if yt_units_today() > 8000:
-        raise RuntimeError("Dnešná YouTube kvóta je takmer minutá")
+    if yt_units_today() + units > RADAR_YT_DAILY:
+        raise RuntimeError("Radar dnes minul svoj malý podiel kvóty YouTube (nahrávanie má prednosť), pokračuje zajtra po 9:00")
     r = httpx.get(f"https://www.googleapis.com/youtube/v3/{path}", params={**params, "key": yt_key()}, timeout=25)
     _log("yt_" + path.split("/")[0], json.dumps(params)[:100], r.status_code == 200, units)
     if r.status_code != 200:
@@ -576,6 +592,8 @@ def _housekeeping():
 # ---------- plánovač Radaru (samostatné vlákno, nezasahuje do publikovania) ----------
 JOBS = {"gtrends": (2, job_gtrends), "news": (3, job_news), "wiki": (24, job_wiki), "yt_popular": (24, job_yt_popular),
         "comp_uploads": (6, job_comp_uploads), "comp_backlog": (12, job_comp_backlog), "comp_stats": (3, job_comp_stats), "own_stats": (6, _own_stats),
+        "acct_stats": (3, lambda: __import__("app.insights", fromlist=["job"]).job()),
+        "yt_feed": (1, lambda: __import__("app.insights", fromlist=["rss_job"]).rss_job()),
         "weather": (24, lambda: __import__("app.weather", fromlist=["job"]).job()),
         "questions": (168, lambda: __import__("app.inspire", fromlist=["job_questions"]).job_questions())}
 
@@ -607,13 +625,14 @@ def loop():
     last_hk = 0
     while True:
         try:
-            if not db.get_setting("paused", False):
-                on = db.get_setting("radar_enabled", True)
-                if time.time() - last_hk > 3600:
+            paused = db.get_setting("paused", False)
+            if True:  # čísla a štatistiky (len čítanie) bežia aj keď je výroba pozastavená
+                on = db.get_setting("radar_enabled", True) and not paused
+                if not paused and time.time() - last_hk > 3600:
                     last_hk = time.time()
                     _housekeeping()
                 for name in JOBS:
-                    if not on and name != "own_stats":
+                    if not on and name not in ("own_stats", "acct_stats", "yt_feed"):
                         continue
                     j = db.one("SELECT next_run FROM intel_jobs WHERE name=?", (name,))
                     if not j or j["next_run"] <= _now():

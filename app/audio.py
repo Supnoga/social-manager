@@ -124,7 +124,7 @@ def scene_times(scenes, words, total):
     sim = []
     for sc in scenes:
         a = sc.get("anim") if isinstance(sc.get("anim"), dict) else {}
-        tk = _tokens(" ".join([sc.get("onscreen") or ""] + list(_strings(a.get("d")))))
+        tk = _tokens(" ".join([sc.get("onscreen") or "", sc.get("visual") or ""] + list(_strings(a.get("d")))))   # aj opis obrazu: hovorí, o čom scéna je
         sim.append([sum(1.0 / df[x] for x in tk & st) for st in stoks])
     ideal = total / n
     NEG = -1e9
@@ -180,7 +180,12 @@ def loudness(path):
         return None
 
 
-def finish(video, voice, cuts=None, seed=0, music=True, end_at=None):
+# zvuky k obrazu presných modelov (druh z auto_visual.sound_events -> súbor, hlasitosť v dB)
+EVENT_FX = {"bang": ("fx-vybuch.ogg", -13.0), "air": ("fx-vzduch.ogg", -13.0), "hiss": ("fx-syk.ogg", -12.0),
+            "num": ("fx-cislo.ogg", -13.0), "zoom": ("fx-prechod-1.ogg", -9.0)}
+
+
+def finish(video, voice, cuts=None, seed=0, music=True, end_at=None, events=None):
     """Nahradí zvuk hotového videa: hlas (vyčistený, vyrovnaný) + hudba + efekty, nahlas ako iné videá na sieťach.
     cuts = časy striedania scén (pre zvuk prechodu). Obraz sa nemení (kopíruje sa), trvá to pár sekúnd."""
     from . import media
@@ -233,7 +238,12 @@ def finish(video, voice, cuts=None, seed=0, music=True, end_at=None):
             if wh and t - last >= 1.6:
                 fx.append((wh[k % len(wh)], max(0.0, t - 0.30), -10.0))
                 last = t
-        for f, t, g in fx[:40]:
+        fx = fx[:40]
+        for kind, t in (events or [])[:70]:   # zvuk presne v okamihu, keď sa to deje na obraze (iskra, výfuk, číslo)
+            f, g = EVENT_FX.get(kind, ("", 0))
+            if f and (SOUND / f).exists() and 0 <= float(t) < total - 0.2:
+                fx.append((SOUND / f, max(0.0, float(t) - (0.30 if kind == "zoom" else 0.0)), g))
+        for f, t, g in fx:
             cmd += ["-i", str(f)]
             ms = int(t * 1000)
             fc.append(f"[{idx}:a]aresample=48000,aformat=channel_layouts=stereo,volume={g:.1f}dB,adelay={ms}|{ms}[f{idx}]")

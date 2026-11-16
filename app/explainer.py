@@ -12,33 +12,187 @@ import re
 import subprocess
 import threading
 
+from pathlib import Path
+
 from . import db, icons_extra
 
 W, H = 1080, 1920
-KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene")
+KINDS = ("flow", "cycle", "bars", "calc", "compare", "count", "list", "icons", "temp", "house", "split", "text", "hero", "draw", "scene",
+         "map", "timeline", "line", "growth", "pie", "stack", "dots", "size", "layers", "mech",
+         "forces", "waterfall", "funnel", "loan", "inflation", "crack", "sim", "lines")
 ICON_NAMES = ("house", "heatpump", "radiator", "floor", "thermo", "snow", "sun", "flame", "bolt", "drop", "coin",
               "leaf", "air", "phone", "tank", "sound", "clock", "plug", "check", "cross", "user", "tool", "chart", "shield",
               "panel", "turbine", "battery", "car", "pylon", "bulb", "meter", "globe", "window", "factory", "cloud", "city", "compressor", "fridge", "fan", "boiler")
 ICON_NAMES += tuple(n for n in icons_extra.NAMES if n not in ICON_NAMES)
+BASE_ICONS = ICON_NAMES[:40]  # tieto vidí AI vždy, ďalšie len podľa kanála (app/icons/*.json channels)
+
+# ---------- rozšírenia knižnice: app/icons/*.json a app/boards/*.js + *.json (nahrávajú sa samy) ----------
+_EXT = Path(__file__).parent
+ICON_PACKS, ICON_ALIAS, ICON_CHANNELS = {}, {}, {}
+for _f in sorted((_EXT / "icons").glob("*.json")):
+    try:
+        _j = json.loads(_f.read_text(encoding="utf-8"))
+    except Exception:
+        continue
+    ICON_PACKS.update({k: v for k, v in (_j.get("icons") or {}).items() if k not in ICON_NAMES})
+    ICON_ALIAS.update(_j.get("aliases") or {})
+    for _c, _names in (_j.get("channels") or {}).items():
+        ICON_CHANNELS.setdefault(_c, []).extend(_names)
+ICON_NAMES += tuple(ICON_PACKS)
+_ICON_SET = set(ICON_NAMES)
+ICON_ALIAS = {k: v for k, v in ICON_ALIAS.items() if v in ICON_NAMES and k not in ICON_NAMES}
+BOARD_META = {}
+for _f in sorted((_EXT / "boards").glob("*.json")):
+    try:
+        BOARD_META[_f.stem] = json.loads(_f.read_text(encoding="utf-8"))
+    except Exception:
+        pass
 
 # Stručný popis pre AI (pridá sa do promptu scenára, cca 200 tokenov)
 SPEC = """"anim" = animated explainer diagram for the scene (N2N Academy style: black, thin line schematics drawn step by step). Pick ONE that explains the point visually:
 {"t":"board","d":{"k":"flow","a":"input e.g. Electricity 1 kW","b":"device","c":"output e.g. Heat 4 kW","x":"optional extra input e.g. Air 3 kW"}} |
 {"k":"cycle","l":["outdoor air","evaporator","compressor","condenser","home"]} (how a heat pump works) |
-{"k":"bars","u":"unit","i":[["label",number],...max 4]} | {"k":"calc","r":[["1 600 m³ × 10,5","16 800 kWh"],...max 4]} |
+{"k":"bars","u":"unit","i":[["label",number,"optional ISO country code = flag"],...max 4]} | {"k":"calc","r":[["1 600 m³ × 10,5","16 800 kWh"],...max 4]} |
 {"k":"compare","a":["worse option","value"],"b":["better option","value"]} | {"k":"count","v":75,"pre":"","suf":" %","l":"label"} |
-{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons: """ + ",".join(ICON_NAMES) + """ |
+{"k":"list","i":["short point",...max 4]} | {"k":"icons","i":[["icon","label"],...2-4]} icons (any simple English noun works, the app has 1000+ line icons; e.g.): %ICONS% |
 {"k":"temp","a":["Outside",-10],"b":["Inside",21],"u":"°C"} | {"k":"house","i":[["Roof",25],["Walls",35],["Windows",15],["Floor",10]]} (heat losses %) |
 {"k":"split","u":"%","i":[["from air",75],["electricity",25]]} | {"k":"text","w":"2-5 key words"} |
+{"k":"svg","svg":"<g>...</g>"} = CUTAWAY MADE FOR THIS SCENE: inline SVG (viewBox 864x560, no <svg> tag) that shows the inside of the thing and how it moves: real shapes (housing, rotor, piston, valves, pipes, layers, fluid), moving with SMIL <animate>/<animateTransform>/<animateMotion> (dur 2-4s, repeatCount="indefinite"; gas/fluid as dots moving along a path; heat as colour change). Style: black background, white strokes 3-4 px, fills #111/#222, ONE accent colour written as ACC for the moving/important part, 2-4 labels <text font-size="26"> in CAPS inside the frame, parts sized and placed like the real machine (moving parts touch what they push), colour only the part that is working right now, fill 70% of the frame, no gradients/filters/images, max 2500 chars. Use it for the 1-3 key "how it works" scenes when no ready "mech" fits |
 {"k":"hero","i":"icon","w":"2-4 words","s":"optional short second line"} (one big animated picture of the thing we talk about; use it for story, everyday comparisons and scenes without numbers)
 {"k":"draw","e":[...max 14 elements]} = your own animated line drawing on a 432x280 canvas (x right, y down). Use it when the viewer should SEE the thing happen instead of reading about it (example: a 2-blade, a 3-blade and a 4-blade wind turbine side by side, the 2-blade one shaking). Elements:
 {"s":"turbine","p":[xCenter,yGround,height],"n":blades,"l":"label"} | {"s":"line","p":[x1,y1,x2,y2]} | {"s":"arrow","p":[x1,y1,x2,y2]} | {"s":"circle","p":[cx,cy,r]} | {"s":"rect","p":[x,y,w,h]} | {"s":"text","p":[x,y],"t":"1-3 words"} | {"s":"icon","i":"icon name","p":[xCenter,yCenter,size]}.
 Optional on every element: "c":1 (red highlight) or 2 (grey), "a":"spin" / "shake" / "pulse" / "float" / "flow" (moving dots along a line or arrow; may combine like "spin shake"; a turbine always spins), "at":0,1,2.. (step when it appears, so the drawing builds up while the voice explains), "l":"label under it".
 A drawing MUST be built from real objects (turbine, icons); lines, arrows, circles, rectangles and texts are only helpers (ground line, frame, highlight ring, pointer). Never let a bare circle, rectangle or line stand for a real thing: if there is no icon for the thing, use "scene", "hero" or a number diagram instead. Objects are big (icons 70-110 px, turbines 130-180 px high), 2-4 objects per drawing.
 Keep drawings simple and big, leave 20 px margin, labels inside the canvas. Never put a text on top of a line, arrow or shape or on another text: place it beside with a clear gap (texts are centered on their x). Something must MOVE in every drawing (spin, shake, flow, pulse) and it must show the exact thing the voice is describing at that moment: the machine, the part, the before and after, what goes in and what comes out.
-{"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
-"scene" and "draw" are the DEFAULT, together at least 3 of every 5 scenes: "scene" for things connected by flows, "draw" only to place the same kind of object side by side for comparison (like the turbines) or to point at one object with arrows. Use the number diagrams only when the voice says a number, and "hero"/"text" only for the hook or the closing line.
+{"k":"scene","n":[["icon","label","optional: spin / shake / pulse / float"],...2-6 things],"l":[[fromIndex,toIndex,"what flows (1-2 words)",1 if this is the highlighted red flow else 0],...]} = ready-made pictures connected by moving arrows; the app arranges everything neatly by itself (no coordinates). Best with 2-4 of these, which are drawn as real figures and buildings with coins, data or goods travelling between them: user, people, phone, tv, laptop, wifi, house, city, store, bank, factory, server, cloud, document, mail, calendar, wallet, coins, banknote, piggybank, pricetag, lock, shield, key, chart, growth, package, truck, plane, ship, globe, clock, idea, chip, check, cross; say in each arrow label what moves (pays rent, sends data, ships goods). Use it whenever things give something to each other (example: n=[["air","Outdoor air"],["bolt","Electricity"],["heatpump","Heat pump"],["house","Home"]], l=[[0,2,"3 kW",0],[1,2,"1 kW",0],[2,3,"4 kW heat",1]]). Every thing has a label. Only icons from the list. Keep it simple: at most 5 things and 5 arrows, an arrow should go to a neighbouring thing and not jump over another one.
+{"k":"map","c":["EG","SD"],"p":["Cairo"],"r":[["Cairo","Aswan"]],"v":"Nile","l":"optional 1-3 word tag"} = real animated map: the globe turns and zooms in, countries light up with their flags. c = ISO 2-letter codes (first = main) or a region (EU, Middle East, Africa, Balkans...), p = max 4 real cities, r = routes: ["Cairo","London"] is a straight flight line; a ship route lists sea waypoints between the ports, e.g. ["Shanghai","South China Sea","Singapore Strait","Sri Lanka South","Bab el Mandeb","Red Sea","Suez Canal","Crete South","Sicily Channel","Strait of Gibraltar","Cape Finisterre","English Channel","Rotterdam"] (other points: Strait of Malacca, Hormuz, Persian Gulf, Cape of Good Hope, Panama Canal, Caribbean, Atlantic, Pacific, Bosporus, Black Sea, Danish Straits, Baltic Sea, North Sea, Taiwan Strait), v = river or canal. Only real places, all fields except c optional. Use "map" EVERY time the voice names a country, region, city, river, sea route or border: it beats all other rules.
+{"k":"timeline","i":[["1869","Suez Canal opens"],...max 5]} (history, dates) | {"k":"line","u":"unit","i":[["2000",12],["2010",30],...max 10]} (change over time)
+PRIORITY: the picture must SHOW what the voice says at that moment. A machine, device or process being explained -> "mech" (ready animated cutaway) when one fits, otherwise "svg" (a cutaway you draw for this scene); a place -> "map"; a spoken number -> a number diagram; things passing something to each other -> "scene"; "draw" only to compare objects side by side; "hero"/"text" only for the hook or the closing line. Never just a spinning icon of the thing.
 Labels max 4 words, numbers as numbers."""
+
+
+
+# Vizuály na mieru téme kanála: do zadania pre AI idú len riadky, ktoré kanál potrebuje (šetrí tokeny)
+PACK = {
+    "growth": '{"k":"growth","p":1000,"r":7,"y":30,"m":0,"u":"€","l":"after 30 years","a":"paid in","b":"interest","x":"years"} = compound growth the app CALCULATES itself (p start sum, r % per year, y years, m monthly addition): savings, investing, loans and debt',
+    "pie": '{"k":"pie","u":"%","c":"centre text","i":[["Needs",50],["Wants",30],["Savings",20]]} = shares of a whole (budget, where the money goes, market share), max 5',
+    "stack": '{"k":"stack","u":"$","i":[["1 million",1000000],["1 billion",1000000000]]} = huge numbers shown as squares in true proportion, max 3',
+    "dots": '{"k":"dots","n":100,"h":23,"l":"of people ..."} = 100 dots, h of them light up (probability, percent of people, 1 in N)',
+    "size": '{"k":"size","u":"m","d":"v or h","i":[["Burj Khalifa",828,"skyscraper"],["Eiffel Tower",330],["Person",1.8,"user"]]} = real sizes side by side in true scale (heights v, lengths h), optional icon, max 4',
+    "layers": '{"k":"layers","u":"cm","z":0,"i":[["Plaster",2],["Brick",30],["Insulation",15,1]]} = cross-section layer by layer, top to bottom, real thickness (third value 1 = highlighted layer; "z":1 adds a depth ruler, for ground and underground)',
+    "forces": '{"k":"forces","i":"plane","f":[["Lift","up",3],["Weight","down",3],["Thrust","right",2],["Drag","left",1]]} = force arrows on one object (icon), arrow length = size of the force, first arrow highlighted',
+    "waterfall": '{"k":"waterfall","t":5,"u":"€","l":"Coffee","i":[["Rent",1.2],["Staff",1.5],["Beans",0.4],["Profit",0.5,1]]} = what a price is made of (third value 1 = highlight)',
+    "funnel": '{"k":"funnel","i":[["See the ad",10000],["Visit",800],["Buy",40]]} = how many people are left at each step',
+    "loan": '{"k":"loan","p":200000,"r":4,"y":30,"u":"€"} = loan or mortgage: the app CALCULATES the monthly payment, total paid and interest',
+    "inflation": '{"k":"inflation","v":100,"r":3,"y":20,"u":"€","i":"cart"} = what the same money buys after y years of r % inflation (the app calculates)',
+    "crack": '{"k":"crack","l":[6,8,10,12,16],"set":"lower|mixed|all"} = time to guess a password by length (the app calculates at 10 billion guesses per second)',
+    "sim": '{"k":"sim","m":"doors|coin|dice","n":1000,"l":["stay","switch"]} = the experiment played 1000 times live, result in % (doors = the three doors puzzle, dice = chance of sum 7)',
+    "lines": '{"k":"lines","x":["6:00","9:00","12:00","15:00","18:00"],"s":[["Solar",[0,30,80,50,5]],["Demand",[40,60,55,60,90]]]} = 2-3 lines over the same time (supply vs demand, two brands)',
+    "hist": '{"k":"map","y":[-200,-1,117],"h":["Roman Empire"],"l":"optional tag"} = HISTORICAL map: approximate borders in that year (1-4 years show growth or fall over time), h = empire or state names as in history books',
+    "truesize": '{"k":"map","c":["RU"],"t":"US"} = true size: the first country slides onto country t at the same real size',
+    "mech": '{"k":"mech","m":"piston|wankel|gears|wing|wave|radar|orbit|pendulum|jet","n":[12,24],"l":["label 1","label 2","label 3","label 4"]} = ready animated mechanism: piston = 4-stroke engine cutaway (l = the 4 strokes), wankel = rotary engine cutaway (l = intake, compression, power, exhaust); piston and wankel take "f":"intake|compression|power|exhaust" (camera close-up on the stroke the voice talks about) or "f":"run" (running at full speed), and {"k":"mech","m":"versus","a":"piston","b":"wankel","l":["name A","name B"]} runs two of them side by side to compare; gears (n = teeth, l = the 2 gears), wing = airflow and lift (l = lift, airflow), wave (n = 1-2 frequencies, l = their names: sound, light, radio), radar sweep, orbit (n satellites sending to one point: GPS, l = Earth, satellites), pendulum',
+}
+CHANNEL_PACKS = {
+    "cash": ("growth", "inflation", "pie", "stack", "dots", "lines"), "wallet": ("loan", "growth", "pie", "waterfall", "inflation", "stack"),
+    "stocks": ("growth", "lines", "pie", "stack", "dots", "sim"), "company": ("waterfall", "funnel", "pie", "stack", "dots", "growth"),
+    "brands": ("lines", "pie", "funnel", "waterfall", "stack"),
+    "machines": ("mech", "forces", "size", "layers"), "engines": ("mech", "forces", "size", "lines", "pie"), "flight": ("forces", "mech", "size", "dots"),
+    "mega": ("size", "forces", "layers", "mech"), "house": ("layers", "size", "pie", "waterfall"), "underground": ("layers", "size", "mech"),
+    "industry": ("size", "stack", "layers", "mech", "waterfall"), "inventions": ("mech", "size", "lines"), "arsenal": ("mech", "forces", "size", "layers"),
+    "forces": ("forces", "mech", "dots", "size", "sim"), "digital": ("crack", "mech", "dots", "stack", "funnel"), "logic": ("sim", "dots", "pie", "stack", "growth"),
+    "logistics": ("size", "stack", "funnel", "waterfall"), "maps": ("hist", "truesize", "dots", "size", "stack"), "nations": ("truesize", "hist", "dots", "pie", "size", "stack"),
+    "energy": ("lines", "mech", "size", "pie", "stack", "waterfall"), "n2n": ("layers", "pie", "waterfall"),
+}
+
+
+
+for _m in BOARD_META.values():
+    KINDS += tuple(k for k in (_m.get("kinds") or {}) if k not in KINDS)
+    PACK.update(_m.get("pack") or {})
+    for _c, _ks in (_m.get("channels") or {}).items():
+        CHANNEL_PACKS[_c] = tuple(CHANNEL_PACKS.get(_c, ())) + tuple(k for k in _ks if k not in CHANNEL_PACKS.get(_c, ()))
+_ALL_PACK = ("default",)
+
+
+def icon_name(name):
+    """Kanonické meno ikony aj zo synonyma, množného čísla alebo časti mena (rovnako ako IR v stránke); None = nič."""
+    def one(n):
+        for c in (n, re.sub(r"ies$", "y", n), re.sub(r"es$", "", n), re.sub(r"s$", "", n)):
+            if c in _ICON_SET:
+                return c
+            if ICON_ALIAS.get(c) in _ICON_SET:
+                return ICON_ALIAS[c]
+        return None
+    if not isinstance(name, str) or len(name) > 40:
+        return None
+    n = re.sub(r"[\s-]+", "_", name.lower().strip())
+    r = one(n)
+    if r:
+        return r
+    for x in reversed([x for x in n.split("_") if x]):
+        r = one(x)
+        if r:
+            return r
+    return None
+
+
+def icon_ok(name):
+    return icon_name(name) is not None
+
+
+def _icons_js(data):
+    """Do stránky len ikony z balíkov, ktoré video naozaj používa (stránka ostane malá aj pri tisícoch ikon)."""
+    seen, alias = set(), {}
+
+    def walk(x):
+        if isinstance(x, dict):
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+        elif isinstance(x, str):
+            c = icon_name(x)
+            if c:
+                seen.add(c)
+                k = re.sub(r"[\s-]+", "_", x.lower().strip())
+                if k != c:
+                    alias[k] = c
+    walk(data)
+    body = "".join(json.dumps(k) + ":" + json.dumps(ICON_PACKS[k]) + "," for k in sorted(seen) if k in ICON_PACKS)
+    return body, json.dumps(alias)
+
+
+def _chan(project=None):
+    name = str((project or {}).get("name") or "").lower()
+    return next((key for key in CHANNEL_PACKS if key in name), None)
+
+
+def icons_for(project=None):
+    """Ikony, ktoré AI uvidí: základné + tie, ktoré sa hodia kanálu (šetrí tokeny)."""
+    c = _chan(project)
+    extra = [n for n in ICON_CHANNELS.get(c or "default", ICON_CHANNELS.get("default", [])) if n in ICON_NAMES and n not in BASE_ICONS]
+    return ",".join(dict.fromkeys(list(BASE_ICONS) + extra))
+
+
+def packs_for(project=None):
+    name = str((project or {}).get("name") or "").lower()
+    for key, kinds in CHANNEL_PACKS.items():
+        if key in name:
+            return kinds
+    return ("pie", "dots", "size")
+
+
+def spec(project=None):
+    """SPEC + vizuály na mieru kanálu (len tie, ktoré jeho témy potrebujú)."""
+    extra = " |\n".join(PACK[k] for k in packs_for(project) if k in PACK)
+    return SPEC.replace("%ICONS%", icons_for(project)) + "\nMore diagrams for this channel (use them whenever they fit the spoken point better than the defaults):\n" + extra
+
+
+_SKIP = {}
+for _m in BOARD_META.values():
+    for _k, _v in (_m.get("kinds") or {}).items():
+        _SKIP[_k] = {f: tuple(c) for f, c in (_v.get("skip") or {}).items()}
 
 
 # ---------- texty na preklad (rovnaké poradie pre texts/with_texts) ----------
@@ -63,13 +217,13 @@ def _slots(d):
         for i, x in enumerate(d.get(f) or []):
             if isinstance(x, list) and len(x) > j and isinstance(x[j], str) and re.search(r"[^\W\d_]{2,}", x[j]):
                 out.append((f, i, j))
-    for f in ("i", "r"):
-        for i, x in enumerate(d.get(f) or []):
+    for f in ("i", "r", "f") if k != "map" else ():
+        for i, x in enumerate(d.get(f) if isinstance(d.get(f), list) else []):
             if isinstance(x, str):
                 out.append((f, i))
             elif isinstance(x, list):
                 for j, y in enumerate(x):
-                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and (
+                    if isinstance(y, str) and y.strip() and not (k == "icons" and j == 0) and j not in _SKIP.get(k, {}).get(f, ()) and not (k in ("bars", "size") and j == 2) and not (k == "forces" and j == 1) and (
                             k == "calc" or re.search(r"[^\W\d_]{2,}", y)):
                         out.append((f, i, j))
     return out
@@ -199,6 +353,8 @@ def board_of(scene):
     d = from_old(a, scene.get("onscreen", "")) if isinstance(a, dict) else None
     if not d or d.get("k") not in KINDS:
         d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
+    if d.get("k") == "svg" and not clean_svg(d.get("svg")):
+        d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
     if d.get("k") == "draw":
         # voľná kresba len z hotových dielov: bez krivých čiar od AI a aspoň jeden skutočný objekt, inak radšej jednoduchý diagram
         els = [e for e in (d.get("e") or []) if isinstance(e, dict) and e.get("s") != "path"]
@@ -206,10 +362,73 @@ def board_of(scene):
             return guess(scene.get("onscreen", ""), scene.get("visual", ""))
         d = dict(d, e=els)
     if d.get("k") == "scene":
-        ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and x[0] in ICON_NAMES]
+        ok = [x for x in (d.get("n") or []) if isinstance(x, list) and x and icon_ok(x[0])]
         if len(ok) < 2 or len(ok) != len(d.get("n") or []):
-            return guess(scene.get("onscreen", ""), scene.get("visual", ""))
-    return d
+            d = guess(scene.get("onscreen", ""), scene.get("visual", ""))
+    return auto_map(scene, d)
+
+
+_MAP_WORD = re.compile(r"(?i)\b(map|maps|mapa|mapy|mape|karte|carte|mappa|kaart|mapie|térkép|harta|border|borders|route|routes)\b")
+
+
+def auto_map(scene, d):
+    """Bez AI: keď scéna hovorí o krajine, meste alebo rieke a obraz ju neukazuje, dá tam mapu.
+    Číselné grafy (stĺpce, výpočty, porovnania) nechá tak, mapa nahradí len všeobecný obrázok alebo text."""
+    if d.get("k") == "map":
+        return d
+    vis, ons = str(scene.get("visual") or ""), str(scene.get("onscreen") or "")
+    weak = d.get("k") in ("hero", "text", "icons", "list", "scene", "draw")
+    if not (weak or _MAP_WORD.search(vis)):
+        return d
+    try:
+        from . import geo
+        m = geo.guess_map(ons + " . " + vis) if (_MAP_WORD.search(vis) or d.get("k") in ("hero", "text")) else geo.guess_map(ons)
+    except Exception as e:
+        print("mapa:", e)
+        return d
+    return m or d
+
+
+_SVG_BAD = re.compile(r"(?is)<\s*(script|foreignObject|iframe|image|use|style)\b.*?(</\s*\1\s*>|/>)|\son\w+\s*=\s*(\"[^\"]*\"|'[^']*')|(xlink:)?href\s*=\s*[\"'](?!#)[^\"']*[\"']|javascript:|url\((?!#)[^)]*\)")
+
+
+def clean_svg(src):
+    """Rez na mieru od AI: len čisté SVG tvary a animácie (bez skriptov, odkazov, obrázkov); pokazené = None."""
+    s = str(src or "").strip()
+    if not (40 < len(s) < 9000):
+        return None
+    s = re.sub(r"(?is)^\s*<svg[^>]*>|</svg>\s*$", "", s)
+    s = _SVG_BAD.sub("", s)
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring('<svg xmlns="http://www.w3.org/2000/svg">' + s + "</svg>")
+    except Exception:
+        return None
+    if len(list(root.iter())) < 4 or not any(e.tag.split("}")[-1].startswith("animate") for e in root.iter()):
+        return None  # bez pohybu to nie je animácia, radšej iný obraz
+    return s
+
+
+def prepare(v, lang="en"):
+    """Pred renderom: mapa dostane overené súradnice a vlajky, stĺpce vlajky krajín. Čo sa nenájde, ostane bez mapy."""
+    if v.get("k") == "svg":
+        c = clean_svg(v.get("svg"))
+        return dict(v, svg=c) if c else {"k": "text", "w": str(v.get("w") or v.get("l") or "")}
+    if v.get("k") == "map":
+        from . import geo
+        r = geo.resolve(v, lang)
+        return r or {"k": "text", "w": str(v.get("l") or "")}
+    if v.get("k") in ("bars", "rank") and any(isinstance(x, list) and len(x) > 2 for x in v.get("i") or []):
+        from . import geo
+        fl = {}
+        for i, x in enumerate((v.get("i") or [])[:6]):
+            c = geo.country(x[2]) if isinstance(x, list) and len(x) > 2 and isinstance(x[2], str) and (
+                v["k"] == "bars" or re.fullmatch(r"[A-Za-z]{2}", x[2].strip())) else None
+            if c and geo.flag_uri(c):
+                fl[i] = geo.flag_uri(c)
+        if fl:
+            return dict(v, fl=fl)
+    return v
 
 
 def needs_boards(scenes):
@@ -230,7 +449,7 @@ def ensure_boards(script_id):
     try:
         items = {str(i): {"onscreen": scenes[i].get("onscreen", ""), "visual": (scenes[i].get("visual") or "")[:140]} for i in need}
         data = ai.ask(f"""Short explainer video "{s['title']}". Voiceover: {s['voiceover'][:1500]}
-For each scene choose an animated diagram. {SPEC}
+For each scene choose an animated diagram. {spec(db.one("SELECT name FROM projects WHERE id=?", (s["project_id"],)))}
 Write labels in {languages.english(s['lang'])}. Scenes: {json.dumps(items, ensure_ascii=False)}
 Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "boards", "cheap")
     except Exception as e:
@@ -244,6 +463,76 @@ Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "boards", "cheap")
         scenes[i]["anim"] = {"t": "board", "d": d}
     db.run("UPDATE scripts SET scenes=? WHERE id=?", (json.dumps(scenes, ensure_ascii=False), script_id))
     return scenes
+
+
+_STRONG = ("map", "timeline", "line", "bars", "compare", "count", "calc", "split", "temp", "scene")
+
+
+def _bad_scenes(scenes, why=""):
+    """Indexy scén, ktoré by kontrola označila: slabé (ikony, text, zoznam, kresba), hrubá kresba, prázdne alebo prekrývajúce sa."""
+    from . import auto_visual
+    body = scenes[:-1] if len(scenes) > 2 else scenes
+    out = set()
+    for i, sc in enumerate(body):
+        a = sc.get("anim") or {}
+        d = a.get("d") if isinstance(a, dict) and a.get("t") == "board" else a
+        k = d.get("k") if isinstance(d, dict) else None
+        if k in auto_visual.WEAK and not auto_visual.actors(d):
+            out.add(i)
+        elif k == "svg" or (k == "mech" and d.get("m") not in auto_visual.PRECISE):
+            out.add(i)
+    for m in re.finditer(r"Prázdna scéna: ([\d, ]+)", why or ""):
+        out |= {int(x) - 1 for x in re.findall(r"\d+", m.group(1))}
+    out |= {int(x) - 1 for x in re.findall(r"Prekrývanie v scéne (\d+)", why or "")}
+    return sorted(i for i in out if 0 <= i < len(body))
+
+
+def strengthen(script_id, why=""):
+    """Slabé scény (len ikony či text), prázdne a prekrývajúce sa scény dostanú nový obraz: mapu, graf, časovú os alebo blok „kto komu“.
+    Jedno malé lacné AI volanie len pre tieto scény (scenár ani hlas sa nemenia). Vráti počet vymenených scén (16.11.)."""
+    from . import ai, auto_visual, languages
+    s = db.one("SELECT * FROM scripts WHERE id=?", (script_id,))
+    if not s:
+        return 0
+    scenes = ensure_boards(script_id)
+    bad = _bad_scenes(scenes, why)
+    if not bad:
+        return 0
+    p = db.one("SELECT * FROM projects WHERE id=?", (s["project_id"],)) or {}
+    packs = [k for k in packs_for(p) if k in PACK]
+    allowed = set(_STRONG) | {PACK[k].split('"k":"')[1].split('"')[0] for k in packs if '"k":"' in PACK[k]}
+    items = {str(i): {"onscreen": scenes[i].get("onscreen", ""), "visual": (scenes[i].get("visual") or "")[:160]} for i in bad}
+    sprites = "user, people, phone, tv, laptop, wifi, house, city, store, bank, factory, server, cloud, document, mail, calendar, wallet, coins, " \
+              "banknote, piggybank, pricetag, lock, shield, key, chart, growth, package, truck, warehouse, container, plane, ship, globe, clock, idea, " \
+              "chip, check, cross, drop, bolt, flame, snow, leaf, car, battery, card, robot, satellite, gear, sun, flag, plug, tool"
+    lines = [x for x in SPEC.split("\n") if any(f'"k":"{k}"' in x for k in ("bars", "compare", "temp", "split", "scene", "map", "timeline"))]
+    try:
+        data = ai.ask(f"""Video "{s['title']}". These scenes now show only icons or text, or their picture is empty or crowded.
+Give each scene a NEW diagram that SHOWS what the scene says. Allowed diagrams ONLY:
+{chr(10).join(lines)}
+{chr(10).join(PACK[k] for k in packs)}
+Rules: a place, country, city or route -> "map"; years or history -> "timeline"; a number -> "bars", "count", "compare", "line" or "calc" with real numbers;
+people, companies or things giving something to each other -> "scene" with 2-4 things ONLY from this list: {sprites} (every thing labelled, every arrow says what moves).
+Never "hero", "text", "list", "icons", "draw", "svg" or "mech". Labels max 3 words. Write labels in {languages.english(s['lang'])}.
+Scenes: {json.dumps(items, ensure_ascii=False)}
+Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "strengthen", "cheap")
+    except Exception as e:
+        print("silnejší obraz:", e)
+        return 0
+    n = 0
+    for i in bad:
+        d = (data or {}).get(str(i)) if isinstance(data, dict) else None
+        if isinstance(d, dict) and isinstance(d.get("d"), dict):
+            d = d["d"]
+        if not (isinstance(d, dict) and d.get("k") in allowed):
+            continue
+        if d["k"] == "scene" and not auto_visual.actors(d):
+            continue   # účastníci, ktorých nevieme nakresliť: ostal by len rad ikon
+        scenes[i]["anim"] = {"t": "board", "d": d}
+        n += 1
+    if n:
+        db.run("UPDATE scripts SET scenes=? WHERE id=?", (json.dumps(scenes, ensure_ascii=False), script_id))
+    return n
 
 
 def localized_scenes(s):
@@ -334,7 +623,18 @@ def page(data, font=None, font_text=None):
         tcss = _font_face("BrandT", font_text)
         if tcss:
             fcss += tcss + ":root{--ft:BrandT,var(--f0)}"
-    return (TEMPLATE.replace("/*FONT*/", fcss)
+    geo_js = ""
+    if any((sc.get("v") or {}).get("k") == "map" for sc in data.get("scenes", [])):
+        from . import geo
+        hist = {}
+        for sc in data.get("scenes", []):
+            for f in (sc.get("v") or {}).get("hist") or []:
+                hist[str(f["y"])] = geo.hist_json(f["y"])
+        geo_js = (geo.libs_js() + "\nwindow.TOPO=" + geo.world_json() + ";\nwindow.HIST={"
+                  + ",".join(json.dumps(k) + ":" + v for k, v in hist.items()) + "};").replace("</", "<\\/")
+    ic, al = _icons_js(data)
+    return (TEMPLATE.replace("/*FONT*/", fcss).replace("/*GEOLIBS*/", geo_js, 1)
+            .replace("/*PACK_ICONS*/", ic.replace("</", "<\\/"), 1).replace("/*ICON_ALIAS*/{}", al.replace("</", "<\\/"), 1)
             .replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/")))
 
 
@@ -347,12 +647,12 @@ html,body{width:1080px;height:1920px;background:#000;overflow:hidden;font-family
 .sc{position:absolute;left:0;top:0;display:none}
 #root{position:absolute;left:0;top:0;transform-origin:0 0}
 .fr{position:absolute;inset:26px;border:2px solid rgba(255,255,255,.22);border-radius:36px;opacity:0}
-.kick{position:absolute;left:72px;top:318px;font-size:25px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:#cfcfcf;white-space:nowrap}
+.kick{display:none;position:absolute;left:72px;top:318px;font-size:25px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:#cfcfcf;white-space:nowrap}
 .kick b{color:var(--acc)}
-.ttl{position:absolute;left:72px;top:362px;width:860px;font-size:82px;line-height:1.02;font-weight:800;text-transform:uppercase;letter-spacing:-1px;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word}
+.ttl{position:absolute;left:72px;top:318px;width:860px;z-index:3;text-shadow:0 4px 26px #000,0 0 8px rgba(0,0,0,.8);font-size:82px;line-height:1.02;font-weight:800;text-transform:uppercase;letter-spacing:-1px;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word}
 .ttl .w{display:inline-block;overflow:hidden;vertical-align:top;padding-bottom:.08em;margin-bottom:-.08em}
 .ttl .w>span{display:inline-block}
-.viz{position:absolute;left:72px;top:735px;width:864px;height:560px}
+.viz{position:absolute;left:72px;top:719px;width:864px;height:560px}
 .lab{position:absolute;font-size:26px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#bdbdbd;line-height:1.2}
 .lab.a{color:var(--acc)}
 .txt{position:absolute;font-family:var(--ft);font-size:38px;line-height:1.2;color:#fff}
@@ -360,7 +660,7 @@ html,body{width:1080px;height:1920px;background:#000;overflow:hidden;font-family
 .card{position:absolute;border:1.5px solid rgba(255,255,255,.16);background:#0d0d0d;border-radius:14px}
 svg{position:absolute;left:0;top:0;overflow:visible}
 svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
-#cap{position:absolute;left:72px;width:864px;top:1425px;text-align:center;font-family:var(--ft);font-size:60px;font-weight:700;line-height:1.2;color:#fff;text-shadow:0 4px 24px #000;text-wrap:balance}
+#cap{position:absolute;left:72px;width:864px;top:1480px;text-align:center;font-family:var(--ft);font-size:60px;font-weight:700;line-height:1.2;color:#fff;text-shadow:0 4px 24px #000;text-wrap:balance}
 #cap span{color:rgba(255,255,255,.42)}#cap span.on{color:#fff}#cap span.k{color:var(--acc)}
 #lg{position:absolute;left:72px;top:196px;max-width:340px;max-height:88px;display:none}
 #end{position:absolute;inset:0;display:none;background:#000}
@@ -370,20 +670,22 @@ svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
 #bar{position:absolute;left:0;top:1906px;height:14px;background:var(--acc);width:0}
 #bg{position:absolute;left:0;top:0}
 /* bezpečná zóna na výšku: vpravo tlačidlá, dole popis a názov kanála, hore lišta aplikácie */
-#stage{position:absolute;inset:0;transform-origin:72px 196px;transform:translate(24px,74px) scale(.92)}
+.notext .ttl,.notext .kick,.notext #cap,.notext #lg,.notext #gdc,.notext #bg{visibility:hidden!important}
+#stage{position:absolute;inset:0;transform-origin:72px 196px;transform:translate(8px,-56px) scale(.97)}
 .viz{transform-origin:center}
 body.wide,html.wide{width:1920px;height:1080px}
 .wide #stage{transform:none}
 .wide #glow{left:310px;top:-110px}
 .wide #lg{left:150px;top:72px;max-width:280px;max-height:64px}
-.wide .kick{left:150px;top:166px;font-size:22px}
+.wide .kick{display:block;left:150px;top:166px;font-size:22px}
 .wide .ttl{left:150px;top:200px;width:1620px}
-.wide .viz{left:528px;top:322px}
-.wide #cap{left:260px;width:1400px;top:902px;font-size:44px}
+.wide .viz{left:528px;top:345px}
+.wide #cap{left:260px;width:1400px;top:975px;font-size:44px}
 .wide #end .gl{left:310px;top:-110px}
 .wide #end .ln{top:760px}
 .wide #bar{top:1068px;height:12px}
 </style></head><body><canvas id="bg"></canvas><div id="glow"></div><div id="stage"><div id="root"></div><img id="lg"><div id="cap"></div></div><div id="end"><div class="gl"></div><img><div class="ln"></div></div><div id="bar"></div>
+<script>/*GEOLIBS*/</script>
 <script>
 const D=__DATA__;
 document.documentElement.style.setProperty('--acc',D.acc);document.documentElement.lang=D.lang||'en';
@@ -437,7 +739,10 @@ fridge:'<rect x="26" y="8" width="48" height="84" rx="6"/><path d="M26 38 H74"/>
 fan:'<circle cx="50" cy="40" r="32"/><g class="spin"><circle cx="50" cy="40" r="4"/><path d="M50 36 C58 30 58 18 50 12 C46 20 46 30 50 36 Z"/><path d="M53.5 42 C63 44 72 52 74 58 C64 58 56 50 53.5 42 Z"/><path d="M46.5 42 C44 50 36 58 26 58 C28 50 37 44 46.5 42 Z"/></g><path d="M38 70 L32 90 H68 L62 70"/>',
 boiler:'<rect x="24" y="8" width="52" height="70" rx="6"/><path d="M50 60 C40 52 44 42 50 34 C56 42 60 52 50 60 Z"/><path d="M34 20 H66"/><path d="M36 78 V92 M64 78 V92"/>',
 city:'<path d="M8 88 H92"/><rect x="14" y="40" width="20" height="48"/><rect x="40" y="18" width="22" height="70"/><rect x="68" y="50" width="18" height="38"/><path d="M20 50 H28 M20 62 H28 M46 30 H56 M46 44 H56 M46 58 H56 M73 60 H81 M73 72 H81"/>'};
-function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[name]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
+const WSPIN=new Set('gear wheel tyre saw_blade flywheel impeller propeller ship_propeller sprocket ball_bearing roller_bearing brake_disc vinyl film_reel roulette ship_wheel'.split(' '));const canSpin=n=>WSPIN.has(IR(String(n||'')));
+function IR(name){const ok=n=>ICONS[n]?n:(ICON_ALIAS[n]&&ICONS[ICON_ALIAS[n]]?ICON_ALIAS[n]:null);const one=n=>ok(n)||ok(n.replace(/ies$/,'y'))||ok(n.replace(/es$/,''))||ok(n.replace(/s$/,''));
+let n=String(name||'').toLowerCase().trim().replace(/[\s-]+/g,'_');let r=one(n);if(r)return r;const p=n.split('_').filter(Boolean);for(let i=p.length-1;i>=0;i--){r=one(p[i]);if(r)return r}return 'check'}
+function icon(name,size,col,sw){const s=svg(size,size,'');s.setAttribute('viewBox','0 0 100 100');s.innerHTML=(ICONS[IR(name)]||ICONS.check).replace(/<(path|rect|circle)/g,'<$1 class="d" pathLength="1"');s.style.color=col||'#fff';s.querySelectorAll('.d').forEach(p=>{p.setAttribute('stroke','currentColor');p.setAttribute('stroke-width',sw||3.2)});s.querySelectorAll('.spin').forEach(g=>SPIN.push(g));return s}
 const SPIN=[];
 function draw(s,p){s.querySelectorAll('.d').forEach(d=>{d.style.strokeDasharray='1 1';d.style.strokeDashoffset=1-cl(p)})}
 function show(e,p,dy){e.style.opacity=cl(p);e.style.transform=`translateY(${(1-E(p))*(dy==null?24:dy)}px)`}
@@ -484,8 +789,9 @@ const hot=pt.y<112&&pt.x>432||pt.x>640||pt.y>480&&pt.x>432;c.setAttribute('fill'
 V.bars=(v,d)=>{const I=(d.i||[]).slice(0,4);const n=I.length||1,max=Math.max(...I.map(x=>N(x[1])),1),bw=Math.min(170,680/n),gap=(864-bw*n)/(n+1);
 const base=440,mh=360;const s=svg(864,560,`<path class="d ax" pathLength="1" d="M0 ${base} H864" stroke="#fff" stroke-width="3"/>`);v.append(s);
 const it=I.map((x,i)=>{const L=gap+i*(bw+gap),last=i==n-1;const r=el('div','',`position:absolute;left:${L}px;width:${bw}px;bottom:${560-base}px;height:0;background:${last?'var(--acc)':i%2?'#e9e9e9':'#3b3b3b'}`);
-const val=el('div','big',`left:${L-40}px;width:${bw+80}px;text-align:center;font-size:40px;${last?'color:var(--acc)':''}`);const lb=el('div','lab',`left:${L-30}px;width:${bw+60}px;top:${base+18}px;text-align:center`,esc(x[0]));
-v.append(r,val,lb);fit(lb,28,16,70);return {r,val,lb,v:N(x[1]),h:N(x[1])/max*mh,dec:decs(x[1])}});
+const vw=Math.min(bw+80,bw+gap-10),lw=Math.min(bw+60,bw+gap-12);const val=el('div','big',`left:${L+bw/2-vw/2}px;width:${vw}px;text-align:center;white-space:nowrap;font-size:40px;${last?'color:var(--acc)':''}`,esc(NF(N(x[1]),decs(x[1]))+(d.u?' '+d.u:'')));const lb=el('div','lab',`left:${L+bw/2-lw/2}px;width:${lw}px;top:${base+18}px;text-align:center`,esc(x[0]));
+const fu=d.fl&&d.fl[i];if(fu){const f=el('img','',`position:absolute;left:${L+bw/2-33}px;top:${base+16}px;width:66px;height:49px;border-radius:4px;object-fit:cover;box-shadow:0 2px 10px rgba(0,0,0,.6)`);f.src=fu;v.append(f);lb.style.top=(base+76)+'px'}
+v.append(r,val,lb);fit(lb,28,13,fu?44:70);fit(val,40,18,60);return {r,val,lb,v:N(x[1]),h:N(x[1])/max*mh,dec:decs(x[1])}});
 return (t,st)=>{const ax=s.querySelector('.ax');ax.style.strokeDasharray='1 1';ax.style.strokeDashoffset=1-st(0,.6);
 it.forEach((o,i)=>{const p=st(.4+i*.9,.9);o.r.style.height=(E(p)*o.h)+'px';o.val.style.top=(base-E(p)*o.h-52)+'px';o.val.textContent=NF(o.v*E(p),o.dec)+(d.u?' '+d.u:'');o.val.style.opacity=cl(p*3);show(o.lb,st(.4+i*.9,.5),0)})}};
 V.calc=(v,d)=>{const R=(d.r||[]).slice(0,4);const rh=Math.min(130,540/Math.max(1,R.length));
@@ -507,14 +813,15 @@ r.innerHTML=`<div style="flex:none;color:var(--acc);font-weight:800;font-size:54
 return (t,st)=>rows.forEach((r,i)=>{const p=st(i*1,.6);r.style.opacity=p;r.style.transform=`translateX(${(1-E(p))*-50}px)`})};
 V.icons=(v,d)=>{const I=(d.i||[]).slice(0,4);const n=I.length||1;const sz=n>3?150:190,step=864/n;const s=svg(864,560,'');v.append(s);
 const items=I.map((x,i)=>{const cx=step*i+step/2;const ic=icon(x[0],sz,i==n-1?D.acc:'#fff',3);ic.style.left=(cx-sz/2)+'px';ic.style.top=(240-sz/2)+'px';v.append(ic);
-const lb=el('div','lab',`left:${cx-step/2+6}px;width:${step-12}px;top:${250+sz/2+24}px;text-align:center;${i==n-1?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,26,16,92);
+const lb=el('div','lab',`left:${cx-step/2+6}px;width:${step-12}px;top:${250+sz/2+24}px;text-align:center;${i==n-1?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,26,14,92,step-44);
 let ar=null;if(i<n-1){ar=document.createElementNS(SVGNS,'path');ar.setAttribute('d',`M${cx+sz/2+10} 240 H${cx+step-sz/2-10}`);ar.setAttribute('stroke','#777');ar.setAttribute('stroke-width','3');ar.setAttribute('stroke-dasharray','10 9');s.append(ar)}return {ic,lb,ar}});
 return (t,st)=>items.forEach((o,i)=>{const p=st(i*1.1,1);draw(o.ic,p);o.ic.style.opacity=p>0?1:0;show(o.lb,st(i*1.1+.4,.5),0);if(o.ar){o.ar.style.opacity=st(i*1.1+.8,.4);o.ar.style.strokeDashoffset=-t*40}})};
 V.temp=(v,d)=>{const A=d.a||['',0],B=d.b||['',0],u=d.u||'°C';const va=N(A[1]),vb=N(B[1]);const lo=Math.min(va,vb,0)-5,hi=Math.max(va,vb)+5;const Y=v=>440-(v-lo)/(hi-lo)*380;
 const th=(x,col)=>`<path d="M${x-22} 60 A22 22 0 0 1 ${x+22} 60 V430 A38 38 0 1 1 ${x-22} 430 Z" stroke="#fff" stroke-width="3" fill="none"/><circle cx="${x}" cy="462" r="26" fill="${col}"/>`;
 const s=svg(864,560,th(220,'#a9a9a9')+th(644,'var(--acc)')+`<rect class="fa" x="208" width="24" fill="#a9a9a9"/><rect class="fb" x="632" width="24" fill="var(--acc)"/><path class="dt" d="" stroke="#fff" stroke-width="3" stroke-dasharray="8 8" fill="none"/>`);v.append(s);
 const la=el('div','lab',`left:20px;top:0;width:180px;text-align:right`,esc(A[0])),lb=el('div','lab a',`left:684px;top:0;width:180px`,esc(B[0])),na=el('div','big',`left:0;top:${Y(va)-30}px;width:176px;text-align:right;font-size:48px;color:#a9a9a9`),nb=el('div','big',`left:684px;top:${Y(vb)-30}px;width:180px;font-size:48px;color:var(--acc)`),
-dl=el('div','big',`left:270px;top:${(Y(va)+Y(vb))/2-34}px;width:324px;text-align:center;font-size:56px`);v.append(la,lb,na,nb,dl);fit(la,24,16,60);fit(lb,24,16,60);
+dl=el('div','big',`left:270px;top:${(Y(va)+Y(vb))/2-34}px;width:324px;text-align:center;font-size:56px`);v.append(la,lb,na,nb,dl);fit(la,24,16,60);fit(lb,24,16,60);na.style.top=Math.max(Y(va)-30,la.offsetHeight+6)+'px';nb.style.top=Math.max(Y(vb)-30,lb.offsetHeight+6)+'px';   // číslo nikdy neleží cez názov nad ním
+
 return (t,st)=>{const p=E(st(.2,1.2)),q=E(st(1,1.2));const ya=440+(Y(va)-440)*p,yb=440+(Y(vb)-440)*q;const fa=s.querySelector('.fa'),fb=s.querySelector('.fb');
 fa.setAttribute('y',ya);fa.setAttribute('height',Math.max(0,462-ya));fb.setAttribute('y',yb);fb.setAttribute('height',Math.max(0,462-yb));
 show(la,st(0,.5),0);show(lb,st(.8,.5),0);na.textContent=NF(va*p,0)+' '+u;nb.textContent=NF(vb*q,0)+' '+u;na.style.opacity=st(.2,.3);nb.style.opacity=st(1,.3);
@@ -534,7 +841,7 @@ const halo=el('div','',`position:absolute;left:${cx-sz*.95}px;top:${cy-sz*.95}px
 const ic=icon(d.i||'bolt',sz,'#fff',2.2);ic.style.left=(cx-sz/2)+'px';ic.style.top=(cy-sz/2)+'px';v.append(ic);
 const w=el('div','big',`left:0;top:${cy+sz/2+26}px;width:864px;text-align:center;font-size:70px;text-transform:uppercase`,esc(d.w||'')),s2=el('div','lab a',`left:82px;top:${cy+sz/2+112}px;width:700px;text-align:center;font-size:30px`,esc(d.s||''));v.append(w,s2);fit(w,70,34,84,840);fit(s2,30,18,70,700);
 return (t,st)=>{const p=st(0,1.4);draw(ic,p);ic.style.opacity=p>0?1:0;ic.style.transform=`translateY(${Math.sin(t*1.1)*8}px) scale(${.9+.1*E(p)})`;halo.style.opacity=.22*E(st(.3,1.2))*(1+.12*Math.sin(t*1.6));
-rings.forEach((r,i)=>{const q=((t*.32+i/3)%1);const on=cl(st(.8,.6));r.style.transform=`scale(${.72+q*.9})`;r.style.opacity=on*(1-q)*.55});show(w,st(1,.6),30);show(s2,st(1.5,.6),20)}};
+rings.forEach((r,i)=>{const q=((t*.32+i/3)%1);const on=cl(st(.8,.6));r.style.transform=`scale(${.72+q*.56})`;r.style.opacity=on*(1-q)*.55});show(w,st(1,.6),30);show(s2,st(1.5,.6),20)}};
 // zložená scéna: hotové obrázky + šípky s pohybom, rozloženie robí appka (AI nedáva súradnice)
 V.scene=(v,d)=>{const NN=(Array.isArray(d.n)?d.n:[]).filter(x=>Array.isArray(x)).slice(0,6),n=NN.length;if(!n)return;
 const LL=(Array.isArray(d.l)?d.l:[]).filter(x=>Array.isArray(x)&&x[0]!=x[1]&&NN[x[0]]&&NN[x[1]]).slice(0,8);
@@ -544,8 +851,8 @@ const R=Math.max(...cols.map(c=>c.length)),cw=864/C,rh=Math.min(250,500/R),sz=Ma
 const pos=NN.map(()=>[0,0]);cols.forEach((c,ci)=>c.forEach((i,ri)=>{pos[i]=[cw*ci+cw/2,250+(ri-(c.length-1)/2)*rh-18]}));
 const s=svg(864,560,'');s.style.position='absolute';s.style.left='0';s.style.top='0';v.append(s);
 const nodes=NN.map((x,i)=>{const hot=LL.some(e=>e[1]==i&&e[3])&&!LL.some(e=>e[0]==i);const ic=icon(x[0],sz,hot?D.acc:'#fff',2.8);ic.style.left=(pos[i][0]-sz/2)+'px';ic.style.top=(pos[i][1]-sz/2)+'px';v.append(ic);
-const lb=el('div','lab',`left:${pos[i][0]-cw/2+8}px;width:${cw-16}px;top:${pos[i][1]+sz/2+10}px;text-align:center;font-size:22px;letter-spacing:2px;${hot?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,22,14,58);
-return {ic,lb,a:String(x[2]||''),at:lay[i],ph:i*1.7}});
+const lb=el('div','lab',`left:${pos[i][0]-cw/2+8}px;width:${cw-16}px;top:${pos[i][1]+sz/2+10}px;text-align:center;font-size:22px;letter-spacing:2px;${hot?'color:var(--acc)':''}`,esc(x[1]||''));v.append(lb);fit(lb,22,13,58,cw-40);
+return {ic,lb,n:x[0],a:String(x[2]||''),at:lay[i],ph:i*1.7}});
 const mk=(tag,at)=>{const e=document.createElementNS(SVGNS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
 const links=LL.map((e,k)=>{const a=pos[e[0]],b=pos[e[1]],col=e[3]?D.acc:'#9a9a9a',g=sz/2+16;let dstr;
 if(lay[e[1]]>lay[e[0]]){const x1=a[0]+g,x2=b[0]-g;dstr=a[1]==b[1]?`M${x1} ${a[1]} H${x2}`:`M${x1} ${a[1]} C${(x1+x2)/2} ${a[1]} ${(x1+x2)/2} ${b[1]} ${x2} ${b[1]}`}
@@ -555,7 +862,7 @@ const hd=mk('path',{d:`M${q.x-H*Math.cos(an-.5)} ${q.y-H*Math.sin(an-.5)} L${q.x
 const dots=[0,1].map(()=>{const c=mk('circle',{r:5.5,fill:e[3]?D.acc:'#fff',opacity:0});s.append(c);return c});
 const flat=a[1]==b[1]||lay[e[1]]<=lay[e[0]],skip=lay[e[1]]-lay[e[0]]>1;const m=pa.getPointAtLength(L*(flat&&skip?.2:.5));const lb=el('div','lab',flat?`left:${m.x-120}px;width:240px;top:${m.y-(skip?-12:44)}px;text-align:center;`:`left:${m.x+16}px;width:200px;top:${m.y-13}px;text-align:left;`);lb.style.cssText+=`font-size:20px;letter-spacing:1.5px;color:${e[3]?'var(--acc)':'#d0d0d0'};text-shadow:0 0 10px #000,0 0 10px #000`;lb.innerHTML=esc(e[2]||'');v.append(lb);fit(lb,20,13,30,flat?Math.max(90,(skip?.4:1)*(Math.abs(b[0]-a[0])-sz-20)):Math.max(70,(b[0]-a[0])/2-sz/2));
 return {pa,hd,dots,lb,L,at:Math.max(lay[e[0]],lay[e[1]]-1)+.6}});
-return (t,st)=>{nodes.forEach(o=>{const p=st(o.at*1.2,.9);draw(o.ic,p);o.ic.style.opacity=p>0?1:0;let tr=`scale(${.9+.1*E(p)})`;if(/shake/.test(o.a))tr+=` translate(${Math.sin(t*31+o.ph)*4}px,${Math.cos(t*27+o.ph)*2}px)`;if(/float/.test(o.a))tr+=` translateY(${Math.sin(t*1.4+o.ph)*7}px)`;if(/pulse/.test(o.a))tr+=` scale(${1+.06*Math.sin(t*3.2+o.ph)})`;if(/spin/.test(o.a))tr+=` rotate(${(t*80)%360}deg)`;o.ic.style.transform=tr;show(o.lb,st(o.at*1.2+.4,.5),0)});
+return (t,st)=>{nodes.forEach(o=>{const p=st(o.at*1.2,.9);draw(o.ic,p);o.ic.style.opacity=p>0?1:0;let tr=`scale(${.9+.1*E(p)})`;if(/shake/.test(o.a))tr+=` translate(${Math.sin(t*31+o.ph)*4}px,${Math.cos(t*27+o.ph)*2}px)`;if(/float/.test(o.a))tr+=` translateY(${Math.sin(t*1.4+o.ph)*7}px)`;if(/pulse/.test(o.a))tr+=` scale(${1+.06*Math.sin(t*3.2+o.ph)})`;if(/spin/.test(o.a)&&canSpin(o.n))tr+=` rotate(${(t*80)%360}deg)`;o.ic.style.transform=tr;show(o.lb,st(o.at*1.2+.4,.5),0)});
 links.forEach((o,k)=>{const p=st(o.at*1.2,.8);o.pa.style.strokeDasharray='1 1';o.pa.style.strokeDashoffset=1-cl(p);o.hd.setAttribute('opacity',p>=1?1:0);show(o.lb,st(o.at*1.2+.5,.5),0);
 o.dots.forEach((c,i)=>{const q=((t*.5+i/2+k*.17)%1);if(p<1){c.setAttribute('opacity',0);return}const pt=o.pa.getPointAtLength(q*o.L);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);c.setAttribute('opacity',Math.sin(q*Math.PI))})})}};
 // vlastná kresba: AI opíše jednoduché tvary, appka ich nakreslí a rozhýbe (ukázať, nie len povedať)
@@ -581,7 +888,7 @@ s.append(g);const dots=/flow/.test(A)&&flow?[0,1,2].map(()=>{const c=mk('circle'
 const pts=[];if(o.s=='turbine'){const x=p[0]||216,y=p[1]||240,h=Math.max(60,p[2]||150),R=h*.42;for(let k=0;k<=10;k++)pts.push([x,y-h*k/10]);[1,.6,.25].forEach(f=>{for(let k=0;k<20;k++)pts.push([x+R*f*Math.cos(k*.314),y-h+R*f*Math.sin(k*.314)])})}
 else if(o.s=='icon'){const z=Math.max(20,p[2]||60);for(let a=0;a<=4;a++)for(let b=0;b<=4;b++)pts.push([p[0]-z/2+z*a/4,p[1]-z/2+z*b/4])}
 else if(o.s!='text')g.querySelectorAll('.d').forEach(e=>{try{const L=e.getTotalLength(),m=Math.max(8,Math.min(60,Math.round(L/5)));for(let k=0;k<=m;k++){const q=e.getPointAtLength(L*k/m);pts.push([q.x,q.y])}}catch(_){}});
-return {g,lb,rot,cx,cy,A,at:Math.max(0,n(o.at)),dots,flow,ph:cx*.05+cy*.03,spin:/spin/.test(A)&&!rot,pts,tx:o.s=='text'?g.firstChild:null}}).filter(Boolean);
+return {g,lb,rot,cx,cy,A,at:Math.max(0,n(o.at)),dots,flow,ph:cx*.05+cy*.03,spin:/spin/.test(A)&&!rot&&(o.s!='icon'||canSpin(o.i)),pts,tx:o.s=='text'?g.firstChild:null}}).filter(Boolean);
 // texty a popisy nesmú ležať na čiarach ani na sebe: nájdi najbližšie voľné miesto
 const placed=[];const P=els.reduce((a,e)=>a.concat(e.pts),[]);
 const bb=e=>{try{const b=e.getBBox();return [b.x-3,b.y-2,b.x+b.width+3,b.y+b.height+2]}catch(_){return null}};
@@ -597,6 +904,7 @@ if(/float/.test(o.A))tr+=`translate(0 ${Math.sin(t*1.4+o.ph)*5}) `;if(/pulse/.te
 if(o.spin)tr+=`rotate(${(t*80)%360} ${o.cx} ${o.cy}) `;o.g.setAttribute('transform',tr);
 if(o.rot)o.rot.setAttribute('transform',`rotate(${(t*o.rot._v*cl(p*1.5))%360} ${o.rot._c[0]} ${o.rot._c[1]})`);
 if(o.dots.length){let L=0;try{L=o.flow.getTotalLength()}catch(e){}o.dots.forEach((c,i)=>{const q=((t*.45+i/3)%1);if(!L||p<1){c.setAttribute('opacity',0);return}const pt=o.flow.getPointAtLength(q*L);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);c.setAttribute('opacity',Math.sin(q*Math.PI))})}})};
+/*EXTRA_BOARDS*/
 V.text=(v,d)=>{const ws=String(d.w||'').split(/\s+/).filter(Boolean).slice(0,6);const box=el('div','',`position:absolute;left:0;top:40px;width:864px;height:480px;display:flex;flex-wrap:wrap;align-content:center;gap:0 22px;font-weight:900;text-transform:uppercase;line-height:1.02;font-size:118px;letter-spacing:-2px`);
 const sp=ws.map((w,i)=>{const e=el('span','',i==ws.length-1?'color:var(--acc)':'',esc(w));box.append(e);return e});v.append(box);fit(box,118,48,480,864);
 return (t,st)=>sp.forEach((e,i)=>{const p=st(i*.25,.45);e.style.opacity=p;e.style.display='inline-block';e.style.transform=`translateY(${(1-E(p))*50}px)`})};
@@ -617,12 +925,39 @@ const root=document.getElementById('root');const SC=D.scenes.map((sc,i)=>{const 
 const row=Math.floor(i/COLS),kk=i%COLS,col=row%2?COLS-1-kk:kk;const X0=col*(PW+GAP),Y0=row*(PH+GAP);w.style.left=X0+'px';w.style.top=Y0+'px';w.style.width=PW+'px';w.style.height=PH+'px';const fr=el('div','fr');w.append(fr);
 const k=el('div','kick','',`<b>${String(i+1).padStart(2,'0')}</b>${D.kicker?' · '+esc(D.kicker):''} · ${i+1}/${D.scenes.length}`);
 const tt=el('div','ttl');tt.lang=D.lang;tt.innerHTML=String(sc.h||'').split(/\s+/).filter(Boolean).map(x=>`<span class="w"><span>${esc(x)}</span></span>`).join(' ');w.append(k,tt);
-const intro=i==0;if(WIDE)fit(tt,intro?66:58,34,76,1620);else fit(tt,intro?104:82,44,intro?330:270,860);const th=tt.offsetHeight;const vz=el('div','viz');if(!WIDE)vz.style.top=Math.max(690,362+th+90)+'px';w.append(vz);
+const intro=i==0;if(WIDE)fit(tt,intro?66:58,30,76,1620);else fit(tt,intro?104:82,36,212,860);const vz=el('div','viz');w.append(vz);
 let upd=()=>{};try{upd=(V[sc.v.k]||V.text)(vz,sc.v)||(()=>{})}catch(e){vz.textContent=''}
 w.style.display='none';
-return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0}});
+const pro=sc.v.k=='mech'&&!!(window.MECHPRO&&MECHPRO[sc.v.m]);return {w,k,tt,vz,upd,fr,c:[X0+PW/2,Y0+PH/2],t0:sc.t0,t1:sc.t1,steps:sc.steps||0,pro,fast:i==0&&pro}});
 const CAP=document.getElementById('cap'),BAR=document.getElementById('bar'),GLOW=document.getElementById('glow'),LG=document.getElementById('lg'),END=document.getElementById('end');let lastCap=-1;
 const EIMG=END.querySelector('img'),ELN=END.querySelector('.ln'),EGL=END.querySelector('.gl');const TAIL=D.tail||0;
+// sprievodca: líška (maskot) pri titulkoch – „hovorí“ ich, ukazuje hore na stroj a reaguje na čísla (keď je D.guide; na výšku vľavo od titulkov, na šírku v ľavom dolnom rohu pod číslami)
+const GD=(()=>{if(!D.guide)return null;const R=2,w=210,h=250,c=el('canvas','',WIDE?'position:absolute;left:150px;top:846px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(.85)':'position:absolute;left:36px;top:1474px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(1.2)');c.id='gdc';c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
+if(WIDE){CAP.style.left='380px';CAP.style.width='1160px'}else{CAP.style.left='300px';CAP.style.width='644px';CAP.style.textAlign='left'}return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
+function drawGuide(t,cur,talk,ending){const {x,R,w,h}=GD,A=D.acc,T2=Math.PI*2;x.setTransform(R,0,0,R,0,0);x.clearRect(0,0,w,h);const sc=D.scenes[cur]||{},v=sc.v||{},lt=t-(sc.t0||0),pt=v.k=='mech'?E((lt-.45)/.4):0;
+let ex=0,ek=0;if(v.c&&v.c.t!=null){ek=lt-v.c.t;if(ek>=0&&ek<1.3)ex=Math.exp(-ek*3.2)}
+const a=E((t-.15)/.45)*(ending?0:1);if(a<=0)return;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,bob=Math.sin(t*2.1)*5-ex*24*Math.abs(Math.sin(ek*12)),blink=((t+.7)%3.3)<.11&&ex<.2;
+x.globalAlpha=a;x.lineJoin='round';x.lineCap='round';x.fillStyle='rgba(0,0,0,.55)';x.beginPath();x.ellipse(92,240,44+bob*.4,6,0,0,T2);x.fill();
+x.save();x.translate(0,(1-a)*46+bob);const box=(X,Y,W,H,r,f,st,lw)=>{x.beginPath();x.roundRect(X,Y,W,H,r);x.fillStyle=f;x.fill();if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}};
+// líška (maskot kanálov): srsť má farbu kanála, papuľa je krémová; chvost sa kýve, ústa idú s hlasom, pri stroji ukáže hore naň
+const DK='#16181b',WH='#fff',CR='#e9e3d8',pth=(P,f,st,lw)=>{x.beginPath();P.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]));x.closePath();if(f){x.fillStyle=f;x.fill()}if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}},
+ell=(X,Y,rx,ry,f)=>{x.beginPath();x.ellipse(X,Y,rx,ry,0,0,T2);x.fillStyle=f;x.fill()};
+x.save();x.translate(66,204);x.rotate(.7+Math.sin(t*2.4)*.12);x.beginPath();x.moveTo(0,0);x.bezierCurveTo(-29.6,-18,-59.2,-30,-74,-8);x.bezierCurveTo(-59.2,10,-29.6,14,0,12);x.closePath();x.fillStyle=A;x.fill();x.strokeStyle=WH;x.lineWidth=4;x.stroke();
+x.beginPath();x.moveTo(-57.7,-24);x.bezierCurveTo(-66.6,-20,-74,-12,-74,-8);x.bezierCurveTo(-66.6,4,-60.7,6,-54.8,6);x.closePath();x.fillStyle=CR;x.fill();x.restore();
+// ľavá ruka, telo s bruškom
+{const EX=54+Math.sin(t*2.1)*3;x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(66,162);x.lineTo(EX,188);x.stroke();x.fillStyle=WH;x.beginPath();x.arc(EX,188,5.6,0,T2);x.fill()}
+box(62,146,60,70,24,A,WH);ell(92,186,20,26,CR);
+// hlava: uši, tvár s maskou, oči (pri stroji sa pozrú hore), ňufák, ústa
+pth([[52,80],[58,36],[84,64]],A,WH);pth([[132,80],[126,36],[100,64]],A,WH);pth([[59,72],[62,46],[76,64]],DK);pth([[125,72],[122,46],[108,64]],DK);
+pth([[44,72],[140,72],[136,102],[92,138],[48,102]],A,WH);pth([[48,98],[86,110],[92,138],[98,110],[136,98],[92,138]],CR);
+{const dx=4*pt,dy=-3*pt-2*ex;[72,112].forEach(X=>{if(blink){x.strokeStyle=DK;x.lineWidth=4;x.beginPath();x.moveTo(X-8,86);x.lineTo(X+8,86);x.stroke()}else{x.fillStyle=DK;x.beginPath();x.arc(X+dx,86+dy,8*(1+.25*ex),0,T2);x.fill();x.fillStyle='rgba(255,255,255,.9)';x.beginPath();x.arc(X+dx+2.8,86+dy-2.8,2.24,0,T2);x.fill()}})}
+ell(92,126,7,5,DK);{const hh=2+12*amp+6*ex;x.beginPath();x.roundRect(87,112-hh/2,10,hh,Math.min(hh/2,7));x.fillStyle=DK;x.fill()}
+// pravá ruka: v pokoji dole, pri stroji ukazuje hore naň (šípka, nie prst)
+{const an=1.2-2.32*pt+Math.sin(t*4.6)*.07*pt,S0=[122,160],EL=[S0[0]+Math.cos(an+.4*pt)*30,S0[1]+Math.sin(an+.4*pt)*30],HD=[EL[0]+Math.cos(an-.25*pt)*34,EL[1]+Math.sin(an-.25*pt)*34];
+x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(S0[0],S0[1]);x.lineTo(EL[0],EL[1]);x.lineTo(HD[0],HD[1]);x.stroke();x.fillStyle=A;x.beginPath();x.arc(HD[0],HD[1],8,0,T2);x.fill();x.strokeStyle=WH;x.lineWidth=2;x.stroke();
+if(pt>.5){const b=an-.25,k=E((pt-.5)/.4),w=3*Math.sin(t*5),TX=HD[0]+Math.cos(b)*(27+w),TY=HD[1]+Math.sin(b)*(27+w);x.globalAlpha=a*k;x.strokeStyle=A;x.lineWidth=6;x.beginPath();x.moveTo(TX-Math.cos(b-.75)*14,TY-Math.sin(b-.75)*14);x.lineTo(TX,TY);x.lineTo(TX-Math.cos(b+.75)*14,TY-Math.sin(b+.75)*14);x.stroke();x.globalAlpha=a}}
+x.restore();x.globalAlpha=1}
+
 if(D.logo){LG.src=D.logo;LG.style.display='block'}if(D.logoEnd||D.logo)EIMG.src=D.logoEnd||D.logo;
 const XF=.22;
 // pozadie v pohybe: jemná mriežka a čiastočky energie, ktoré pomaly stúpajú
@@ -632,51 +967,125 @@ const PT=Array.from({length:WIDE?46:38},()=>({x:rnd(),y:rnd(),r:1.2+rnd()*2.6,v:
 function drawBg(t,ending){CX.clearRect(0,0,PW,PH);if(ending)return;const g=120,off=(t*9)%g;CX.strokeStyle='rgba(255,255,255,.035)';CX.lineWidth=1;CX.beginPath();
 for(let x=-g+off;x<PW+g;x+=g){CX.moveTo(x,0);CX.lineTo(x,PH)}for(let y=-g+off*.6;y<PH+g;y+=g){CX.moveTo(0,y);CX.lineTo(PW,y)}CX.stroke();
 PT.forEach(p=>{const y=((p.y-t*p.v)%1+1)%1*PH,x=p.x*PW+Math.sin(t*.5+p.ph)*26;const al=(.10+.10*Math.sin(t*.9+p.ph))*(p.a?1.9:1);CX.fillStyle=p.a?D.acc:'#fff';CX.globalAlpha=Math.max(0,al);CX.beginPath();CX.arc(x,y,p.r,0,6.3);CX.fill()});CX.globalAlpha=1}
-function renderAt(t){let cur=SC.length-1;for(let i=0;i<SC.length;i++){if(t<SC[i].t1){cur=i;break}}
+function renderAt(t){let cur=SC.length-1;for(let i=0;i<SC.length;i++){if(t<SC[i].t1){cur=i;break}}window._cur=cur;
 const ending=TAIL>0&&t>=D.total,et=t-D.total;
-const MV=.8,LD=SC.length?SC[SC.length-1].t1-SC[SC.length-1].t0:0,ZO=NS>2?Math.min(3.2,Math.max(1.8,LD*.5)):0;const zo=ZO?EI((t-(D.total-ZO))/(ZO*.75)):0;
-let cx=SC[cur].c[0],cy=SC[cur].c[1],zs=1;if(cur>0){const p=EI((t-SC[cur].t0)/MV);if(p<1){const b=SC[cur-1].c;cx=b[0]+(cx-b[0])*p;cy=b[1]+(cy-b[1])*p;zs=1-.14*Math.sin(Math.PI*p)}}
+const MV=.8,LD=SC.length?SC[SC.length-1].t1-SC[SC.length-1].t0:0,ZO=NS>2&&!D.loop?Math.min(3.2,Math.max(1.8,LD*.5)):0;const zo=ZO?EI((t-(D.total-ZO))/(ZO*.75)):0;
+// prechod: stará scéna odíde doľava a nová príde sprava – vždy vodorovne, takže obraz ani nadpis nikdy neprejdú cez titulky
+let cx=SC[cur].c[0],cy=SC[cur].c[1],zs=1,tr=null;if(cur>0){const p=EI((t-SC[cur].t0)/MV);if(p<1){tr=[cur-1,cur,p];zs=1-.14*Math.sin(Math.PI*p)}}
+// slučka: na konci krátkeho videa kamera preletí späť na prvú scénu v jej úvodnom stave, takže koniec plynulo nadviaže na začiatok
+const lp=D.loop&&NS>1&&cur>0?EI((t-(D.len-.6))/.5):0;if(lp>0){tr=[cur,0,lp];zs=1-.14*Math.sin(Math.PI*lp)}
 let sx=PW/2,sy=PH/2;if(zo>0){const AW=WIDE?1700:864,AH=WIDE?790:1150,fs=Math.min(AW/WW,AH/WH);cx+=(WW/2-cx)*zo;cy+=(WH/2-cy)*zo;zs=1+(fs-1)*zo;sx+=((WIDE?960:504)-sx)*zo;sy+=((WIDE?465:750)-sy)*zo}
 root.style.transform=`translate(${sx-cx*zs}px,${sy-cy*zs}px) scale(${zs})`;root.style.opacity=ending?1-cl(et/.3):1;
-SC.forEach((s,i)=>{const lt=t-s.t0,dur=s.t1-s.t0;const vis=!(ending&&et>.3)&&(zo>0?i<=cur:(i==cur||(i==cur-1&&t-SC[cur].t0<MV)));s.w.style.display=vis?'block':'none';if(!vis)return;
-s.fr.style.opacity=zo;if(i!=cur)return;
+SC.forEach((s,i)=>{const home=lp>0&&i==0,lt=home?0:t-s.t0,dur=s.t1-s.t0;const vis=home||(!(ending&&et>.3)&&(zo>0?i<=cur:(i==cur||(i==cur-1&&t-SC[cur].t0<MV))));s.w.style.display=vis?'block':'none';if(!vis)return;
+s.w.style.transform=tr&&!zo&&(i==tr[0]||i==tr[1])?`translate(${SC[cur].c[0]-s.c[0]+(i==tr[1]?1-tr[2]:-tr[2])*(PW+GAP)}px,${SC[cur].c[1]-s.c[1]}px)`:'';
+s.fr.style.opacity=zo;if(i!=cur&&!home)return;
 const l2=i==0?lt:lt-.12;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
-const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=E((l2-.2)/.4);s.vz.style.transform=`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.28:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>s.fast?1:E((lt-.6-a*span)/(b*Math.max(.7,span)));
+s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=s.pro?`scale(${WIDE?1.28:1.1})`:`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.16:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
 SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
-if(ending){CAP.innerHTML='';LG.style.opacity=1-cl(et/.3);END.style.display='block';const p=E((et-.25)/.6);END.style.opacity=cl(et/.3);
+if(ending){CAP.innerHTML='';if(GD)drawGuide(t,cur,false,true);LG.style.opacity=1-cl(et/.3);END.style.display='block';const p=E((et-.25)/.6);END.style.opacity=cl(et/.3);
 EIMG.style.opacity=p;EIMG.style.transform=`translate(-50%,-50%) scale(${.94+.06*p})`;EGL.style.opacity=.30*E((et-.2)/1);ELN.style.transform=`scaleX(${E((et-.6)/.6)})`;
 ELN.style.top=((WIDE?540:960)+EIMG.offsetHeight/2+(WIDE?50:70))+'px';return}
 END.style.display='none';LG.style.opacity=.96*(1-cl(zo*1.6));
 let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e){ci=i;break}}
+if(GD)drawGuide(t,cur,ci>=0,ending);
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
-const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,30,112,1400);else fit(CAP,60,38,150,864);lastCap=ci}}
+const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,24,58,GD?1160:1400);else fit(CAP,GD?54:60,30,150,GD?644:864);lastCap=ci}}
 // náhľadový obrázok dlhého videa: veľký text vľavo, hlavný obraz vpravo, bez titulkov a lišty
 window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(Math.max(s.t0+.1,s.t1-.2));
-CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;
-const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';
-s.vz.style.opacity=1;s.vz.style.left=(WIDE?930:108)+'px';s.vz.style.top=(WIDE?250:980)+'px';s.vz.style.transform=`scale(${WIDE?1.42:1.25})`;
+CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;if(GD)GD.x.canvas.style.display='none';
+const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';s.vz.querySelectorAll('.phud').forEach(e=>e.style.display='none');
 GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';
 const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?820:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
 T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length-1?'var(--acc)':'#fff'}">${esc(w)}</span>`).join(' ');s.w.append(T);
-fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}};
+fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}
+// obraz dostane miesto, ktoré ostalo vedľa textu (na šírku) alebo pod ním (na výšku), a zmenší sa tak, aby sa doň zmestil celý
+const Z=s.pro&&window.KIT?KIT.ZN:{l:0,t:0,w:864,h:560},rg=document.createRange();rg.selectNodeContents(T);const tr=rg.getBoundingClientRect(),wr=s.w.getBoundingClientRect(),kx=wr.width/PW;
+const x0=WIDE?(tr.right-wr.left)/kx+44:60,x1=WIDE?1880:1020,y0=WIDE?70:(tr.bottom-wr.top)/kx+40,y1=WIDE?1010:1790,sc=Math.min(WIDE?1.42:1.25,(x1-x0)/Z.w,(y1-y0)/Z.h);
+s.vz.style.opacity=1;s.vz.style.transform=`scale(${sc})`;s.vz.style.left=((x0+x1)/2-432-(Z.l+Z.w/2-432)*sc)+'px';s.vz.style.top=((y0+y1)/2-280-(Z.t+Z.h/2-280)*sc)+'px'};
+// kontrola prekrývania (bez AI) pre práve vykreslenú snímku: čo leží cez čo, hoci nemá. Vráti aj miesta textov, aby sa dalo overiť, že pod nimi nie je obraz.
+window.ovl=function(){const s=SC[window._cur||0],bad=new Set(),B=e=>{const b=e.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom]},U=q=>q.length?[Math.min(...q.map(b=>b.left)),Math.min(...q.map(b=>b.top)),Math.max(...q.map(b=>b.right)),Math.max(...q.map(b=>b.bottom))]:null,
+TX=e=>{const r=document.createRange();r.selectNodeContents(e);return U([...r.getClientRects()].filter(b=>b.width>1&&b.height>1))},
+hit=(a,b,m)=>!!a&&!!b&&Math.min(a[2],b[2])-Math.max(a[0],b[0])>m&&Math.min(a[3],b[3])-Math.max(a[1],b[1])>m,
+op=e=>{let o=1;for(;e&&e.style;e=e.parentElement){const c=getComputedStyle(e);if(c.display=='none'||c.visibility=='hidden')return 0;o*=+c.opacity}return o};
+const T={},cb=CAP.getBoundingClientRect(),k=cb.width/(CAP.offsetWidth||1);T.titulky=[cb.left,cb.top,cb.right,cb.top+(WIDE?58:150)*k];
+T.nadpis=U([...s.tt.querySelectorAll('.w')].map(e=>e.getBoundingClientRect()));if(LG.offsetWidth&&op(LG)>.3)T.logo=B(LG);if(WIDE&&op(s.k)>.3)T['číslo scény']=TX(s.k);
+const G=GD&&op(GD.x.canvas)>.3?B(GD.x.canvas):null;if(G)T.sprievodca=G;const ks=Object.keys(T);
+ks.forEach((a,i)=>ks.slice(i+1).forEach(b=>{if(hit(T[a],T[b],2))bad.add(a+' × '+b)}));
+s.vz.querySelectorAll('canvas.pmod,canvas.phud').forEach(c=>{if(op(c)<.3)return;const r=B(c),nm=c.classList.contains('pmod')?'obraz stroja':'čísla pri stroji';ks.forEach(a=>{if(hit(T[a],r,3))bad.add(a+' × '+nm)});
+const S=c._S;if(!S)return;if(c.classList.contains('pmod')){const hc=[...s.vz.querySelectorAll('canvas.phud')].find(h=>h._S===S);if(hc&&hit(r,B(hc),2))bad.add('čísla pri stroji × obraz stroja');
+const tg=S.tags.filter(u=>u[4]>.5);tg.forEach((a,i)=>tg.slice(i+1).forEach(b=>{if(hit(a,b,2))bad.add('názvy v modeli cez seba')}))}
+else{const hd=S.hud.filter(u=>u[5]>.5).map(u=>[u[1],u[2],u[1]+u[3],u[2]+u[4]]);hd.forEach((a,i)=>hd.slice(i+1).forEach(b=>{if(hit(a,b,2))bad.add('čísla pri stroji cez seba')}))}});
+const lv=[...s.vz.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType==3&&n.textContent.trim())&&op(e)>.5).map(e=>[e,TX(e)]).filter(q=>q[1]);
+lv.forEach((a,i)=>{ks.forEach(b=>{if(hit(T[b],a[1],3))bad.add(b+' × popis v obraze')});lv.slice(i+1).forEach(b=>{if(!a[0].contains(b[0])&&!b[0].contains(a[0])&&hit(a[1],b[1],4)&&Math.min(a[1][3],b[1][3])-Math.max(a[1][1],b[1][1])>.3*Math.min(a[1][3]-a[1][1],b[1][3]-b[1][1]))bad.add('popisy v obraze cez seba')})});   // riadky textu sa smú dotýkať, nie ležať cez seba
+
+return {bad:[...bad],zones:T}};
 window.READY=true;
 </script></body></html>"""
 
-TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + ",", 1)
+TEMPLATE = TEMPLATE.replace("/*EXTRA_ICONS*/", icons_extra.js() + ",/*PACK_ICONS*/", 1)
+TEMPLATE = TEMPLATE.replace("const ICONS={", "const ICON_ALIAS=/*ICON_ALIAS*/{};const ICONS={", 1)
+_HERE = Path(__file__).parent
+TEMPLATE = TEMPLATE.replace("/*EXTRA_BOARDS*/", (_HERE / "boards_extra.js").read_text(encoding="utf-8") + "\n"
+                            + (_HERE / "boards_pack.js").read_text(encoding="utf-8") + "\n"
+                            + (_HERE / "geo" / "map.js").read_text(encoding="utf-8") + "\n"
+                            + "\n".join(f.read_text(encoding="utf-8") for f in sorted((_HERE / "boards").glob("*.js"))), 1)
 
 STEPS = {"flow": lambda d: 4 if d.get("x") else 3, "cycle": lambda d: 4, "bars": lambda d: len(d.get("i") or []) + 1,
          "calc": lambda d: len(d.get("r") or []) + .5, "compare": lambda d: 2.5, "count": lambda d: 2, "list": lambda d: len(d.get("i") or []),
          "icons": lambda d: len(d.get("i") or []) + .5, "temp": lambda d: 3.5, "house": lambda d: len(d.get("i") or []) + 1.5,
          "split": lambda d: len(d.get("i") or []) + .5, "text": lambda d: 1.5, "hero": lambda d: 2.5, "scene": lambda d: len(d.get("n") or []) + 1.5,
          "draw": lambda d: max([int(x.get("at") or 0) for x in (d.get("e") or []) if isinstance(x, dict)] or [0]) + 1.5,
-         "product": lambda d: len(d.get("i") or []) + 1.5}
+         "product": lambda d: len(d.get("i") or []) + 1.5,
+         "map": lambda d: 2.2 + .6 * len(d.get("r") or []) + .4 * len(d.get("pts") or []) + .5 * len(d.get("v") or [])
+                          + 1.25 * max(0, len(d.get("hist") or []) - 1) + (1.6 if d.get("onto") else 0),
+         "timeline": lambda d: len(d.get("i") or []) * .8 + .8, "line": lambda d: 3,
+         "growth": lambda d: 3.2, "pie": lambda d: len(d.get("i") or []) * .55 + .6, "stack": lambda d: len(d.get("i") or []) * .9 + .6,
+         "dots": lambda d: 2.4, "size": lambda d: len(d.get("i") or []) * .7 + .6, "layers": lambda d: len(d.get("i") or []) * .45 + .6,
+         "mech": lambda d: 2, "forces": lambda d: len(d.get("f") or []) * .5 + 1, "waterfall": lambda d: len(d.get("i") or []) * .5 + .8,
+         "funnel": lambda d: len(d.get("i") or []) * .55 + .4, "loan": lambda d: 2.7, "inflation": lambda d: 2.2,
+         "crack": lambda d: len(d.get("l") or [1] * 5) * .45 + .5, "sim": lambda d: 3.2, "lines": lambda d: 2.6}
 
-_lock = threading.Lock()
+for _m in BOARD_META.values():
+    for _k, _v in (_m.get("kinds") or {}).items():
+        _st = _v.get("steps") or [2]
+        STEPS.setdefault(_k, lambda d, _st=_st: float(_st[0]) + (float(_st[1]) * len(d.get(_st[2]) or []) if len(_st) > 2 else 0))
+
+class _Slots:
+    """Koľko videí sa smie skladať naraz (nastavenie render_parallel, 1–8, predvolene 4). Každé má vlastný prehliadač.
+    Nastavenie sa číta pri každom skladaní, takže sa dá meniť bez reštartu appky."""
+
+    def __init__(self):
+        self._c = threading.Condition()
+        self.active = 0
+
+    @staticmethod
+    def limit():
+        try:
+            return max(1, min(8, int(db.get_setting("render_parallel", 4) or 4)))
+        except Exception:
+            return 4
+
+    def __enter__(self):
+        with self._c:
+            while self.active >= self.limit():
+                self._c.wait(timeout=15)
+            self.active += 1
+        return self
+
+    def __exit__(self, *a):
+        with self._c:
+            self.active -= 1
+            self._c.notify_all()
+
+
+_lock = _Slots()
+# plátna sa kreslia bez grafickej karty: na Macu sa inak plátno samo vynulovalo a model ostal malý v rohu
+CANVAS_ARGS = ["--disable-accelerated-2d-canvas"]
 
 
 TAIL = 1.8  # záverečná karta s logom po dohovorení hlasu
@@ -730,8 +1139,81 @@ def thumb_index(scenes, sc_data, want=None):
     return 0
 
 
+EVENTS = {}   # cesta videa -> [(druh zvuku, čas)] z posledného skladania
+QA = {}       # cesta videa -> výsledok kontroly pred zverejnením
+WEAK_MAX = 0.4    # najviac toľko scén smie byť „slabých“ (ikony, text, zoznam)
+EMPTY_MIN = 0.006   # prázdna scéna má 0 až 0,3 %; riedka tabuľka s dvoma riadkami textu okolo 1 % (pri 1,2 % padali dobré videá na hrane merania)
+
+
+def _coverage(jpg, wide):
+    """Koľko z plochy obrazu scény (bez nadpisu a titulkov) naozaj niečo ukazuje (0–1)."""
+    try:
+        import io
+        from PIL import Image, ImageChops
+        box = (400, 290, 1520, 960) if wide else (30, 560, 1050, 1290)
+        r, g, bl = Image.open(io.BytesIO(jpg)).convert("RGB").crop(box).resize((204, 140)).split()
+        # najsvetlejšia zložka farby, nie jas: červená či modrá farba kanála má nízky jas a obraz v nej by sa nerátal
+        h = ImageChops.lighter(ImageChops.lighter(r, g), bl).histogram()
+        return sum(h[71:]) / max(1, sum(h))
+    except Exception:
+        return 1.0
+
+
+OVER_MAX = 0.002   # v mieste nadpisu či titulkov smie byť (po skrytí textu a pozadia) najviac toľko „hrán“ obrazu; prázdne miesto má 0
+
+
+def _overlap(pg, over, k):
+    """Kontrola jednej snímky bez AI: (1) miesta textov a obrazu sa nesmú pretínať, (2) po skrytí textov musí byť pod nimi prázdno."""
+    try:
+        import io
+        from PIL import Image, ImageFilter
+        info = pg.evaluate("window.ovl()")
+        bad = set(info.get("bad") or [])
+        pg.evaluate("document.body.classList.add('notext')")
+        try:
+            im = Image.open(io.BytesIO(pg.screenshot(type="png"))).convert("L")
+        finally:
+            pg.evaluate("document.body.classList.remove('notext')")
+        for name, r in (info.get("zones") or {}).items():
+            if not r:
+                continue
+            box = (max(0, int(r[0]) - 4), max(0, int(r[1]) - 4), min(im.width, int(r[2]) + 4), min(im.height, int(r[3]) + 4))
+            if box[2] - box[0] < 8 or box[3] - box[1] < 8:
+                continue
+            px = im.crop(box).filter(ImageFilter.FIND_EDGES).crop((1, 1, box[2] - box[0] - 1, box[3] - box[1] - 1)).getdata()
+            if sum(1 for v in px if v > 40) > max(80, OVER_MAX * len(px)):
+                bad.add(name + " × obraz")
+        if bad:
+            over.setdefault(k, set()).update(bad)
+    except Exception as e:
+        print("kontrola prekrývania:", e)
+
+
+def check(sc_data, cover, over=None):
+    """Kontrola pred zverejnením. Vráti {"ok", "why": [dôvody po slovensky], ...}.
+    Neprejde: prázdna scéna, stroj bez presného modelu, priveľa scén len s ikonami či textom."""
+    from . import auto_visual
+    body = sc_data[:-1] if len(sc_data) > 2 else sc_data   # posledná scéna je výzva „pozri celé video“
+    weak = [i + 1 for i, s in enumerate(body) if (s["v"] or {}).get("k") in auto_visual.WEAK]
+    crude = sorted({str(s["v"].get("m") or "kresba") for s in body
+                    if (s["v"].get("k") == "mech" and s["v"].get("m") not in auto_visual.PRECISE) or s["v"].get("k") == "svg"})
+    empty = [i + 1 for i, c in sorted(cover.items()) if c < EMPTY_MIN]
+    why = []
+    if empty:
+        why.append("Prázdna scéna: " + ", ".join(map(str, empty)))
+    if crude:
+        why.append("Stroj bez presného modelu: " + ", ".join(crude))
+    for k, bad in sorted((over or {}).items()):
+        why.append(f"Prekrývanie v scéne {k + 1}: " + ", ".join(sorted(bad)))
+    # krátke video má len 4–5 scén: jedna slabá scéna navyše (2 zo 4) ešte neznamená „len ikony“ (16.11.)
+    if body and len(weak) / len(body) > (WEAK_MAX if len(body) > 8 else 0.5):
+        why.append(f"Slabý obraz (len ikony alebo text) v {len(weak)} z {len(body)} scén")
+    return {"ok": not why, "why": why, "scenes": len(sc_data), "weak": len(weak),
+            "precise": sum(1 for s in body if s["v"].get("k") == "map" or (s["v"].get("k") == "mech" and s["v"].get("m") in auto_visual.PRECISE))}
+
+
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title="", guide=False, detail=1, check_only=False):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -739,26 +1221,61 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     from . import anim, media
     if not anim.available():
         raise RuntimeError("Animácie sa ešte pripravujú (Chromium sa sťahuje)")
-    total = media.duration(voice) or 10
-    words = media.word_times(voice, text)
+    if check_only and not voice:   # rýchla kontrola scenára bez hlasu a bez skladania videa: len kontrolné snímky, vráti výsledok kontroly
+        ws = (text or "").split() or ["."]
+        total = max(10.0, len(ws) / 2.7)
+        words = [{"w": w, "s": i * total / len(ws), "e": (i + .8) * total / len(ws)} for i, w in enumerate(ws)]
+    else:
+        total = media.duration(voice) or 10
+        words = media.word_times(voice, text)
     times = timeline(scenes, words, total)
-    sc_data, pcache = [], {}
-    for sc, (t0, t1) in zip(scenes, times):
-        v = board_of(sc)
+    sc_data, pcache, used, prev = [], {}, {}, None
+    seen_mech = set()
+    from . import auto_visual
+    # stroj, o ktorom je celé video (ak má presný model): podľa názvu videa, inak podľa toho, čo v texte prevláda
+    topic = auto_visual.topic(" . ".join([text] + [f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''}" for sc in scenes]), title, strict=True)
+    for i, (sc, (t0, t1)) in enumerate(zip(scenes, times)):
+        spoken = " ".join(w["w"] for w in words if t0 - .05 <= w["s"] < t1)
+        b0 = board_of(sc)
+        if not topic and (b0.get("k") == "svg" or (b0.get("k") == "mech" and b0.get("m") not in auto_visual.PRECISE)):
+            # kresba od AI či stará hrubá schéma sa neukazuje: video nie je o stroji s presným modelom, scéna dostane obraz odhadnutý z textu
+            b0 = guess(sc.get("onscreen") or "", sc.get("visual") or "")
+        v = auto_visual.upgrade(b0, sc, spoken, used, lang, prev, long=len(scenes) > 12, full=text,
+                                topic=topic, last=i == len(scenes) - 1 and len(scenes) > 2)
+        prev = v.get("m") if v.get("k") == "mech" else None
+        v = prepare(v, lang)
+        if v.get("k") == "text" and not str(v.get("w") or "").strip():   # mapa, ktorú sa nepodarilo nájsť, či iný obraz bez obsahu: nikdy prázdna scéna
+            v = prepare(guess(sc.get("onscreen") or "", ""), lang)
+            if v.get("k") == "text" and not str(v.get("w") or "").strip():
+                v = {"k": "text", "w": str(sc.get("onscreen") or sc.get("visual") or "")[:60]}
+        if v.get("k") == "mech":  # réžia: dĺžka scény a úvodný záber „kde to je“ len pri prvom výskyte stroja
+            v = dict(v, _dur=round(t1 - t0, 2), **({} if v.get("m") in seen_mech else {"_in": 1}), **({"_first": 1} if i == 0 else {}))
+            seen_mech.add(v.get("m"))
+            fs = auto_visual.shots(v, [w for w in words if t0 - .05 <= w["s"] < t1], t0)
+            if fs:   # hlas v scéne prejde cez viac častí: kamera ide za ním
+                v = dict(v, fs=fs)
+            if v.get("m") in auto_visual.PRECISE and not v.get("c"):   # číslo, ktoré hlas povie, naskočí pri modeli
+                c = auto_visual.callout(sc.get("onscreen"), [w for w in words if t0 - .05 <= w["s"] < t1], t0)
+                if c:
+                    if c["t"] is None:
+                        c["t"] = round((t1 - t0) * .45, 2)
+                    v = dict(v, c=c)
         h = (sc.get("onscreen") or "").strip()
         v = with_product(h, v, products, pcache)
         if v.get("k") == "text" and re.sub(r"\W", "", str(v.get("w", "")).lower()) == re.sub(r"\W", "", h.lower()):
             h = ""  # rovnaký text ako nadpis: ukáž ho len raz, veľkým
         sc_data.append({"h": h, "v": v, "t0": round(t0, 3), "t1": round(t1, 3),
                         "steps": STEPS.get(v.get("k"), lambda d: 2)(v)})
-    tail = TAIL if (logo_end or logo) else 0
+    loop = bool(loop and not wide and len(sc_data) > 2)   # krátke video: koniec nadviaže na začiatok (bez záverečnej karty, logo ostáva v rohu)
+    tail = 0 if loop else TAIL if (logo_end or logo) else 0
     data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
-            "logo": logo or "", "logoEnd": logo_end or "", "tail": tail, "wide": bool(wide)}
+            "logo": logo or "", "logoEnd": "" if loop else logo_end or "", "tail": tail, "wide": bool(wide), "guide": bool(guide), "detail": int(detail or 1),
+            "loop": loop, "len": round(total + (0.6 if loop else tail or 0.3), 3)}
     vw, vh = (H, W) if wide else (W, H)
     html = page(data, font, font_text)
     if total > 90:
         fps = 25
-    length = total + (tail or 0.3)
+    length = data["len"]
     n = int(length * fps)
     ff = media.ffmpeg()
     cmd = [ff, "-y", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-", "-i", str(voice)]
@@ -774,10 +1291,10 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     from playwright.sync_api import sync_playwright
     with _lock, sync_playwright() as pw:
         exe = os.environ.get("SM_CHROMIUM")
-        b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+        b = pw.chromium.launch(executable_path=exe, args=CANVAS_ARGS) if exe else pw.chromium.launch(args=CANVAS_ARGS)
+        proc = None if check_only else subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
+            if thumb and not check_only:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
                 tp = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)  # vlastná stránka, video ostane čisté
                 try:
                     tp.set_content(html)
@@ -795,17 +1312,36 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             pg = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)
+            probe = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .7) * fps)): k for k, d in enumerate(sc_data)}
+            probe2 = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .32) * fps)): k for k, d in enumerate(sc_data)}
+            cover, over = {}, {}
+            # záverečný odjazd kamery (prehľad všetkých scén naraz) je zámerný: počas neho sa prekrývanie nemeria, inak padne skoro každé dlhé video na poslednej scéne
+            ld = sc_data[-1]["t1"] - sc_data[-1]["t0"] if sc_data else 0
+            zo0 = total - min(3.2, max(1.8, ld * .5)) if len(sc_data) > 2 and not loop else 1e9
             for i in range(n):
+                if check_only and i not in probe and i not in probe2:
+                    continue
                 pg.evaluate(f"renderAt({i / fps:.4f})")
-                proc.stdin.write(pg.screenshot(type="jpeg", quality=90))
-            proc.stdin.close()
-            err = proc.stderr.read().decode(errors="ignore")
-            if proc.wait() != 0:
-                raise RuntimeError("ffmpeg: " + err[-400:])
+                shot = pg.screenshot(type="jpeg", quality=90)
+                if i in probe:   # jedna snímka z každej scény na kontrolu pred zverejnením
+                    cover[probe[i]] = _coverage(shot, wide)
+                if (i in probe or i in probe2) and i / fps < zo0:   # dve snímky z každej scény: neleží niečo cez seba?
+                    _overlap(pg, over, probe.get(i, probe2.get(i)))
+                if proc:
+                    proc.stdin.write(shot)
+            if proc:
+                proc.stdin.close()
+                err = proc.stderr.read().decode(errors="ignore")
+                if proc.wait() != 0:
+                    raise RuntimeError("ffmpeg: " + err[-400:])
         finally:
-            if proc.poll() is None:
+            if proc and proc.poll() is None:
                 proc.kill()
             b.close()
+    if check_only:
+        return check(sc_data, cover, over)
+    EVENTS[str(out)] = auto_visual.sound_events(sc_data)   # zvuky k obrazu (domieša audio.finish)
+    QA[str(out)] = check(sc_data, cover, over)
     if _all_black(out, length):
         raise RuntimeError("Video vyšlo celé čierne, skús ho vyrobiť znova")
     return str(out)
@@ -833,13 +1369,14 @@ def _all_black(path, length):
 
 def preview(d, out_png, accent="#FF6B00", lang="sk", title="Ukážka", at=6.0):
     """Jeden obrázok diagramu (na test/náhľad)."""
+    d = prepare(d, lang)
     data = {"acc": accent, "lang": lang, "kicker": "", "total": 10, "caps": [],
             "scenes": [{"h": title, "v": d, "t0": 0, "t1": 10, "steps": STEPS.get(d.get("k"), lambda x: 2)(d)}]}
     import os
     from playwright.sync_api import sync_playwright
     with _lock, sync_playwright() as pw:
         exe = os.environ.get("SM_CHROMIUM")
-        b = pw.chromium.launch(executable_path=exe) if exe else pw.chromium.launch()
+        b = pw.chromium.launch(executable_path=exe, args=CANVAS_ARGS) if exe else pw.chromium.launch(args=CANVAS_ARGS)
         try:
             pg = b.new_page(viewport={"width": W, "height": H})
             pg.set_content(page(data))

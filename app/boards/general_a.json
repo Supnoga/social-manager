@@ -1,0 +1,22 @@
+{"kinds":{
+ "rank":{"steps":[1,0.7,"i"],"skip":{"i":[2]}},
+ "versus":{"steps":[1.6,0.6,"r"]},
+ "steps":{"steps":[0.8,0.7,"i"],"skip":{"i":[0]}},
+ "tree":{"steps":[1.6,0.9,"i"]},
+ "network":{"steps":[1.2,0.45,"i"],"skip":{"i":[0]}},
+ "matrix":{"steps":[1.6,0.5,"i"]}
+},
+"pack":{
+ "rank":"{\"k\":\"rank\",\"u\":\"soldiers\",\"i\":[[\"China\",2035000,\"CN\"],[\"India\",1455000,\"IN\"],[\"USA\",1328000,\"US\"]]} = top list 3-6, bars grow from last to #1 (3rd = ISO code or icon, optional)",
+ "versus":"{\"k\":\"versus\",\"a\":\"F-35\",\"b\":\"Su-57\",\"ia\":\"fighter\",\"ib\":\"fighter\",\"r\":[[\"Top speed\",1930,2140,\"km/h\"],[\"Price\",80,40,\"M $\",1]]} = head-to-head, 3-5 stats, row winner lights up (5th 1 = lower wins)",
+ "steps":"{\"k\":\"steps\",\"i\":[[\"card\",\"Tap card\"],[\"server\",\"Bank checks\"],[\"check\",\"Paid\"]]} = process of 3-6 numbered steps [icon,label], a dot travels the path",
+ "tree":"{\"k\":\"tree\",\"a\":\"Alphabet\",\"i\":[[\"Google\",\"Search\",\"YouTube\"],[\"Waymo\"],[\"DeepMind\"]]} = hierarchy: root, max 3 children each with max 3 sub-items (org chart, ranks, language family)",
+ "network":"{\"k\":\"network\",\"i\":[[\"warehouse\",\"Hub\"],[\"truck\",\"Road\"],[\"ship\",\"Port\"],[\"plane\",\"Airport\"]],\"l\":[[0,1],[0,2],[0,3]]} = 3-8 nodes [icon,label], links by index, packets move along links",
+ "matrix":"{\"k\":\"matrix\",\"a\":\"Risk\",\"b\":\"Return\",\"l\":[\"TL\",\"TR\",\"BL\",\"BR\"],\"i\":[[\"Bonds\",0.2,0.25],[\"Stocks\",0.6,0.7,1]]} = 2x2 quadrant, x/y 0-1, 2-6 items, 4th 1 = highlight, l = optional quadrant names"
+},
+"channels":{
+ "arsenal":["rank","versus","tree"],"mega":["rank"],"nations":["rank","tree"],"brands":["rank","versus"],"stocks":["rank","matrix"],
+ "engines":["rank","versus"],"flight":["rank","versus"],"digital":["versus","steps","network"],"wallet":["versus","matrix"],
+ "company":["steps","tree","matrix"],"industry":["steps"],"logistics":["steps","network"],"house":["steps"],"inventions":["steps"],
+ "logic":["tree","matrix"],"energy":["network"]
+}}

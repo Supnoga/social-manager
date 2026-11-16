@@ -68,6 +68,7 @@ def models():
     return {
         "creative": db.get_setting("model_creative", "sonnet"),
         "cheap": db.get_setting("model_cheap", "haiku"),
+        "premium": db.get_setting("model_premium", "opus"),  # len scenáre dlhých videí (nesú najviac)
     }
 
 

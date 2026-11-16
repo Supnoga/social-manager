@@ -123,6 +123,13 @@ CREATE TABLE IF NOT EXISTS fetch_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts T
   key TEXT DEFAULT '', ok INTEGER DEFAULT 1, units INTEGER DEFAULT 0, note TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS post_stats (post_id INTEGER PRIMARY KEY, views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0,
   comments INTEGER DEFAULT 0, shares INTEGER DEFAULT 0, ratio REAL DEFAULT 0, error TEXT DEFAULT '', fetched_at TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS account_stats (account_id INTEGER, day TEXT, followers INTEGER, views_total INTEGER, media_count INTEGER,
+  fetched_at TEXT DEFAULT '', PRIMARY KEY(account_id, day));
+CREATE TABLE IF NOT EXISTS yt_daily (account_id INTEGER, day TEXT, views INTEGER DEFAULT 0, watch_min REAL DEFAULT 0,
+  subs_gained INTEGER DEFAULT 0, subs_lost INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, comments INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0, PRIMARY KEY(account_id, day));
+CREATE TABLE IF NOT EXISTS acc_insight (account_id INTEGER PRIMARY KEY, ypp TEXT DEFAULT '{}', analytics_at TEXT DEFAULT '',
+  stats_at TEXT DEFAULT '', error TEXT DEFAULT '', analytics_error TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS ai_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT DEFAULT (datetime('now','localtime')),
@@ -173,6 +180,10 @@ MIGRATIONS = [
     "ALTER TABLE posts ADD COLUMN stash_id TEXT DEFAULT ''",
     "ALTER TABLE videos ADD COLUMN removed INTEGER DEFAULT 0",
     "ALTER TABLE videos ADD COLUMN preview_path TEXT DEFAULT ''",
+    "ALTER TABLE videos ADD COLUMN qa TEXT DEFAULT ''",
+    "ALTER TABLE post_stats ADD COLUMN watch_min REAL DEFAULT 0",
+    "ALTER TABLE post_stats ADD COLUMN avg_pct REAL DEFAULT 0",
+    "ALTER TABLE post_stats ADD COLUMN subs INTEGER DEFAULT 0",
 ]
 
 
@@ -220,9 +231,31 @@ def _accounts_to_projects(c):
         pass
 
 
+def _reset():
+    """Spojenie s databázou sa pokazilo (napr. po chybe zápisu): zahodiť ho a otvoriť nové."""
+    global _con
+    try:
+        _con.rollback()
+        _con.close()
+    except Exception:
+        pass
+    _con = None
+
+
+def _retry(fn):
+    try:
+        return fn()
+    except sqlite3.IntegrityError:
+        raise
+    except (sqlite3.OperationalError, sqlite3.ProgrammingError, sqlite3.DatabaseError) as e:
+        print("Databáza: chyba, otváram spojenie znova:", e)
+        _reset()
+        return fn()
+
+
 def q(sql, args=()):
     with _lock:
-        return [dict(r) for r in con().execute(sql, args).fetchall()]
+        return _retry(lambda: [dict(r) for r in con().execute(sql, args).fetchall()])
 
 
 def one(sql, args=()):
@@ -231,10 +264,12 @@ def one(sql, args=()):
 
 
 def run(sql, args=()):
-    with _lock:
+    def go():
         cur = con().execute(sql, args)
         con().commit()
         return cur.lastrowid
+    with _lock:
+        return _retry(go)
 
 
 def get_setting(key, default=None):
@@ -250,3 +285,10 @@ def get_setting(key, default=None):
 def set_setting(key, value):
     run("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (key, json.dumps(value)))
+
+
+def fmt_sql(v="v"):
+    """Typ videa (0 tokenov): 'long' = dlhé video, 'short' = krátke (Short/Reel/TikTok).
+    Berie sa z nápadu; video bez nápadu (nahraté ručne) podľa dĺžky: nad 3 minúty je dlhé."""
+    return (f"COALESCE(NULLIF((SELECT i_f.format FROM scripts s_f JOIN ideas i_f ON i_f.id=s_f.idea_id WHERE s_f.id={v}.script_id),''),"
+            f" CASE WHEN COALESCE({v}.duration,0)>180 THEN 'long' ELSE 'short' END)")

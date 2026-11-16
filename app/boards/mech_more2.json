@@ -1,0 +1,47 @@
+{
+ "kinds": {},
+ "pack": {
+  "mech3": "mech m: heatpump|fridge|canal_lock|dam|bridge|tunnel|wind_turbine|car_brake|differential|camshaft|radar|wing|jet|transistor|breaker|orbit|pinlock|wall|emotor|battery|robot_arm|neuron|touchscreen|hurricane; l=parts"
+ },
+ "channels": {
+  "machines": [
+   "mech3"
+  ],
+  "engines": [
+   "mech3"
+  ],
+  "mega": [
+   "mech3"
+  ],
+  "industry": [
+   "mech3"
+  ],
+  "inventions": [
+   "mech3"
+  ],
+  "forces": [
+   "mech3"
+  ],
+  "energy": [
+   "mech3"
+  ],
+  "digital": [
+   "mech3"
+  ],
+  "underground": [
+   "mech3"
+  ],
+  "logistics": [
+   "mech3"
+  ],
+  "house": [
+   "mech3"
+  ],
+  "n2n": [
+   "mech3"
+  ],
+  "flight": [
+   "mech3"
+  ]
+ }
+}

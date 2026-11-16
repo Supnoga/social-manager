@@ -60,49 +60,122 @@ def project_plan(pid):
     if not pp or not pp.get("days") or not (pp.get("hours") or pp.get("long_hours")):
         return None
     return {"days": [int(d) for d in pp["days"]], "hours": sorted(int(h) for h in pp.get("hours") or []),
-            "long_hours": sorted(int(h) for h in pp.get("long_hours") or [])}
+            "long_hours": sorted(int(h) for h in pp.get("long_hours") or []),
+            "long_every": int(pp.get("long_every") or 0), "offset": int(pp.get("offset") or 0)}
 
 
-def _plan_own(a, own, cand, days, now, status, jit, dry):
-    """Účet projektu s vlastným rytmom: každý deň krátke videá v ich hodinách a dlhé v ich hodinách.
-    V jeden deň nejdú dve videá z tej istej série (pilier), kým je z čoho vyberať."""
-    slots_def = sorted([(h, "short") for h in own["hours"]] + [(h, "long") for h in own["long_hours"]])
+def long_day(own, day):
+    """Striedanie (Oliver 14.11.): dlhé video len každý long_every-ty deň, kanály posunuté o offset."""
+    return not own.get("long_every") or (day.toordinal() + own.get("offset", 0)) % own["long_every"] == 0
+
+
+def _plan_rot(a, own, cand, days, now, status, jit, dry):
+    """Každý deň 1 krátke video, dlhé každý long_every-ty deň (najprv dlhé, krátke až po ňom).
+    Krátke patria k poslednému dlhému videu účtu: 3 krátke = 3 dni, kým nepríde ďalšie dlhé."""
+    lh = (own["long_hours"] or [14])[0]
+    sh = (own["hours"] or [18])[0]
+    last = db.one("""SELECT s.idea_id FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
+                     JOIN ideas i ON i.id=s.idea_id WHERE p.account_id=? AND p.status IN ('queued','review','uploading','done')
+                     AND i.format='long' AND p.scheduled_at<=? ORDER BY p.scheduled_at DESC LIMIT 1""", (a["id"], _fmt(now)))
+    cur = last["idea_id"] if last else None
     n = total = 0
-    # Shorts vyrobené z dlhého videa idú von až po ňom; najprv tie z najnovšieho dlhého videa
-    par = {r["idea_id"]: r["at"] for r in db.q("""SELECT s.idea_id, MIN(p.scheduled_at) at FROM posts p JOIN videos v ON v.id=p.video_id
-                   JOIN scripts s ON s.id=v.script_id WHERE p.account_id=? AND p.status!='failed' GROUP BY s.idea_id""", (a["id"],))}
     for d in range(days + 1):
         day = (now + dt.timedelta(days=d)).date()
         if day.weekday() not in own["days"]:
             continue
         iso = day.isoformat()
-        there = db.q("""SELECT p.scheduled_at, COALESCE(i.pillar,'') pillar FROM posts p JOIN videos v ON v.id=p.video_id
+        there = db.q("""SELECT p.scheduled_at, s.idea_id, COALESCE(i.format,'short') fmt FROM posts p JOIN videos v ON v.id=p.video_id
+                        LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
+                        WHERE p.account_id=? AND p.status IN ('queued','review','uploading','done') AND substr(p.scheduled_at,1,10)=?""",
+                     (a["id"], iso))
+        has_long = next((r["idea_id"] for r in there if r["fmt"] == "long"), None)
+        has_short = any(r["fmt"] != "long" for r in there)
+        if has_long:
+            cur = has_long
+        slots = ([("long", lh)] if long_day(own, day) and not has_long else []) + ([("short", sh)] if not has_short else [])
+        for kind, h in slots:
+            if dt.datetime.combine(day, dt.time(h)) <= now + dt.timedelta(minutes=20):
+                continue
+            total += 1
+            if kind == "long":
+                pool = [v for v in cand if v["fmt"] == "long" and (not v["due"] or v["due"] == iso)]
+                kids = {}
+                for v in cand:
+                    if v["fmt"] != "long" and v["parent"]:
+                        kids[v["parent"]] = kids.get(v["parent"], 0) + 1
+                pool.sort(key=lambda v: (v["due"] != iso, -min(kids.get(v["idea_id"], 0), 3)))
+            else:
+                # len krátke k poslednému dlhému videu účtu; pred prvým dlhým nič (Oliver 14.11.: začína sa dlhým)
+                pool = [v for v in cand if v["fmt"] != "long" and cur and v["parent"] == cur]
+            if not pool:
+                continue
+            v = pool[0]
+            cand.remove(v)
+            if kind == "long":
+                cur = v["idea_id"]
+            when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
+            if not dry:
+                db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
+                       (v["id"], a["id"], _fmt(when), "public", status))
+            n += 1
+    return n, total
+
+
+def _plan_own(a, own, cand, days, now, status, jit, dry):
+    """Účet projektu s vlastným rytmom. Keď má projekt dlhé aj krátke hodiny, každý deň je jeden balík:
+    najprv 1 dlhé video a v krátkych hodinách len Shorts vystrihnuté z TOHO dlhého videa (Oliver 14.11.).
+    Deň bez dlhého videa ostane prázdny. Projekty len s krátkymi hodinami plánujú Shorts ako doteraz."""
+    bundle = bool(own["long_hours"]) and bool(own["hours"])
+    slots_def = [(h, "long") for h in sorted(own["long_hours"])] + [(h, "short") for h in sorted(own["hours"])]
+    n = total = 0
+    for d in range(days + 1):
+        day = (now + dt.timedelta(days=d)).date()
+        if day.weekday() not in own["days"]:
+            continue
+        iso = day.isoformat()
+        there = db.q("""SELECT p.scheduled_at, COALESCE(i.pillar,'') pillar, s.idea_id, COALESCE(i.format,'short') fmt
+                        FROM posts p JOIN videos v ON v.id=p.video_id
                         LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
                         WHERE p.account_id=? AND p.status IN ('queued','review','uploading','done')
                         AND substr(p.scheduled_at,1,10)=?""", (a["id"], iso))
         taken = {int(r["scheduled_at"][11:13]) for r in there}
         used = {r["pillar"] for r in there if r["pillar"]}
+        day_long = next((r["idea_id"] for r in there if r["fmt"] == "long" and r["idea_id"]), None)
         for h, kind in slots_def:
             if dt.datetime.combine(day, dt.time(h)) <= now + dt.timedelta(minutes=20):
                 continue
             total += 1
             if h in taken:
                 continue
-            slot = _fmt(dt.datetime.combine(day, dt.time(h)))
-            pool = [v for v in cand if (v["fmt"] == "long") == (kind == "long") and (not v["due"] or v["due"] == iso)
-                    and (not v["parent"] or par.get(v["parent"], "9") <= slot)]
+            if kind == "long":
+                if day_long:
+                    continue
+                pool = [v for v in cand if v["fmt"] == "long" and (not v["due"] or v["due"] == iso)]
+                if bundle:  # dlhé video s hotovými Shorts má prednosť, aby deň bol celý
+                    kids = {}
+                    for v in cand:
+                        if v["fmt"] != "long" and v["parent"]:
+                            kids[v["parent"]] = kids.get(v["parent"], 0) + 1
+                    pool.sort(key=lambda v: (v["due"] != iso, -min(kids.get(v["idea_id"], 0), len(own["hours"])), v["pillar"] in used))
+                else:
+                    pool.sort(key=lambda v: (v["due"] != iso, v["pillar"] in used))
+            else:
+                if bundle:
+                    if not day_long:
+                        continue  # bez dlhého videa v ten deň žiadne Shorts
+                    pool = [v for v in cand if v["fmt"] != "long" and v["parent"] == day_long]
+                else:
+                    pool = [v for v in cand if v["fmt"] != "long" and (not v["due"] or v["due"] == iso)]
+                    pool.sort(key=lambda v: (v["due"] != iso, v["pillar"] in used))
             if not pool:
                 continue
-            newest = max((par[v["parent"]] for v in pool if v["parent"]), default="")
-            pool.sort(key=lambda v: (v["due"] != iso, not (v["parent"] and par[v["parent"]] == newest),
-                                     v["pillar"] in used and not v["parent"]))  # video k dnešnej udalosti prvé, potom iná séria
             v = pool[0]
             cand.remove(v)
             if v["pillar"]:
                 used.add(v["pillar"])
+            if kind == "long":
+                day_long = v["idea_id"]
             when = dt.datetime.combine(day, dt.time(h)) + dt.timedelta(minutes=random.randint(0, jit) if jit else 0)
-            if kind == "long" and v["idea_id"]:
-                par.setdefault(v["idea_id"], slot)
             if not dry:
                 db.run("INSERT INTO posts(video_id,account_id,scheduled_at,privacy,status) VALUES(?,?,?,?,?)",
                        (v["id"], a["id"], _fmt(when), "public", status))
@@ -129,7 +202,7 @@ def plan_week(project_ids=None, days=7, per_day=None, dry=False):
             cand = [v for v in cand if v["project_id"] in project_ids]
         own = project_plan(a["project_id"])
         if own:  # projekt má vlastné dni a hodiny
-            n, slots_total = _plan_own(a, own, cand, days, now, status, jit, dry)
+            n, slots_total = (_plan_rot if own.get("long_every") else _plan_own)(a, own, cand, days, now, status, jit, dry)
             created += n
             per_acc.append({"account": a["name"], "platform": a["platform"], "posts": n,
                             "hours": sorted(own["hours"] + own["long_hours"]), "how": "plán projektu"})
@@ -218,8 +291,18 @@ Write in {languages.english(p['source_lang'])}.""", "repeat", "cheap")
 
 
 def weekly_auto():
-    """Voliteľne: každú nedeľu večer naplánuje ďalší týždeň sám (nastavenie auto_plan_week)."""
+    """Voliteľne: každú nedeľu večer naplánuje ďalší týždeň sám (nastavenie auto_plan_week).
+    Projekty s vlastným plánom (plan_projects) a dennou výrobou sa dopĺňajú každú hodinu, aby hotové videá nečakali mimo plánu."""
     now = dt.datetime.now()
+    hour = now.strftime("%Y-%m-%d %H")
+    if db.get_setting("auto_plan_hour", "") != hour:
+        db.set_setting("auto_plan_hour", hour)
+        own = {int(k) for k in (db.get_setting("plan_projects", {}) or {})} & {int(k) for k in (db.get_setting("auto_produce", {}) or {})}
+        if own:
+            try:
+                plan_week(sorted(own))
+            except Exception as e:
+                print("hodinové plánovanie:", e)
     if not db.get_setting("auto_plan_week", False) or now.weekday() != 6 or now.hour < 18:
         return
     if db.get_setting("auto_plan_last", "") == now.date().isoformat():
