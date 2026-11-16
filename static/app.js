@@ -756,7 +756,7 @@ async function revReject(key) { if (!confirm('Zrušiť naplánovanie tohto videa
 // ================= PUBLIKOVANIE =================
 async function pCalendar(m) {
   const f = new URLSearchParams(location.hash.split('?')[1] || '').get('f') ?? 'queued';
-  const pAll = (await api('/api/posts?status=' + f)).filter(p => !S.pf || p.project_id === S.pf);
+  const pAll = (await api('/api/posts?status=' + f + (S.pf ? '&project_id=' + S.pf : ''))).filter(p => !S.pf || p.project_id === S.pf);
   const posts = pAll.filter(p => fmtOk(p.fmt));
   const paused = S.meta.settings.paused;
   const days = {}; posts.forEach(p => (days[p.scheduled_at.slice(0, 10)] ||= []).push(p));

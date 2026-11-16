@@ -2516,7 +2516,7 @@ def review_reject(data: dict = Body(...)):
 
 
 @app.get("/api/posts")
-def posts(status: str = "", limit: int = 300):
+def posts(status: str = "", limit: int = 1000, project_id: int = 0):
     where = "1=1"
     args = ()
     if status == "queued":   # naplánované = čaká v appke alebo už leží na sieti s časom zverejnenia
@@ -2526,6 +2526,9 @@ def posts(status: str = "", limit: int = 300):
     elif status:
         where = "p.status=?"
         args = (status,)
+    if project_id:  # len tento projekt: inak by pri veľa kanáloch staršie zverejnené videá vypadli za hranicu zoznamu
+        where += " AND v.project_id=?"
+        args += (int(project_id),)
     return _posts(where, "p.scheduled_at DESC" if status in ("done", "failed") else "p.scheduled_at", limit, args)
 
 
