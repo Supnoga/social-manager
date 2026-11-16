@@ -47,8 +47,9 @@ def clip_file(clip_id: int):
 # ---------- prehľad ----------
 def _settings():
     return {"autopublish": bool(store.get("autopublish", False)), "paused": bool(store.get("paused", False)),
-            "window": list(publish.window()), "ai_per_day": int(store.get("ai_per_day", 6)),
-            "min_score": float(store.get("min_score", 6)), "per_day_default": int(store.get("per_day_default", 6))}
+            "batches": ["%02d:%02d" % divmod(b, 60) for b in publish.batches()], "warmup": bool(store.get("warmup", True)),
+            "ai_per_day": int(store.get("ai_per_day", 6)),
+            "min_score": float(store.get("min_score", 6)), "per_day_default": int(store.get("per_day_default", 3))}
 
 
 @router.get("/api/clip/state")
@@ -81,7 +82,9 @@ def state():
     for p in posts:
         p["account"] = acc_name.get(p["account_id"], "")
         p["campaign"] = names.get(p["campaign_id"], "")
-        p["est"] = track.earn(p["views"], camp_by.get(p["campaign_id"]) or {}) if p["status"] == "posted" and p["submit"] != "rejected" else 0
+        camp = camp_by.get(p["campaign_id"]) or {}
+        p["est"] = track.earn(p["views"], camp) if p["status"] == "posted" and p["submit"] not in ("rejected", "missed") else 0
+        p["deadline"] = track.deadline(p.get("posted_at"), camp.get("site")) if p["status"] == "posted" else ""
         by_clip.setdefault(p["clip_id"], []).append({"platform": p["platform"], "status": p["status"], "url": p["url"],
                                                      "views": p["views"], "when": p["scheduled_at"]})
     for c in clips:
@@ -91,7 +94,7 @@ def state():
     posted = [p for p in posts if p["status"] == "posted"]
     summary = {
         "views": sum(p["views"] or 0 for p in posted), "posted": len(posted),
-        "today": sum(1 for p in posted if (p["updated_at"] or "")[:10] == day),
+        "today": sum(1 for p in posted if (p.get("posted_at") or p["updated_at"] or "")[:10] == day),
         "queued": sum(1 for p in posts if p["status"] in ("queued", "posting")),
         "est": round(sum(t["est"] for t in totals.values()), 2), "paid": round(sum(t["paid"] for t in totals.values()), 2),
         "todo": sum(1 for p in posted if p["submit"] == "todo" and p["url"]),
@@ -101,7 +104,7 @@ def state():
     }
     return {"settings": _settings(), "worker": dict(worker.STATE), "tools": {"ready": env.ready(), **env.STATE},
             "campaigns": camps, "sources": sources, "clips": clips, "posts": posts, "accounts": accs, "summary": summary,
-            "sites": SITES, "project_id": store.project_id(), "public_ok": bool(_public_ok())}
+            "sites": SITES, "now": store.now(), "project_id": store.project_id(), "public_ok": bool(_public_ok())}
 
 
 def _public_ok():
@@ -146,9 +149,9 @@ def _clean(d):
     if "per_day" in d:
         out["per_day"] = int(min(60, max(1, _num(d["per_day"], 6))))
     if "clip_min" in d:
-        out["clip_min"] = int(min(120, max(8, _num(d["clip_min"], 20))))
+        out["clip_min"] = int(min(120, max(8, _num(d["clip_min"], 15))))
     if "clip_max" in d:
-        out["clip_max"] = int(min(180, max(out.get("clip_min", 12) + 5, _num(d["clip_max"], 55))))
+        out["clip_max"] = int(min(180, max(out.get("clip_min", 12) + 5, _num(d["clip_max"], 45))))
     return out
 
 
@@ -190,7 +193,8 @@ async def brief(request: Request):
         '"name" (short campaign name), "rate" (USD per 1000 views, number), "min_views" (minimum views per clip to get paid, integer, 0 if none), '
         '"max_payout" (max USD per clip, 0 if none), "budget" (total USD budget, 0 if unknown), '
         '"networks" (array from: youtube, instagram, tiktok, facebook), '
-        '"tags" (required hashtags and @mentions exactly as written, space separated, "" if none), '
+        '"tags" (required hashtags, @mentions and disclosure tags such as #ad exactly as written, space separated, "" if none), '
+        '"clip_min" and "clip_max" (required clip length in seconds, only if the text states it), '
         '"rules" (the content rules a clip editor must follow, max 600 characters, in English), '
         '"about" (who or what the source content is, max 200 characters), "lang" (2-letter language of the content), '
         '"sources" (array of URLs of source videos or channels found in the text), '
@@ -202,7 +206,7 @@ async def brief(request: Request):
         raise RuntimeError("AI nie je dostupná (Claude nie je prihlásený na Macu). Vyplň kampaň ručne.")
     if not isinstance(data, dict):
         raise RuntimeError("Z textu sa nepodarilo vyčítať pravidlá, vyplň kampaň ručne.")
-    out = _clean({k: data.get(k) for k in FIELDS if k in data})
+    out = _clean({k: data[k] for k in FIELDS if data.get(k) is not None})
     out["networks"] = json.loads(out.get("networks", '["youtube","instagram","tiktok"]'))
     out["sources"] = [u for u in (data.get("sources") or []) if isinstance(u, str) and u.startswith("http")][:20]
     out["risk"] = str(data.get("risk") or "")[:200]
@@ -286,15 +290,21 @@ async def submitted(request: Request):
     return {"ok": True, "n": len(ids)}
 
 
+@router.post("/api/clip/batch_now")
+def batch_now():
+    """Zverejní dávku hneď (z každého účtu jeden naplánovaný klip): keď je človek práve pri počítači a stihne vložiť odkazy."""
+    return {"ok": True, "n": publish.batch_now()}
+
+
 # ---------- účty a nastavenia ----------
 @router.post("/api/clip/account/{account_id}")
 async def account_edit(account_id: int, request: Request):
     d = await request.json()
     if not appdb.one("SELECT id FROM accounts WHERE id=? AND project_id=?", (account_id, store.project_id())):
         raise HTTPException(404)
-    cur = store.one("SELECT * FROM clip_accounts WHERE account_id=?", (account_id,)) or {"active": 1, "per_day": store.get("per_day_default", 6)}
+    cur = store.one("SELECT * FROM clip_accounts WHERE account_id=?", (account_id,)) or {"active": 1, "per_day": store.get("per_day_default", 3)}
     active = int(bool(d.get("active", cur["active"])))
-    per_day = int(min(40, max(1, _num(d.get("per_day", cur["per_day"]), 6))))
+    per_day = int(min(6, max(1, _num(d.get("per_day", cur["per_day"]), 3))))
     store.run("INSERT INTO clip_accounts(account_id, active, per_day) VALUES(?,?,?) "
               "ON CONFLICT(account_id) DO UPDATE SET active=excluded.active, per_day=excluded.per_day", (account_id, active, per_day))
     return {"ok": True}
@@ -307,10 +317,13 @@ async def settings_save(request: Request):
         store.put("autopublish", bool(d["autopublish"]))
     if "paused" in d:
         store.put("paused", bool(d["paused"]))
-    if "window" in d and isinstance(d["window"], list) and len(d["window"]) == 2:
-        a = int(min(22, max(0, _num(d["window"][0], 10))))
-        b = int(min(24, max(a + 1, _num(d["window"][1], 23))))
-        store.put("window", [a, b])
+    if "batches" in d:
+        raw = d["batches"] if isinstance(d["batches"], list) else re.split(r"[,;\s]+", str(d["batches"]))
+        ok = [x.strip().replace(".", ":") for x in raw if re.match(r"^\s*([01]?\d|2[0-3])[:.][0-5]\d\s*$", str(x))]
+        if ok:
+            store.put("batches", ok[:6])
+    if "warmup" in d:
+        store.put("warmup", bool(d["warmup"]))
     if "ai_per_day" in d:
         store.put("ai_per_day", int(min(40, max(0, _num(d["ai_per_day"], 6)))))
     if "min_score" in d:

@@ -117,7 +117,7 @@ function vPrehlad(){
 }
 function stTag(s){return {active:'<span class="tag ok">Beží</span>',paused:'<span class="tag warn">Pozastavená</span>',ended:'<span class="tag">Ukončená</span>'}[s]||''}
 
-function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:20,clip_max:55,name:'',url:'',tags:'',rules:'',about:'',sources:''};render()}
+function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:15,clip_max:45,name:'',url:'',tags:'',rules:'',about:'',sources:''};render()}
 function edCamp(id){const c=S.campaigns.find(x=>x.id==id);editCamp=id;form={...c,sources:''};render()}
 function fv(k){const e=document.getElementById('f_'+k);return e?e.value:form[k]}
 function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','lang','per_day','clip_min','clip_max','sources'])form[k]=fv(k);
@@ -195,28 +195,33 @@ function vKlipy(){
   ${cards?`<div class="clips">${cards}</div>`:'<div class="card muted">Nič tu nie je.</div>'}`;
 }
 
-const SUB={todo:'Neodoslané',submitted:'Odoslané, čaká na schválenie',approved:'Schválené',rejected:'Zamietnuté',paid:'Vyplatené'};
+const SUB={todo:'Neodoslané',submitted:'Odoslané, čaká na schválenie',approved:'Schválené',rejected:'Zamietnuté',paid:'Vyplatené',missed:'Nestihnuté'};
 function copyLinks(cid){const t=document.getElementById('lk_'+cid).innerText;navigator.clipboard.writeText(t).then(()=>toast('Odkazy sú skopírované.'),()=>toast('Kopírovanie zlyhalo, označ ich ručne.',true))}
-function markSent(cid){const ids=S.posts.filter(p=>p.campaign_id==cid&&p.status=='posted'&&p.submit=='todo'&&p.url).slice(0,25).map(p=>p.id);act('/api/clip/submitted',{ids},'Označené ako odoslané.')}
+const late=p=>p.deadline&&p.deadline<=S.now;
+const todoOf=cid=>S.posts.filter(p=>p.campaign_id==cid&&p.status=='posted'&&p.submit=='todo'&&p.url);
+function markSent(cid,isLate){const ids=todoOf(cid).filter(p=>!!late(p)==!!isLate).slice(0,isLate?200:25).map(p=>p.id);act('/api/clip/submitted',{ids},'Označené ako odoslané.')}
+async function markMissed(cid){for(const p of todoOf(cid).filter(late))await api('/api/clip/post/'+p.id,{submit:'missed'});load(true)}
 function setUrl(id){const url=prompt('Odkaz na zverejnený klip:');if(url)act('/api/clip/post/'+id,{url})}
 function setPaid(id){const v=prompt('Koľko dolárov kampaň za tento klip vyplatila?');if(v!==null&&v!=='')act('/api/clip/post/'+id,{paid:v})}
 function vOdoslat(){
   let out='';
   for(const c of S.campaigns){
-    const todo=S.posts.filter(p=>p.campaign_id==c.id&&p.status=='posted'&&p.submit=='todo'&&p.url);
-    if(!todo.length)continue;const first=todo.slice(0,25);
-    out+=`<div class="card"><div class="row"><h2 style="margin:0">${esc(c.name)}</h2><span class="tag">${esc(c.site_name)}</span><span class="tag acc">${todo.length} odkazov</span><span class="sp"></span>
+    const all=todoOf(c.id);if(!all.length)continue;
+    const todo=all.filter(p=>!late(p)),gone=all.filter(late),first=todo.slice(0,25);
+    const dl=first.map(p=>p.deadline).filter(Boolean).sort()[0];
+    out+=`<div class="card"><div class="row"><h2 style="margin:0">${esc(c.name)}</h2><span class="tag">${esc(c.site_name)}</span>${todo.length?`<span class="tag acc">${todo.length} odkazov</span>`:''}${dl?`<span class="tag bad">vložiť do ${when(dl)}</span>`:''}<span class="sp"></span>
      ${c.url?`<a class="btn sec" href="${esc(c.url)}" target="_blank" rel="noopener">${ic('ext','s')}Otvoriť kampaň</a>`:''}</div>
-     <div class="links" id="lk_${c.id}">${first.map(p=>esc(p.url)).join('\n')}</div>
+     ${todo.length?`<div class="links" id="lk_${c.id}">${first.map(p=>esc(p.url)).join('\n')}</div>
      <div class="row"><button class="btn" onclick="copyLinks(${c.id})">${ic('copy','s')}Kopírovať odkazy</button><button class="btn sec" onclick="markSent(${c.id})">${ic('ok','s')}Už som ich vložil</button>
-     ${todo.length>25?`<span class="small muted">Naraz ide najviac 25, zvyšok sa ukáže potom.</span>`:''}</div></div>`;
+     ${todo.length>25?`<span class="small muted">Naraz ide najviac 25, zvyšok sa ukáže potom.</span>`:''}</div>`:''}
+     ${gone.length?`<div class="row" style="margin-top:10px"><span class="small muted">Po termíne: ${gone.length}. Táto platforma ich už nevezme.</span><span class="sp"></span><button class="btn sec" onclick="markSent(${c.id},true)">Stihol som ich vložiť</button><button class="btn sec" onclick="markMissed(${c.id})">Nestihol som</button></div>`:''}</div>`;
   }
   const nourl=S.posts.filter(p=>p.status=='posted'&&!p.url);
   const failed=S.posts.filter(p=>p.status=='failed');
   const rest=S.posts.filter(p=>p.status=='posted'&&p.submit!='todo');
   const queued=S.posts.filter(p=>['queued','posting'].includes(p.status)).reverse();
   const row=p=>`<tr><td><b>${esc(p.hook||p.clip_title)}</b><div class="small muted">${esc(p.campaign)} · ${NET[p.platform]} · ${esc(p.account)}</div></td>`;
-  return `<div class="top"><div><h1>Na odoslanie</h1><p class="sub">Platformy nemajú napojenie pre appky, odkazy sa do kampane vkladajú ručne. Tu ich máš pripravené na jedno skopírovanie.</p></div></div>
+  return `<div class="top"><div><h1>Na odoslanie</h1><p class="sub">Platformy nemajú napojenie pre appky, odkazy sa do kampane vkladajú ručne. Tu ich máš pripravené na jedno skopírovanie. Whop berie odkaz len 30 minút od zverejnenia, preto klipy vychádzajú naraz v pevných časoch.</p></div><span class="sp"></span>${queued.length?`<button class="btn sec" onclick="act('/api/clip/batch_now',{},'Zverejňujem dávku, odkazy sa ukážu o pár minút.')">${ic('send','s')}Zverejniť dávku teraz</button>`:''}</div>
   ${out||'<div class="card muted">Žiadne odkazy na odoslanie.</div>'}
   ${nourl.length?`<div class="card"><h2>Chýba odkaz</h2><p class="muted" style="margin-top:0">Tieto klipy sú vonku, ale sieť nevrátila odkaz. Doplň ho, aby sa dal odoslať do kampane.</p><table class="t">${nourl.map(p=>row(p)+`<td><button class="btn sec" onclick="setUrl(${p.id})">Doplniť odkaz</button></td></tr>`).join('')}</table></div>`:''}
   ${failed.length?`<div class="card"><h2>Nepodarilo sa zverejniť</h2><table class="t">${failed.map(p=>row(p)+`<td class="small" style="color:var(--bad)">${esc(p.error)}</td><td><button class="btn sec" onclick="act('/api/clip/post/${p.id}',{retry:true})">${ic('redo','s')}Skúsiť znova</button></td></tr>`).join('')}</table></div>`:''}
@@ -229,9 +234,10 @@ function vOdoslat(){
 function vUcty(){
   const rows=S.accounts.map(a=>`<tr><td><b>${esc(a.name)}</b><div class="small muted">${NET[a.platform]||a.platform}</div></td><td>${a.broken?'<span class="tag bad">Treba pripojiť znova</span>':'<span class="tag ok">Pripojený</span>'}</td>
    <td><div class="row"><span class="sw ${a.active?'on':''}" onclick="act('/api/clip/account/${a.id}',{active:${a.active?0:1},per_day:${a.per_day}})"></span><span class="small muted">${a.active?'zverejňuje':'vypnutý'}</span></div></td>
-   <td><input class="in n" type="number" min="1" max="40" value="${a.per_day}" onchange="act('/api/clip/account/${a.id}',{active:${a.active},per_day:this.value})"> <span class="small muted">klipov denne</span></td></tr>`).join('');
+   <td><input class="in n" type="number" min="1" max="6" value="${a.per_day}" onchange="act('/api/clip/account/${a.id}',{active:${a.active},per_day:this.value})"> <span class="small muted">klipov denne</span></td></tr>`).join('');
   return `<div class="top"><div><h1>Účty</h1><p class="sub">Účty, na ktoré idú klipy. Každá sieť dostane každý klip raz.</p></div><span class="sp"></span><a class="btn" href="/#/p/${S.project_id}/ucty">${ic('plus','s')}Pripojiť účet</a></div>
   <div class="note"><div>Tlačidlo Pripojiť účet ťa prenesie do Social Managera na účty projektu <b>Clipper</b>, tam sa prihlásiš do siete. Používaj len nové účty založené na clipping. Kanály Xplained a N2N sem nikdy nepripájaj, klipy z cudzích videí by im mohli zobrať zárobok.</div></div>
+  <div class="note"><div><b>Nový účet najprv tri dni používaj ako bežný človek:</b> pár minút denne pozeraj a lajkuj videá z témy, doplň fotku a popis. Účet, ktorý začne hneď nahrávať, siete často nepustia k ľuďom. Najlepšie funguje 3 až 5 klipov denne na účet, viac klipov znamená viac účtov.</div></div>
   <div class="card">${rows?`<table class="t"><tr><th>Účet</th><th>Stav</th><th>Zverejňovanie</th><th>Tempo</th></tr>${rows}</table>`:'<p class="muted" style="margin:0">Žiadny účet. Klipy sa zatiaľ len strihajú.</p>'}</div>
   ${S.accounts.some(a=>a.platform=='tiktok')&&!S.public_ok?'<div class="note bad" style="margin-top:14px"><div>TikTok si klipy sťahuje cez verejnú adresu appky a tá teraz nie je zapnutá.</div></div>':''}`;
 }
@@ -243,7 +249,8 @@ function vNastavenia(){
   return `<div class="top"><div><h1>Nastavenia</h1></div></div><div class="card">
   ${line('Zverejňovať bez schvaľovania','Vypnuté: každý klip najprv uvidíš a schváliš. Zapnuté: hotové klipy idú von samy.',`<span class="sw ${s.autopublish?'on':''}" onclick="saveSet({autopublish:${!s.autopublish}})"></span>`)}
   ${line('Pozastaviť Clipper','Nič sa nestrihá ani nezverejňuje, čísla sa načítavajú ďalej.',`<span class="sw ${s.paused?'on':''}" onclick="saveSet({paused:${!s.paused}})"></span>`)}
-  ${line('Kedy zverejňovať','Hodiny cez deň, medzi ktoré sa klipy rovnomerne rozložia.',`<input class="in n" type="number" min="0" max="22" value="${s.window[0]}" onchange="saveSet({window:[this.value,${s.window[1]}]})"> až <input class="in n" type="number" min="1" max="24" value="${s.window[1]}" onchange="saveSet({window:[${s.window[0]},this.value]})">`)}
+  ${line('Časy zverejňovania','Všetky účty zverejnia v týchto časoch naraz, každý jeden klip. Daj časy, keď si pri počítači, lebo Whop berie odkaz len 30 minút od zverejnenia. Najviac 6 časov.',`<input class="in" style="width:220px" value="${esc(s.batches.join(', '))}" onchange="saveSet({batches:this.value})">`)}
+  ${line('Pomalý rozbeh nových účtov','Nový účet dá prvé dva dni 1 klip denne, ďalšie dva dni 2, potom plný počet. Siete nový účet s veľa videami naraz berú ako spam.',`<span class="sw ${s.warmup?'on':''}" onclick="saveSet({warmup:${!s.warmup}})"></span>`)}
   ${line('Výbery momentov denne','Každý výber je jedno krátke čítanie prepisu cez tvoj Max. Jeden výber dá až 12 klipov. Dnes: '+S.summary.ai_today+'.',`<input class="in n" type="number" min="0" max="40" value="${s.ai_per_day}" onchange="saveSet({ai_per_day:this.value})">`)}
   ${line('Najslabší moment, ktorý ešte berieme','Sila od 1 do 10. Vyššie číslo znamená menej klipov, ale lepších.',`<input class="in n" type="number" min="1" max="10" value="${s.min_score}" onchange="saveSet({min_score:this.value})">`)}
   ${line('Pozretia','Načítavajú sa samy každé 3 hodiny.',`<button class="btn sec" onclick="saveSet({refresh_stats:true});toast('Načítavam čísla.')">Načítať teraz</button>`)}</div>`;

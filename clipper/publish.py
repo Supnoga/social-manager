@@ -20,21 +20,35 @@ MAX_TRIES = 4
 
 
 # ---------- texty ----------
+DISCLOSE = {"#ad", "#sponsored", "#advertisement", "#paidpartnership", "#paid", "#promo", "#partner", "#collab"}
+MAX_HASH = 5       # viac hashtagov dosah znižuje a Instagram ich viac neberie
+
+
 def _tags(camp):
-    """Povinné značky kampane (hashtagy, označenia) tak, ako ich kampaň chce."""
-    return " ".join(re.findall(r"[#@][\w.]+", camp.get("tags") or ""))
+    """Povinné značky kampane: (označenie spolupráce, hashtagy, označenia účtov) tak, ako ich kampaň chce."""
+    found = re.findall(r"[#@][\w.]+", camp.get("tags") or "")
+    disc = [t for t in found if t.lower() in DISCLOSE]
+    return disc, [t for t in found if t.startswith("#") and t not in disc], [t for t in found if t.startswith("@")]
 
 
 def texts(clip, camp, platform):
     title = re.sub(r"[<>]", "", (clip.get("title") or clip.get("hook") or "Clip")).strip()
     body = re.sub(r"[<>]", "", (clip.get("caption") or title)).strip()
-    tags = _tags(camp)
+    own = re.findall(r"#\w+", body)
+    body = re.sub(r"\s+", " ", re.sub(r"#\w+", "", body)).strip() or title
+    disc, req, mentions = _tags(camp)
+    have = {t.lower() for t in disc + req}
+    room = MAX_HASH - len(disc) - len(req) - (1 if platform == "youtube" else 0)
+    extra = [t for t in dict.fromkeys(own) if t.lower() not in have][:max(0, min(3, room))]
+    first = (body + (" " + " ".join(disc) if disc else "")).strip()      # označenie spolupráce hneď v prvom riadku
+    tail = " ".join(mentions + req + extra + (["#shorts"] if platform == "youtube" else []))
+    text = (first + ("\n\n" + tail if tail else "")).strip()
     if platform == "youtube":
         t = title[:92]
-        if tags and len(t) + len(tags) < 96 and "#" in tags:
-            t = (t + " " + " ".join(x for x in tags.split() if x.startswith("#"))[:96 - len(t)]).strip()
-        return t, (body + "\n\n" + (tags + " " if tags else "") + "#shorts").strip()
-    return title, (body + ("\n\n" + tags if tags else "")).strip()[:2100]
+        if req and len(t) + len(" ".join(req)) < 96:
+            t = (t + " " + " ".join(req)).strip()
+        return t, text
+    return title, text[:2100]
 
 
 # ---------- verejný odkaz na súbor klipu (TikTok si video sťahuje sám) ----------
@@ -93,38 +107,60 @@ def _upload(acc, video):
 
 
 # ---------- rozvrh ----------
-def window():
-    w = store.get("window", [10, 23])
-    try:
-        a, b = int(w[0]), int(w[1])
-    except Exception:
-        a, b = 10, 23
-    return max(0, min(22, a)), max(a + 1, min(24, b))
+DEFAULT_BATCHES = ["14:00", "18:00", "21:30"]    # slovenský čas; v Amerike je vtedy ráno, obed a popoludnie
+ACTIVE = "('queued','posting','posted')"
+
+
+def batches():
+    """Časy dávok cez deň (minúty od polnoci). Všetky účty zverejňujú v tých istých časoch, aby odkazy prišli naraz
+    a dali sa do kampane vložiť včas (Whop berie odkaz len 30 minút od zverejnenia)."""
+    out = set()
+    for x in store.get("batches", None) or DEFAULT_BATCHES:
+        m = re.match(r"^\s*(\d{1,2})[:.](\d{2})\s*$", str(x))
+        if m and int(m.group(1)) < 24 and int(m.group(2)) < 60:
+            out.add(int(m.group(1)) * 60 + int(m.group(2)))
+    return sorted(out)[:6] or [840, 1080, 1290]
+
+
+def day_cap(account_id, per_day, day):
+    """Koľko klipov smie účet v daný deň zverejniť. Nový účet sa rozbieha pomaly (1, 1, 2, 2, potom plný počet),
+    lebo siete nový účet s veľa videami naraz berú ako spam a nepustia ho k ľuďom."""
+    lim = min(max(1, int(per_day)), len(batches()))
+    if not store.get("warmup", True):
+        return lim
+    first = store.one(f"SELECT MIN(scheduled_at) m FROM posts WHERE account_id=? AND status IN {ACTIVE}", (account_id,))["m"]
+    age = (day - datetime.strptime(first[:10], "%Y-%m-%d").date()).days if first else 0
+    return min(lim, 1 if age < 2 else 2 if age < 4 else lim)
 
 
 def next_slot(account_id, per_day):
-    """Najbližší voľný čas pre účet: klipy rovnomerne cez deň, s malou náhodou, najviac per_day denne."""
-    h0, h1 = window()
-    per_day = max(1, int(per_day))
-    gap = (h1 - h0) * 3600 / per_day
-    now = datetime.now()
-    last = store.one("SELECT MAX(scheduled_at) m FROM posts WHERE account_id=? AND status IN ('queued','posting','posted')",
-                     (account_id,))["m"]
-    t = now + timedelta(minutes=4)
-    if last:
-        t = max(t, datetime.strptime(last, FMT) + timedelta(seconds=gap * random.uniform(0.85, 1.15)))
-    for _ in range(60):
-        start = t.replace(hour=h0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(hours=h1 - h0)
-        if t < start:
-            t = start + timedelta(minutes=random.uniform(1, 25))
-        day = t.strftime("%Y-%m-%d")
-        n = store.one("SELECT COUNT(*) n FROM posts WHERE account_id=? AND status IN ('queued','posting','posted') "
-                      "AND substr(scheduled_at,1,10)=?", (account_id, day))["n"]
-        if t <= end and n < per_day:
-            break
-        t = start + timedelta(days=1, minutes=random.uniform(1, 25))
-    return t.strftime(FMT)
+    """Najbližšia voľná dávka pre účet: v jednej dávke jeden klip, denne najviac toľko, koľko účet smie."""
+    now = datetime.now() + timedelta(minutes=4)
+    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    taken = [datetime.strptime(r["scheduled_at"], FMT) for r in
+             store.q(f"SELECT scheduled_at FROM posts WHERE account_id=? AND status IN {ACTIVE} AND scheduled_at>=?",
+                     (account_id, day0.strftime(FMT)))]
+    for d in range(120):
+        day = day0 + timedelta(days=d)
+        mine = [t for t in taken if t.date() == day.date()]
+        if len(mine) >= day_cap(account_id, per_day, day.date()):
+            continue
+        for b in batches():
+            t = day + timedelta(minutes=b)
+            if t >= now and not any(abs((x - t).total_seconds()) < 1500 for x in mine):
+                return (t + timedelta(seconds=random.randint(0, 300))).strftime(FMT)
+    return (now + timedelta(days=120)).strftime(FMT)
+
+
+def batch_now():
+    """Zverejní dávku hneď: z každého účtu jeho najbližší naplánovaný klip. Vráti počet."""
+    n = 0
+    for r in store.q("SELECT account_id, MIN(scheduled_at) m FROM posts WHERE status='queued' GROUP BY account_id"):
+        p = store.one("SELECT id FROM posts WHERE status='queued' AND account_id=? AND scheduled_at=? LIMIT 1", (r["account_id"], r["m"]))
+        if p:
+            store.run("UPDATE posts SET scheduled_at=? WHERE id=?", (store.now(), p["id"]))
+            n += 1
+    return n
 
 
 def plan(clip):
@@ -164,8 +200,8 @@ def publish(post):
     try:
         ext, url = _upload(acc, _video(clip, camp, acc["platform"]))
         url = url if str(url or "").startswith("http") else ""
-        store.run("UPDATE posts SET status='posted', external_id=?, url=?, error='', updated_at=? WHERE id=?",
-                  (str(ext), url, store.now(), post["id"]))
+        store.run("UPDATE posts SET status='posted', external_id=?, url=?, error='', updated_at=?, posted_at=? WHERE id=?",
+                  (str(ext), url, store.now(), store.now(), post["id"]))
         return True
     except Exception as e:
         msg = str(e)[:500]
