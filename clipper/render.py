@@ -26,6 +26,29 @@ FIT_Y = 570
 ACCENT = (255, 107, 0)
 
 
+def _logo(camp):
+    """Logo, ktoré kampaň vyžaduje na obraze: stiahne sa raz a uloží. Vráti cestu alebo None."""
+    ref = (camp.get("logo") or "").strip()
+    if not ref:
+        return None
+    if Path(ref).expanduser().exists():
+        return str(Path(ref).expanduser())
+    d = store.DIR / "logos"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{camp['id']}-{abs(hash(ref)) % 10**8}.png"
+    if not f.exists():
+        import httpx
+        r = httpx.get(ref, follow_redirects=True, timeout=60, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        raw = d / "dl.tmp"
+        raw.write_bytes(r.content)
+        try:                                   # akýkoľvek formát (webp, jpg) na png so zachovanou priehľadnosťou
+            media._run_ff([media.ffmpeg(), "-y", "-i", str(raw), "-frames:v", "1", str(f)])
+        finally:
+            raw.unlink(missing_ok=True)
+    return str(f)
+
+
 # ---------- zábery a tváre ----------
 def _scene_cuts(src, t0, dur):
     """Presné časy strihov v zdroji (sekundy od začiatku klipu)."""
@@ -425,11 +448,17 @@ def render(clip):
         layout = max(time_by, key=time_by.get)
         words = clip_words(spoken, t0, t0 + dur)
         caps = _captions(words, (clip.get("hook") or "").strip(), src.get("lang") or "en", dur, shots, sw, sh, tmp)
+        logo = _logo(store.campaign(clip["campaign_id"]) or {})
         out_d = 0.4 if words and dur - words[-1]["e"] > 0.8 else 0.12      # smiech či potlesk na konci doznie plynulo
         fade = max(0.0, dur - out_d)
-        media._run_ff([ff, "-y", "-i", str(body), "-i", str(caps), "-ss", f"{t0:.3f}", "-t", f"{dur:.3f}", "-i", src["path"],
+        # logo (ak ho kampaň chce): vľavo hore v obraze, pod úvodným titulkom a mimo tlačidiel sietí
+        lg_in = ["-loop", "1", "-i", logo] if logo else []
+        lg_f = (f"[3:v]scale='min(300,iw)':'min(140,ih)':force_original_aspect_ratio=decrease,format=rgba[lg];"
+                f"[0:v][1:v]overlay=0:0:format=auto[b];[b][lg]overlay=60:{FIT_Y + 30}:shortest=1:format=auto,format=yuv420p[v];") if logo else \
+            "[0:v][1:v]overlay=0:0:format=auto,format=yuv420p[v];"
+        media._run_ff([ff, "-y", "-i", str(body), "-i", str(caps), "-ss", f"{t0:.3f}", "-t", f"{dur:.3f}", "-i", src["path"], *lg_in,
                        "-filter_complex",
-                       f"[0:v][1:v]overlay=0:0:format=auto,format=yuv420p[v];"
+                       lg_f +
                        f"[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=in:d=0.06,afade=t=out:st={fade:.2f}:d={out_d},aresample=48000[a]",
                        "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                        "-r", str(FPS), "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)])
