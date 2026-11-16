@@ -104,7 +104,7 @@ def con():
         have = [r[1] for r in _con.execute("PRAGMA table_info(campaigns)")]
         for col, kind in (("spent", "REAL DEFAULT 0"), ("clippers", "INTEGER DEFAULT 0"), ("age_days", "INTEGER DEFAULT 0"),
                           ("viral", "INTEGER DEFAULT 0"), ("fit", "INTEGER DEFAULT 0"),
-                          ("logo", "TEXT DEFAULT ''")):          # logo, ktoré kampaň chce vidieť v klipe (odkaz na obrázok)      # podklady pre bodovanie kampaní
+                          ("logo", "TEXT DEFAULT ''"), ("caption", "TEXT DEFAULT ''")):   # caption = presný popis, ak ho kampaň predpisuje          # logo, ktoré kampaň chce vidieť v klipe (odkaz na obrázok)      # podklady pre bodovanie kampaní
             if col not in have:
                 _con.execute(f"ALTER TABLE campaigns ADD COLUMN {col} {kind}")
         if "kind" not in [r[1] for r in _con.execute("PRAGMA table_info(sources)")]:
