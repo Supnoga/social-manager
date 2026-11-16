@@ -62,7 +62,8 @@ def _people(samples):
 
 
 def _track(pts, t_start):
-    """Poloha tváre v čase: keď sa hýbe málo, jedna pevná poloha; inak kľúčové body po sekunde (plynulý posun)."""
+    """Poloha tváre v čase: keď sa hýbe málo, jedna pevná poloha; inak kľúčové body po pol sekunde (plynulý posun).
+    Rečník, ktorý chodí po pódiu, nesmie z obrazu vyjsť: krátke okno a len ľahké vyhladenie, aby orez nemeškal."""
     pts = [(t - t_start, x) for t, x in pts]
     xs = sorted(p[1] for p in pts)
     mid = statistics.median(xs)
@@ -70,16 +71,19 @@ def _track(pts, t_start):
         return [(0, mid)]
     keys, t = [], 0.0
     end = pts[-1][0]
-    while t <= end + 1.0:
-        win = [x for (tt, x) in pts if abs(tt - t) <= 1.0]
+    while t <= end + 0.5:
+        win = [x for (tt, x) in pts if abs(tt - t) <= 0.5]
         if win:
             keys.append((round(t, 2), statistics.median(win)))
-        t += 1.0
+        t += 0.5
     sm = []
-    for i, (t, x) in enumerate(keys):   # vyhladenie, aby obraz neposkakoval
-        nb = [k[1] for k in keys[max(0, i - 1):i + 2]]
-        sm.append((t, sum(nb) / len(nb)))
-    return sm or [(0, mid)]
+    for i, (t, x) in enumerate(keys):   # ľahké vyhladenie (1-2-1), aby obraz neposkakoval
+        a, b = keys[max(0, i - 1)][1], keys[min(len(keys) - 1, i + 1)][1]
+        sm.append((t, (a + 2 * x + b) / 4))
+    out = [sm[0]]
+    for t, x in sm[1:]:                 # drobné chvenie sa neprenáša
+        out.append((t, out[-1][1] if abs(x - out[-1][1]) < 0.012 else x))
+    return out or [(0, mid)]
 
 
 def _x_expr(keys, sw, cw):
@@ -93,6 +97,20 @@ def _x_expr(keys, sw, cw):
         a, b = px(xa), px(xb)
         expr = f"if(lt(t,{tb}),{a}+({b}-{a})*(t-{ta})/{max(0.01, tb - ta):.2f},{expr})"
     return f"if(lt(t,{keys[0][0]}),{px(keys[0][1])},{expr})"
+
+
+def _no_face_edges(samples, a, b):
+    """Začiatok alebo koniec záberu, kde tvár nevidno (rečník sa otočil chrbtom alebo odchádza): tam orez nemá čoho sa držať.
+    Vráti časy, kde sa má záber rozdeliť; časť bez tváre sa potom ukáže celá."""
+    has = [s["t"] for s in samples if a <= s["t"] < b and s["faces"]]
+    if len(has) < 4 or has[-1] - has[0] < 1.0:
+        return []
+    out = []
+    if has[0] - a >= 1.25:
+        out.append(has[0])
+    if b - (has[-1] + 0.25) >= 1.25:
+        out.append(has[-1] + 0.25)
+    return [round(round(x * FPS) / FPS, 4) for x in out]
 
 
 def plan(src_path, t0, dur, work, whole=False):
@@ -115,6 +133,8 @@ def plan(src_path, t0, dur, work, whole=False):
         m = re.search(r"Video:.*?(\d{3,5})x(\d{3,5})", r.stderr)
         sw, sh = (int(m.group(1)), int(m.group(2))) if m else (1920, 1080)
     bounds = [0.0] + ([] if whole else _scene_cuts(src_path, t0, dur)) + [dur]
+    if sh < sw * 1.2:
+        bounds = sorted(set(bounds) | {x for a, b in zip(bounds, bounds[1:]) for x in _no_face_edges(data["samples"], a, b)})
     shots = []
     for a, b in zip(bounds, bounds[1:]):
         sm = [s for s in data["samples"] if a <= s["t"] < b]
