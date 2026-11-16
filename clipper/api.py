@@ -125,7 +125,7 @@ def _num(v, default=0.0):
 
 
 FIELDS = ("name", "site", "url", "rate", "min_views", "max_payout", "budget", "networks", "tags", "rules", "about", "lang",
-          "per_day", "clip_min", "clip_max", "kind", "winners", "spent", "clippers", "age_days", "viral", "fit")
+          "per_day", "clip_min", "clip_max", "kind", "winners", "spent", "clippers", "age_days", "viral", "fit", "logo")
 
 
 def _clean(d):
@@ -134,7 +134,7 @@ def _clean(d):
         out["name"] = str(d["name"] or "").strip()[:120] or "Kampaň"
     if "site" in d:
         out["site"] = d["site"] if d["site"] in SITES else "other"
-    for k in ("url", "tags", "rules", "about", "winners"):
+    for k in ("url", "tags", "rules", "about", "winners", "logo"):
         if k in d:
             out[k] = str(d[k] or "").strip()[:4000]
     for k in ("clippers", "age_days"):
