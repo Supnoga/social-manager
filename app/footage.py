@@ -36,11 +36,17 @@ def _setting(k):
     return (db.get_setting(k, "") or "").strip()
 
 
+_COUNTS = {"t": 0, "own": 0, "music": 0}
+
+
 def status():
+    import time as _t
+    if _t.time() - _COUNTS["t"] > 300:   # prechádzanie priečinkov najviac raz za 5 minút (stránky sa načítajú hneď)
+        _COUNTS.update(own=sum(1 for f in OWN.rglob("*") if f.suffix.lower() in VIDEO_EXT | IMG_EXT),
+                       music=sum(1 for f in MUSIC.rglob("*") if f.suffix.lower() in {".mp3", ".m4a", ".wav"}), t=_t.time())
     return {"pexels": bool(_setting("pexels_key")), "pixabay": bool(_setting("pixabay_key")),
             "ai": bool(_setting("cf_account") and _setting("cf_ai_token")) and bool(db.get_setting("ai_images", True)),
-            "own": sum(1 for f in OWN.rglob("*") if f.suffix.lower() in VIDEO_EXT | IMG_EXT),
-            "music": sum(1 for f in MUSIC.rglob("*") if f.suffix.lower() in {".mp3", ".m4a", ".wav"}),
+            "own": _COUNTS["own"], "music": _COUNTS["music"],
             "own_dir": str(OWN), "music_dir": str(MUSIC), "library": db.one("SELECT COUNT(*) n FROM footage")["n"]}
 
 

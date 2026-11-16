@@ -487,9 +487,8 @@ def production(since):
     add(f"SELECT v.project_id p, {VF} f, COUNT(*) n FROM videos v WHERE v.created_at>=? GROUP BY 1, 2", "made", (since,))
     add(f"""SELECT s.project_id p, {IF} f, COUNT(*) n FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id
             WHERE s.is_source=1 GROUP BY 1, 2""", "scripts_all")
-    add(f"""SELECT s.project_id p, {IF} f, COUNT(*) n FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1 AND NOT EXISTS (
-             SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id
-             WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY 1, 2""", "ready")
+    add(f"""SELECT s.project_id p, {IF} f, COUNT(*) n FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1 AND NOT EXISTS (SELECT 1 FROM videos v WHERE v.script_id=s.id)
+                   AND (s.idea_id IS NULL OR NOT EXISTS (SELECT 1 FROM scripts s2 JOIN videos v ON v.script_id=s2.id WHERE s2.idea_id=s.idea_id)) GROUP BY 1, 2""", "ready")
     for st, key in (("review", "review"), ("queued", "queued"), ("uploading", "queued"), ("failed", "failed")):
         add(f"""SELECT v.project_id p, {VF} f, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id WHERE p.status=? GROUP BY 1, 2""",
             key, (st,))

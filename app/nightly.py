@@ -181,13 +181,39 @@ def clean():
     STATE["last_clean"] = datetime.now().strftime("%d.%m. %H:%M")
 
 
+_used = {"t": 0, "mb": 0, "busy": False}
+
+
+def _data_mb():
+    """Veľkosť priečinka s dátami (desiatky GB, tisíce súborov): počíta sa na pozadí najviac raz za 10 minút,
+    stránky nečakajú na prechádzanie disku."""
+    def go():
+        try:
+            used = 0
+            for root, _, files in os.walk(db.DATA_DIR):
+                for f in files:
+                    try:
+                        used += os.path.getsize(os.path.join(root, f))
+                    except OSError:
+                        pass
+            _used.update(mb=round(used / 1e6), t=time.time())
+        finally:
+            _used["busy"] = False
+    if time.time() - _used["t"] > 600 and not _used["busy"]:
+        _used["busy"] = True
+        threading.Thread(target=go, daemon=True).start()
+    return _used["mb"]
+
+
+_power = {"t": 0, "v": False}
+
+
+def _on_power_cached():
+    if time.time() - _power["t"] > 60:
+        _power.update(v=on_power(), t=time.time())
+    return _power["v"]
+
+
 def status():
-    used = 0
-    for root, _, files in os.walk(db.DATA_DIR):
-        for f in files:
-            try:
-                used += os.path.getsize(os.path.join(root, f))
-            except OSError:
-                pass
-    return dict(STATE, config=cfg(), in_window=in_window(), on_power=on_power(), data_mb=round(used / 1e6),
+    return dict(STATE, config=cfg(), in_window=in_window(), on_power=_on_power_cached(), data_mb=_data_mb(),
                 freed_mb=round(STATE["freed_mb"]))

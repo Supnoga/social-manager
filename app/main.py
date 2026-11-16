@@ -328,9 +328,8 @@ def dashboard():
         "ideas": db.one("SELECT COUNT(*) n FROM ideas WHERE status IN ('new','approved')")["n"],
         "accounts": db.one("SELECT COUNT(*) n FROM accounts")["n"],
         "scripts": {r["f"]: r["n"] for r in db.q("""SELECT CASE WHEN i.format='long' THEN 'long' ELSE 'short' END f, COUNT(*) n
-                   FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1 AND NOT EXISTS (
-                   SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id
-                   WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY f""")},
+                   FROM scripts s LEFT JOIN ideas i ON i.id=s.idea_id WHERE s.is_source=1 AND NOT EXISTS (SELECT 1 FROM videos v WHERE v.script_id=s.id)
+                   AND (s.idea_id IS NULL OR NOT EXISTS (SELECT 1 FROM scripts s2 JOIN videos v ON v.script_id=s2.id WHERE s2.idea_id=s.idea_id)) GROUP BY f""")},
         "posts": c,
         "planned": db.one(f"SELECT COUNT(*) n FROM posts p WHERE p.status IN ('queued','uploading') OR {FUTURE}")["n"],
         "public": db.one(f"SELECT COUNT(*) n FROM posts p WHERE p.status='done' AND NOT {FUTURE}")["n"],
@@ -2629,8 +2628,19 @@ def update_check():
     return dict(r, version=updater.version(), repo=db.get_setting("update_repo", "") or updater.DEFAULT_REPO)
 
 
+_RSTAT = {"t": 0, "v": {}}
+
+
 def _render_status():
-    """Zaťaženie Macu pri skladaní videí (na postupné zvyšovanie render_parallel)."""
+    """Zaťaženie Macu pri skladaní videí. Pomalé zisťovanie pamäte a teploty (systémové príkazy) najviac raz za 30 s."""
+    from . import explainer
+    import time as _t
+    if _t.time() - _RSTAT["t"] > 30:
+        _RSTAT.update(v=_render_status_slow(), t=_t.time())
+    return dict(_RSTAT["v"], active=explainer._lock.active, limit=explainer._lock.limit())
+
+
+def _render_status_slow():
     from . import explainer
     out = {"active": explainer._lock.active, "limit": explainer._lock.limit(), "cpus": os.cpu_count()}
     try:
@@ -2767,6 +2777,7 @@ def main():
                                or brand._fix_state["running"] or _RERENDER["running"]
                                or bool(_clip_worker() and _clip_worker().busy()), drain=_drain)
     threading.Thread(target=_mp_autoresume, daemon=True).start()
+    threading.Thread(target=db.optimize, daemon=True).start()
     try:
         _autostart_setup()
     except Exception as e:
