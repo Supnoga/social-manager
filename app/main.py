@@ -1302,6 +1302,12 @@ def _mp_ok(r):
     return bool((r or {}).get("qa") and r["qa"].get("ok"))
 
 
+@app.get("/api/ideas/{iid}/precheck")
+def idea_precheck(iid: int):
+    ok, why = _mp_precheck(iid)
+    return {"ok": ok, "why": why}
+
+
 def _mp_precheck(iid):
     """Rýchla kontrola obrazu bez hlasu a bez skladania (1–2 min). Vráti (ok, dôvod)."""
     s = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
@@ -1383,9 +1389,11 @@ def _mp_short(pid, lid):
         try:
             if not k["has_script"]:
                 content.run_task("scripts", {"idea_ids": [k["id"]]})
-            if _mp_ok(idea_produce_first(k["id"], {})):
+            r = idea_produce_first(k["id"], {})
+            if _mp_ok(r):
                 return True
-            MPROD["log"].append(f"kanál {pid}: krátke {k['id']} neprešlo kontrolou")
+            why = "; ".join(((r or {}).get("qa") or {}).get("why") or [])[:200]
+            MPROD["log"].append(f"kanál {pid}: krátke {k['id']} neprešlo kontrolou ({why})")
         except Exception as e:
             MPROD["log"].append(f"kanál {pid}: krátke {k['id']}: {str(e)[:120]}")
     return False
