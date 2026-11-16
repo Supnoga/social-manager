@@ -2744,7 +2744,7 @@ def main():
         pass
     updater.background_checker(lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
                                or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
-                               or brand._fix_state["running"], drain=_drain)
+                               or brand._fix_state["running"] or _RERENDER["running"], drain=_drain)
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     try:
         _autostart_setup()
