@@ -1034,8 +1034,7 @@ def unlogo(pids):
     db.set_setting("unlogo_todo", sorted(set(db.get_setting("unlogo_todo", []) or []) | {r["id"] for r in todo}))
 
     def run():
-        if not _unlogo_busy.acquire(blocking=False):
-            return
+        _unlogo_busy.acquire()   # počká, kým dobehne preskladanie máp (predtým tu skončil a videá ostali zablokované)
         _unlogo_state["running"] = True
         try:
             for v in todo:
@@ -1112,6 +1111,9 @@ def remap(pids):
     def run():
         with _unlogo_busy:   # po jednom, nie súčasne s odstraňovaním loga
             for v in todo:
+                if v["id"] in set(db.get_setting("remap_done", []) or []):
+                    continue
+                _unlogo_state["current"] = "mapa %s" % v["id"]
                 try:
                     r = RENDER(int(v["script_id"]), {})
                     new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
@@ -1123,6 +1125,7 @@ def remap(pids):
                         if f != Path(new["file_path"]) and f.exists():
                             f.unlink(missing_ok=True)
                     db.set_setting("remap_done", (db.get_setting("remap_done", []) or []) + [v["id"]])
+                    _unlogo_state["remapped"] = _unlogo_state.get("remapped", 0) + 1
                     db.set_setting("unlogo_done", (db.get_setting("unlogo_done", []) or []) + [v["id"]])
                     db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != v["id"]])
                 except Exception as e:
