@@ -173,13 +173,15 @@ def ahead_one():
     if not db.get_setting("ahead_upload", True):
         return False
     reset = _next_reset().strftime("%Y-%m-%d %H:%M:%S")
-    soon = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    # 16.11.: aj dnešné videá (o 15+ minút) sa nahrajú vopred s časom zverejnenia, aby vyšli presne načas
+    # a nečakali v rade na nahrávanie až v ich čas (napr. 15 dlhých o 14:00 naraz)
+    soon = (datetime.now() + timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
     rows = db.q("""SELECT p.*, COALESCE(i.format,'short') fmt, substr(p.scheduled_at,1,10) day FROM posts p
                    JOIN accounts a ON a.id=p.account_id LEFT JOIN videos v ON v.id=p.video_id
                    LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
                    WHERE p.status='queued' AND a.platform='youtube' AND COALESCE(p.stash_id,'')='' AND p.scheduled_at>=?
                    ORDER BY substr(p.scheduled_at,1,10), COALESCE(i.format,'short')!='long', p.scheduled_at LIMIT 60""",
-                (max(reset, soon),))
+                (soon,))
     for p in rows:
         acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
         vid = db.one("SELECT * FROM videos WHERE id=?", (p["video_id"],))
@@ -195,6 +197,8 @@ def ahead_one():
                     need += 1
             except Exception:
                 pass
+        if p["scheduled_at"] < reset:
+            need = max(0, need - 1)  # samo patrí medzi videá pred obnovením limitu, nahratie teraz nič navyše nestojí
         if not youtube.quota_ok(acc, reserve=need + youtube.RELEASE_RESERVE) or youtube.units_blocked(acc) \
                 or youtube.units_used(acc) + 150 + (need + youtube.RELEASE_RESERVE) * 110 > youtube.UNITS_LIMIT:
             continue
