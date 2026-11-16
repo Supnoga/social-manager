@@ -24,6 +24,8 @@ def connect_instagram(token, project_id=None, lang=""):
     """Instagram bez Facebook stránky: token z Meta appky (Instagram, „API setup with Instagram login“).
     Účet musí byť firemný alebo tvorca a mať v appke rolu testera. Token platí 60 dní a appka si ho predlžuje sama."""
     token = (token or "").strip()
+    if token.startswith("EAA"):
+        return _connect_instagram_fb(token, project_id, lang)
     with client() as c:
         r = c.get(IGH("me"), params={"fields": "user_id,username,account_type", "access_token": token})
     if r.status_code >= 400:
@@ -36,12 +38,35 @@ def connect_instagram(token, project_id=None, lang=""):
     return _upsert("instagram", "@" + (d.get("username") or ig_id), ig_id, t, project_id, lang)
 
 
+def _connect_instagram_fb(token, project_id=None, lang=""):
+    """Novšie Meta appky dávajú pri Instagrame token cez „Unified login“ (začína EAA, nevyprší): volá sa graph.facebook.com
+    s číslom Instagram účtu, Facebook stránka netreba. Číslo účtu sa zistí z tokenu (debug_token)."""
+    with client() as c:
+        r = c.get(G("debug_token"), params={"input_token": token, "access_token": token})
+        ids = []
+        if r.status_code == 200:
+            for sc in (r.json().get("data") or {}).get("granular_scopes") or []:
+                if str(sc.get("scope", "")).startswith("instagram"):
+                    ids += [str(x) for x in sc.get("target_ids") or []]
+        ids = list(dict.fromkeys(ids))
+        if not ids:
+            raise PlatformError("Z tokenu sa nedá zistiť Instagram účet. Vygeneruj token znova pri účte v Meta appke.")
+        r = c.get(G(ids[0]), params={"fields": "id,username", "access_token": token})
+    if r.status_code >= 400:
+        raise PlatformError("Instagram token neprijal. " + r.text[:200])
+    d = r.json()
+    t = {"ig_login": True, "ig_fb": True, "ig_token": token, "ig_id": str(d["id"]), "ig_at": time.time()}
+    return _upsert("instagram", "@" + (d.get("username") or d["id"]), str(d["id"]), t, project_id, lang)
+
+
 def ig_ctx(account):
     """Kadiaľ sa volá Instagram pre tento účet: (funkcia na adresu, token, účet v adrese).
     Cez Facebook stránku (firemné účty) alebo priamym prihlásením (klipové účty)."""
     t = tokens(account)
     if not t.get("ig_login"):
         return G, t["page_token"], t["ig_id"]
+    if t.get("ig_fb"):                    # token z „Unified login“: graph.facebook.com, nevyprší
+        return G, t["ig_token"], t["ig_id"]
     if time.time() - float(t.get("ig_at") or 0) > 7 * 86400:       # token žije 60 dní, predĺž ho raz za týždeň
         try:
             with client() as c:
