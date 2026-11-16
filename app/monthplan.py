@@ -149,8 +149,26 @@ def get(project_id=0):
     projs = plan.get("projects", {})
     if project_id:
         projs = {k: v for k, v in projs.items() if k == str(project_id)}
+    made_all = db.get_setting("month_plan_made", {}) or {}
+
+    def live(k, v):
+        """Plán sa ukladá pri zostavení; čo sa odvtedy vyrobilo, sa doplní tu (Oliver 16.11.: hotové video ukazovalo „scenár až pri výrobe“)."""
+        v = dict(v)
+        days, cur, idx = [], None, 0
+        for r in v.get("days") or []:
+            r = dict(r)
+            if r.get("long"):
+                cur, idx = made_all.get(f"{k}:{r['date']}") or {}, 0
+                r["long"] = dict(r["long"], made=bool(cur.get("long")))
+            if r.get("short") and cur is not None:
+                if idx < int(cur.get("shorts") or 0):
+                    r["short"] = dict(r["short"], done=True)
+                idx += 1
+            days.append(r)
+        v["days"] = days
+        return v
     return {"start": plan.get("start", ""), "days": plan.get("days", 30), "built": plan.get("built", ""),
-            "projects": [dict(v, id=int(k), name=names.get(k, k), stock=stock_days(int(k))) for k, v in sorted(projs.items(), key=lambda kv: int(kv[0]))]}
+            "projects": [dict(live(k, v), id=int(k), name=names.get(k, k), stock=stock_days(int(k))) for k, v in sorted(projs.items(), key=lambda kv: int(kv[0]))]}
 
 
 def stock_days(pid, today=None):
