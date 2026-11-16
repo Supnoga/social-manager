@@ -13,7 +13,7 @@ SCOPES = ("https://www.googleapis.com/auth/youtube.upload https://www.googleapis
 REDIRECT = BASE_URL + "/"
 
 
-DAILY_UPLOADS = 95  # Google dáva ~100 nahratí denne na jeden Google Cloud projekt; rezerva
+DAILY_UPLOADS = 99  # Google dáva 100 nahratí denne na jeden Google Cloud projekt; 16.11.: rezerva 5 by posunula 4 krátke na ďalší deň
 
 
 def clients():
