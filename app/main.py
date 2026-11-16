@@ -1308,6 +1308,16 @@ def idea_precheck(iid: int):
     return {"ok": ok, "why": why}
 
 
+@app.post("/api/ideas/{iid}/strengthen")
+def idea_strengthen(iid: int):
+    """Skúška: slabé scény dostanú silnejší obraz a kontrola sa zopakuje."""
+    ok, why = _mp_precheck(iid)
+    if ok:
+        return {"ok": True, "before": "", "why": ""}
+    ok2, why2 = _mp_fix(iid, why)
+    return {"ok": ok2, "before": why, "why": why2}
+
+
 def _mp_precheck(iid):
     """Rýchla kontrola obrazu bez hlasu a bez skladania (1–2 min). Vráti (ok, dôvod)."""
     s = db.one("SELECT * FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
@@ -1323,6 +1333,23 @@ def _mp_precheck(iid):
     except Exception as e:
         return True, str(e)[:100]   # kontrolu sa nepodarilo urobiť: rozhodne až kontrola po zložení
     return bool((qa or {}).get("ok")), "; ".join((qa or {}).get("why") or [])[:200]
+
+
+def _mp_fix(iid, why):
+    """Neprešlo pre slabý, prázdny alebo prekrývajúci sa obraz: tie scény dostanú nový obraz (1 lacné AI volanie) a kontrola sa zopakuje."""
+    if not any(w in (why or "") for w in ("Slabý obraz", "Prázdna scéna", "Prekrývanie", "Stroj bez presného modelu")):
+        return False, why
+    s = db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,))
+    try:
+        n = explainer.strengthen(s["id"], why) if s else 0
+    except Exception as e:
+        MPROD["log"].append(f"nápad {iid}: silnejší obraz zlyhal ({str(e)[:100]})")
+        return False, why
+    if not n:
+        return False, why
+    ok, why2 = _mp_precheck(iid)
+    MPROD["log"].append(f"nápad {iid}: {n} scén dostalo silnejší obraz, kontrola {'prešla' if ok else 'stále nie: ' + why2[:120]}")
+    return ok, why2
 
 
 def _mp_long(slot, tried):
@@ -1351,6 +1378,8 @@ def _mp_long(slot, tried):
             if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
                 content.run_task("scripts", {"idea_ids": [iid]})
             ok, why = _mp_precheck(iid)
+            if not ok:
+                ok, why = _mp_fix(iid, why)
             if not ok:   # obraz by neprešiel: nevyrába sa, ide ďalšia téma
                 bad = db.get_setting("month_plan_bad", []) or []
                 db.set_setting("month_plan_bad", sorted(set(bad) | {iid}))   # plán ju už neponúkne
@@ -1389,6 +1418,13 @@ def _mp_short(pid, lid):
         try:
             if not k["has_script"]:
                 content.run_task("scripts", {"idea_ids": [k["id"]]})
+            ok, why = _mp_precheck(k["id"])
+            if not ok:
+                ok, why = _mp_fix(k["id"], why)
+            if not ok:   # slabý obraz sa nevyrába (ušetrí hodinu skladania), ďalšie krátke z toho istého dlhého
+                db.run("UPDATE ideas SET status='rejected' WHERE id=?", (k["id"],))
+                MPROD["log"].append(f"kanál {pid}: krátke {k['id']} vopred neprešlo ({why})")
+                continue
             r = idea_produce_first(k["id"], {})
             if _mp_ok(r):
                 return True

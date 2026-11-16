@@ -465,6 +465,76 @@ Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "boards", "cheap")
     return scenes
 
 
+_STRONG = ("map", "timeline", "line", "bars", "compare", "count", "calc", "split", "temp", "scene")
+
+
+def _bad_scenes(scenes, why=""):
+    """Indexy scén, ktoré by kontrola označila: slabé (ikony, text, zoznam, kresba), hrubá kresba, prázdne alebo prekrývajúce sa."""
+    from . import auto_visual
+    body = scenes[:-1] if len(scenes) > 2 else scenes
+    out = set()
+    for i, sc in enumerate(body):
+        a = sc.get("anim") or {}
+        d = a.get("d") if isinstance(a, dict) and a.get("t") == "board" else a
+        k = d.get("k") if isinstance(d, dict) else None
+        if k in auto_visual.WEAK and not auto_visual.actors(d):
+            out.add(i)
+        elif k == "svg" or (k == "mech" and d.get("m") not in auto_visual.PRECISE):
+            out.add(i)
+    for m in re.finditer(r"Prázdna scéna: ([\d, ]+)", why or ""):
+        out |= {int(x) - 1 for x in re.findall(r"\d+", m.group(1))}
+    out |= {int(x) - 1 for x in re.findall(r"Prekrývanie v scéne (\d+)", why or "")}
+    return sorted(i for i in out if 0 <= i < len(body))
+
+
+def strengthen(script_id, why=""):
+    """Slabé scény (len ikony či text), prázdne a prekrývajúce sa scény dostanú nový obraz: mapu, graf, časovú os alebo blok „kto komu“.
+    Jedno malé lacné AI volanie len pre tieto scény (scenár ani hlas sa nemenia). Vráti počet vymenených scén (16.11.)."""
+    from . import ai, auto_visual, languages
+    s = db.one("SELECT * FROM scripts WHERE id=?", (script_id,))
+    if not s:
+        return 0
+    scenes = ensure_boards(script_id)
+    bad = _bad_scenes(scenes, why)
+    if not bad:
+        return 0
+    p = db.one("SELECT * FROM projects WHERE id=?", (s["project_id"],)) or {}
+    packs = [k for k in packs_for(p) if k in PACK]
+    allowed = set(_STRONG) | {PACK[k].split('"k":"')[1].split('"')[0] for k in packs if '"k":"' in PACK[k]}
+    items = {str(i): {"onscreen": scenes[i].get("onscreen", ""), "visual": (scenes[i].get("visual") or "")[:160]} for i in bad}
+    sprites = "user, people, phone, tv, laptop, wifi, house, city, store, bank, factory, server, cloud, document, mail, calendar, wallet, coins, " \
+              "banknote, piggybank, pricetag, lock, shield, key, chart, growth, package, truck, warehouse, container, plane, ship, globe, clock, idea, " \
+              "chip, check, cross, drop, bolt, flame, snow, leaf, car, battery, card, robot, satellite, gear, sun, flag, plug, tool"
+    lines = [x for x in SPEC.split("\n") if any(f'"k":"{k}"' in x for k in ("bars", "compare", "temp", "split", "scene", "map", "timeline"))]
+    try:
+        data = ai.ask(f"""Video "{s['title']}". These scenes now show only icons or text, or their picture is empty or crowded.
+Give each scene a NEW diagram that SHOWS what the scene says. Allowed diagrams ONLY:
+{chr(10).join(lines)}
+{chr(10).join(PACK[k] for k in packs)}
+Rules: a place, country, city or route -> "map"; years or history -> "timeline"; a number -> "bars", "count", "compare", "line" or "calc" with real numbers;
+people, companies or things giving something to each other -> "scene" with 2-4 things ONLY from this list: {sprites} (every thing labelled, every arrow says what moves).
+Never "hero", "text", "list", "icons", "draw", "svg" or "mech". Labels max 3 words. Write labels in {languages.english(s['lang'])}.
+Scenes: {json.dumps(items, ensure_ascii=False)}
+Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "strengthen", "cheap")
+    except Exception as e:
+        print("silnejší obraz:", e)
+        return 0
+    n = 0
+    for i in bad:
+        d = (data or {}).get(str(i)) if isinstance(data, dict) else None
+        if isinstance(d, dict) and isinstance(d.get("d"), dict):
+            d = d["d"]
+        if not (isinstance(d, dict) and d.get("k") in allowed):
+            continue
+        if d["k"] == "scene" and not auto_visual.actors(d):
+            continue   # účastníci, ktorých nevieme nakresliť: ostal by len rad ikon
+        scenes[i]["anim"] = {"t": "board", "d": d}
+        n += 1
+    if n:
+        db.run("UPDATE scripts SET scenes=? WHERE id=?", (json.dumps(scenes, ensure_ascii=False), script_id))
+    return n
+
+
 def localized_scenes(s):
     """Scény pre video v jazyku skriptu. Starší preklad bez diagramov: vezme diagramy z originálu a preloží ich texty zadarmo."""
     scenes = json.loads(s["scenes"] or "[]")
