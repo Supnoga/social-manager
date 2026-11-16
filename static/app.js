@@ -55,7 +55,9 @@ const I = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24">${IC[n] || ''}
 const PL = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', facebook: 'Facebook', linkedin: 'LinkedIn' };
 const PLATS = Object.keys(PL);
 const plat = (p, withName = true) => `<span class="plat-ic">${I(p)}${withName ? PL[p] : ''}</span>`;
-const ST = { review: ['Na schválenie', 'warn'], queued: ['Naplánované', 'acc'], uploading: ['Nahráva sa', 'warn'], done: ['Zverejnené', 'ok'], failed: ['Chyba', 'bad'] };
+const ST = { review: ['Na schválenie', 'warn'], queued: ['Naplánované', 'acc'], uploading: ['Nahráva sa', 'warn'], done: ['Zverejnené', 'ok'], failed: ['Chyba', 'bad'], hold: ['Podržané', ''], future: ['Nahraté, čaká na svoj čas', 'acc'] };
+// skutočný stav príspevku: 'done' s časom v budúcnosti ešte nie je verejné, len leží na sieti s nastaveným časom
+const stOf = p => ST[p.future ? 'future' : p.status] || [p.status, ''];
 // Typ videa: krátke (na výšku: Shorts, Reels, TikTok) alebo dlhé (na šírku, YouTube). Značka + spoločný filter.
 IC.vshort = '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 9.5v5l4-2.5z"/>';
 IC.vlong = '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M10.5 9.5v5l4-2.5z"/>';
@@ -95,7 +97,7 @@ async function api(url, opts = {}, busyText) {
       for (let miss = 0; ;) {
         await new Promise(res => setTimeout(res, 1500));
         try { const x = await fetch('/api/job/' + j.job); st = await x.json(); miss = 0; if (!x.ok) throw new Error(st.detail || 'Chyba'); if (st.done) break; }
-        catch (e) { if (e.message && e.message !== 'Failed to fetch' && e.message !== 'Load failed') throw e; if (++miss > 20) throw new Error('Appka neodpovedá – je otvorené čierne okno (Terminál)?'); }
+        catch (e) { if (e.message && e.message !== 'Failed to fetch' && e.message !== 'Load failed') throw e; if (++miss > 20) throw new Error('Appka neodpovedá. Klikni na ikonku Social Manager, zapne sa znova.'); }
       }
       r = { ok: st.status < 400, status: st.status }; d = st.body || {};
     } else {
@@ -105,7 +107,7 @@ async function api(url, opts = {}, busyText) {
     if (d.manual) { busy(false); return await manualAI(d); }
     if (!r.ok) throw new Error(d.error || (typeof d.detail === 'string' ? d.detail : '') || (r.status === 422 ? 'Appka nerozumela požiadavke, obnov stránku a skús znova.' : 'Chyba ' + r.status));
     return d;
-  } catch (e) { if (e.message !== 'Zrušené') toast(/fetch|Load failed/i.test(e.message) ? 'Appka neodpovedá – skontroluj, či je otvorené čierne okno (Terminál), a skús znova.' : e.message, true); throw e; }
+  } catch (e) { if (e.message !== 'Zrušené') toast(/fetch|Load failed/i.test(e.message) ? 'Appka neodpovedá. Klikni na ikonku Social Manager, zapne sa znova.' : e.message, true); throw e; }
   finally { if (busyText) busy(false); }
 }
 
@@ -150,8 +152,8 @@ function sidebar() {
     <div class="sec-t">Nastavenie</div>
     ${nav('nastavenia', 'settings', 'Nastavenia', cur === 'nastavenia')}
     <div class="side-foot">
-      <div class="status"><i class="${ai.cli_found ? '' : 'w'}"></i>Claude ${ai.cli_found ? 'pripojený' : 'v ručnom režime'}</div>
-      <div class="status"><i class="${S.meta.settings.paused ? 'w' : ''}"></i>Plánovač ${S.meta.settings.paused ? 'pozastavený' : 'beží'}</div>
+      <div class="status"><i class="${ai.cli_found && (S.meta.ai_now || { ok: true }).ok ? '' : 'w'}"></i>Claude ${!ai.cli_found ? 'v ručnom režime' : (S.meta.ai_now || { ok: true }).ok ? 'pripojený' : ({ limit: 'má minutý limit', login: 'nie je prihlásený' }[S.meta.ai_now.why] || 'naposledy hlásil chybu')}</div>
+      <div class="status"><i class="${S.meta.settings.paused || S.meta.scheduler_alive === false ? 'w' : ''}"></i>Plánovač ${S.meta.settings.paused ? 'pozastavený' : S.meta.scheduler_alive === false ? 'neodpovedá' : 'beží'}</div>
       <a class="small dim" style="display:block;margin-top:8px;cursor:pointer" onclick="quitApp()">Vypnúť appku</a>
       <div class="small dim" style="margin-top:10px;display:flex;align-items:center;gap:6px"><svg width="18" height="13" viewBox="0 0 18 13"><rect width="18" height="13" rx="3" fill="#FF0000"/><polygon points="7,3.5 12.5,6.5 7,9.5" fill="#fff"/></svg>Uses YouTube API Services</div>
       <div class="small" style="margin-top:4px"><a href="https://github.com/Supnoga/social-manager/blob/main/PRIVACY.md" target="_blank" style="color:var(--muted)">Privacy Policy</a> · <a href="https://github.com/Supnoga/social-manager/blob/main/TERMS.md" target="_blank" style="color:var(--muted)">Terms of Service</a></div>
@@ -163,11 +165,12 @@ const here = () => location.hash.split('?')[0];
 const pTitle = t => { const p = PF(); return p ? `<div class="crumb"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color};margin-right:6px"></span>${esc(p.name)}</div><h1>${t}</h1>` : `<h1>${t}</h1>`; };
 
 const PROJ_SECS = ['kalendar', 'kontrola', 'komentare', 'spravy', 'radar', 'dashboard', 'profily', 'ucty'];
-async function render() {
+async function render(keep) {
   await loadBase();
   sidebar();
   const r = R(), m = $('#main');
-  window.scrollTo(0, 0);
+  const y = window.scrollY;
+  if (keep !== true) window.scrollTo(0, 0); else setTimeout(() => window.scrollTo(0, y), 0);
   S.pf = r[0] === 'p' ? +r[1] : 0;
   if (S.pf) try { localStorage.setItem('lastP', S.pf); } catch (e) { }
   // všetko patrí pod projekt: staré spoločné adresy (aj návrat z pripájania účtu) otvoria posledný projekt
@@ -219,12 +222,13 @@ async function pHome(m) {
     <a class="btn" href="#/novy">${I('plus')}Nový projekt</a></div>
   <div class="grid" style="margin-bottom:14px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))">
     ${tile('folder', d.projects, 'projektov')}${tile('bulb', d.ideas, 'nápadov v práci')}${tile('file', ((d.scripts || {}).short || 0) + ((d.scripts || {}).long || 0), `scenárov pripravených<br><span class="dim">${(d.scripts || {}).short || 0} krátkych · ${(d.scripts || {}).long || 0} dlhých</span>`)}${tile('film', d.videos, 'videí')}
-    ${tile('clock', d.posts.queued || 0, 'naplánovaných')}${tile('check', d.posts.done || 0, 'zverejnených')}
+    ${tile('clock', d.planned ?? (d.posts.queued || 0), 'naplánovaných')}${tile('check', d.public ?? (d.posts.done || 0), 'zverejnených')}
     ${tile('bot', ((d.ai.day.inp + d.ai.day.outp) / 1000).toFixed(1) + 'k', 'AI tokenov za 24 h')}
   </div>
   <div class="card" id="hCm" style="margin-bottom:14px"><h2>${I('message')}Komentáre</h2><div class="small dim">Načítavam…</div></div>
   <div class="card" id="hProj" style="margin-bottom:14px"><h2>${I('chart')}Ako sa darí projektom</h2><div class="small dim">Načítavam čísla…</div></div>
   ${d.expiring.length ? `<div class="hint" style="margin-bottom:14px">${I('alert')}<div>LinkedIn prihlásenie čoskoro vyprší: ${d.expiring.map(e => `<b>${esc(e.name)}</b> (${e.days} dní)`).join(', ')}. <a class="btn sm" href="/api/accounts/linkedin/connect${d.expiring.some(e => e.org) ? '?org=1' : ''}">Prihlásiť znova</a></div></div>` : ''}
+  ${(d.reconnect || []).length ? `<div class="hint" style="margin-bottom:14px;border-color:rgba(240,68,56,.4);background:var(--badSoft);color:#ffc9c4">${I('alert')}<div>Tieto účty treba pripojiť znova, sieť im odmietla prihlásenie: ${d.reconnect.map(e => `<b>${esc(e.name)}</b>`).join(', ')}.</div></div>` : ''}
   ${(d.posts.failed || 0) ? `<div class="hint" style="margin-bottom:14px;border-color:rgba(240,68,56,.4);background:var(--badSoft);color:#ffc9c4">${I('alert')}<div>${d.posts.failed} publikovaní skončilo chybou. <a href="#/kalendar?f=failed">Pozrieť</a></div></div>` : ''}
   <div class="g2">
     <div class="card"><h2>${I('folder')}Projekty</h2>${S.projects.length ? S.projects.map(p => `<a class="nav" href="#/p/${p.id}/videa"><span class="dot" style="background:${p.color}"></span><div><div style="color:#fff">${esc(p.name)}</div><div class="small dim">${p.languages.length} jazykov · ${p.ideas} nápadov · ${p.videos} videí</div></div><span class="sp"></span>${I('right', 's')}</a>`).join('') : empty('folder', 'Zatiaľ žiadny projekt.')}</div>
@@ -241,7 +245,7 @@ function postList(list) {
   if (!list.length) return empty('calendar', 'Nič tu nie je.');
   return `<table>${list.map(p => `<tr><td style="width:120px" class="small muted">${esc(p.scheduled_at.slice(5, 16))}</td><td>${plat(p.platform, false)}</td>
     <td><div style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${FMT(p.fmt)} ${esc(p.title || p.original_name)}</div><div class="small dim">${esc(p.project_name || '')} · ${langName(p.lang)}</div></td>
-    <td style="text-align:right"><span class="chip ${ST[p.status][1]}">${ST[p.status][0]}</span>${p.url && p.url.startsWith('http') ? ` <a href="${esc(p.url)}" target="_blank" class="btn ghost sm">${I('ext', 's')}</a>` : ''}</td></tr>`).join('')}</table>`;
+    <td style="text-align:right"><span class="chip ${stOf(p)[1]}">${stOf(p)[0]}</span>${p.url && p.url.startsWith('http') ? ` <a href="${esc(p.url)}" target="_blank" class="btn ghost sm">${I('ext', 's')}</a>` : ''}</td></tr>`).join('')}</table>`;
 }
 
 // ================= PROJEKT =================
@@ -681,9 +685,9 @@ async function tLibrary(b, p) {
     <select style="width:auto" onchange="S.vLang=this.value;render()"><option value="">Všetky jazyky</option>${p.languages.map(l => `<option value="${l}" ${S.vLang === l ? 'selected' : ''}>${langName(l)}</option>`).join('')}</select>
     <button class="btn sm" onclick="scheduleDialog(${p.id})">${I('calendar', 's')}Naplánovať vybrané</button><button class="btn sec sm" onclick="bulkAI()">${I('sparkles', 's')}AI popisy</button><button class="btn sec sm" onclick="bulkLang()">${I('globe', 's')}Jazyk</button><button class="btn bad sm" onclick="bulkDel()">${I('trash', 's')}</button></div>
   ${vids.length ? `<table><tr><th style="width:30px"><input type="checkbox" onclick="$$('.vchk').forEach(c=>c.checked=this.checked)"></th><th>Video</th><th>Jazyk</th><th>Dĺžka</th><th>Siete</th><th></th></tr>
-  ${vids.map(v => `<tr><td><input type="checkbox" class="vchk" value="${v.id}"></td><td>${FMT(v.fmt)} <b>${esc(v.title || v.original_name)}</b>${v.status === 'hold' ? ` <span class="chip bad" title="Neprešlo kontrolou pred zverejnením, plánovač ho nevezme">Zadržané</span>` : ''}<div class="small dim">${esc(v.original_name)} · ${(v.size / 1048576).toFixed(1)} MB</div>${v.status === 'hold' ? `<div class="small" style="color:var(--bad,#ff6b6b)">${esc(holdWhy(v))} <a href="#" onclick="releaseVideo(${v.id});return false">Pustiť aj tak</a></div>` : ''}</td>
+  ${vids.map(v => `<tr><td><input type="checkbox" class="vchk" value="${v.id}"></td><td>${FMT(v.fmt)} <b>${esc(v.title || v.original_name)}</b>${v.status === 'hold' ? ` <span class="chip bad" title="Neprešlo kontrolou pred zverejnením, plánovač ho nevezme">Zadržané</span>` : ''}<div class="small dim">${esc(v.original_name)} · ${v.removed ? 'je na YouTube, z Macu uvoľnené' : (v.size / 1048576).toFixed(1) + ' MB'}</div>${v.status === 'hold' ? `<div class="small" style="color:var(--bad,#ff6b6b)">${esc(holdWhy(v))} <a href="#" onclick="releaseVideo(${v.id});return false">Pustiť aj tak</a></div>` : ''}</td>
     <td>${langName(v.lang)}</td><td class="muted">${v.duration ? Math.round(v.duration) + ' s' : '—'}</td>
-    <td>${(v.posts || '').split(',').filter(Boolean).map(x => { const [pl, st] = x.split(':'); return `<span class="chip ${ST[st]?.[1]}">${I(pl, 's')}</span>`; }).join(' ') || '<span class="dim small">—</span>'}</td>
+    <td>${(v.posts || '').split(',').filter(Boolean).map(x => { const [pl, st] = x.split(':'); return `<span class="chip ${ST[st]?.[1]}" title="${(ST[st] || [st])[0]}">${I(pl, 's')}</span>`; }).join(' ') || '<span class="dim small">—</span>'}</td>
     <td><button class="btn ghost sm" onclick="editVideo(${v.id})">${I('pencil', 's')}</button></td></tr>`).join('')}</table>` : empty('film', 'Knižnica je prázdna.')}</div>`;
   const drop = $('#drop'), fin = $('#fileIn');
   drop.onclick = () => fin.click();
@@ -764,7 +768,7 @@ async function pCalendar(m) {
   ${Object.keys(days).length ? Object.entries(days).map(([d, list]) => `<div class="card"><h2>${I('calendar', 's')}${dn(d)} <span class="chip">${list.length}</span></h2><table>${list.map(p => `<tr>
     <td style="width:60px" class="muted">${p.scheduled_at.slice(11, 16)}</td><td style="width:150px">${plat(p.platform)}<div class="small dim">${esc(p.account_name)}</div></td>
     <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${p.color || '#666'};margin-right:6px"></span>${FMT(p.fmt)} ${esc(p.title || p.original_name)} <span class="chip">${esc((p.lang || '').toUpperCase())}</span>${p.error ? `<div class="small ${p.status === 'failed' ? 'bad-t' : 'dim'}">${esc(p.error.slice(0, 260))}</div>` : ''}${p.url && !p.url.startsWith('http') ? `<div class="small muted">${esc(p.url)}</div>` : ''}</td>
-    <td style="text-align:right;white-space:nowrap"><span class="chip ${ST[p.status][1]}">${ST[p.status][0]}</span>
+    <td style="text-align:right;white-space:nowrap"><span class="chip ${stOf(p)[1]}">${stOf(p)[0]}</span>
       ${p.url && p.url.startsWith('http') ? `<a class="btn ghost sm" href="${esc(p.url)}" target="_blank">${I('ext', 's')}</a>` : ''}
       ${p.status === 'queued' || p.status === 'failed' ? `<button class="btn ghost sm" title="Teraz" onclick="api('/api/posts/${p.id}/retry',{method:'POST'}).then(render)">${I('send', 's')}</button>` : ''}
       ${p.status !== 'uploading' ? `<button class="btn ghost sm" title="Zmazať" onclick="api('/api/posts/${p.id}',{method:'DELETE'}).then(render)">${I('trash', 's')}</button>` : ''}</td></tr>`).join('')}</table></div>`).join('') : `<div class="card">${empty('calendar', 'Prázdne.')}</div>`}`;
@@ -786,16 +790,16 @@ async function pAccounts(m) {
     <div class="row small" style="margin-bottom:8px;gap:8px"><span class="dim">Označeným:</span><select id="bkP" style="max-width:200px"><option value="">presunúť do projektu…</option>${S.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
       <select id="bkC" style="max-width:190px"><option value="">krajina…</option>${S.meta.countries.map(c => `<option value="${c.code}">${c.name}</option>`).join('')}</select><select id="bkL" style="max-width:180px"><option value="">jazyk…</option><option value="-">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}">${l.name}</option>`).join('')}</select><button class="btn sec sm" onclick="accBulk()">${I('check', 's')}Nastaviť</button></div>
     <table id="accT"><tr><th><input type="checkbox" onchange="$$('#accT tr:not([hidden]) .aS').forEach(c=>c.checked=this.checked)"></th><th>Sieť</th><th>Účet</th><th>Projekt</th><th>Krajina</th><th>Jazyk videí</th><th></th></tr>${accs.map(a => `<tr data-pf="${a.platform}" data-pr="${a.project_id || 0}" data-n="${esc((a.name || '').toLowerCase())}">
-    <td><input type="checkbox" class="aS" value="${a.id}"></td><td>${plat(a.platform)}</td><td><input value="${esc(a.name)}" onchange="api('/api/accounts/${a.id}',{method:'PUT',body:{name:this.value}}).then(()=>toast('Uložené'))">${a.days_left !== null && a.days_left !== undefined && a.days_left <= 10 ? `<div class="small" style="margin-top:4px"><span class="${a.days_left <= 3 ? 'bad-t' : ''}" style="color:${a.days_left <= 3 ? '' : 'var(--acc)'}">${a.days_left ? `Prihlásenie vyprší o ${a.days_left} ${a.days_left === 1 ? 'deň' : a.days_left < 5 ? 'dni' : 'dní'}` : 'Prihlásenie vypršalo'}</span> <a class="btn sm" href="/api/accounts/linkedin/connect${a.org ? '?org=1' : ''}">${I('refresh', 's')}Prihlásiť znova</a></div>` : ''}</td>
+    <td><input type="checkbox" class="aS" value="${a.id}"></td><td>${plat(a.platform)}</td><td><input value="${esc(a.name)}" onchange="api('/api/accounts/${a.id}',{method:'PUT',body:{name:this.value}}).then(()=>toast('Uložené'))">${a.broken ? `<div class="small bad-t" style="margin-top:4px">Sieť odmietla prihlásenie, pripoj účet znova.</div>` : ''}${a.days_left !== null && a.days_left !== undefined && a.days_left <= 10 ? `<div class="small" style="margin-top:4px"><span class="${a.days_left <= 3 ? 'bad-t' : ''}" style="color:${a.days_left <= 3 ? '' : 'var(--acc)'}">${a.days_left ? `Prihlásenie vyprší o ${a.days_left} ${a.days_left === 1 ? 'deň' : a.days_left < 5 ? 'dni' : 'dní'}` : 'Prihlásenie vypršalo'}</span> <a class="btn sm" href="/api/accounts/linkedin/connect${a.org ? '?org=1' : ''}">${I('refresh', 's')}Prihlásiť znova</a></div>` : ''}</td>
     <td><select class="aP" onchange="accSet(${a.id},this.closest('tr'))">${S.projects.map(p => `<option value="${p.id}" ${p.id === a.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td>
     <td><select class="aC" onchange="accCountry(${a.id},this.value)"><option value="">krajina…</option>${S.meta.countries.map(c => `<option value="${c.code}" ${c.code === a.country ? 'selected' : ''}>${c.name}</option>`).join('')}</select></td>
     <td><select class="aL" onchange="accSet(${a.id},this.closest('tr'))"><option value="">Všetky jazyky</option>${S.meta.languages.map(l => `<option value="${l.code}" ${l.code === a.lang ? 'selected' : ''}>${l.name}</option>`).join('')}</select></td>
     <td><button class="btn ghost sm" onclick="if(confirm('Odpojiť účet?'))api('/api/accounts/${a.id}',{method:'DELETE'}).then(render)">${I('trash', 's')}</button></td></tr>`).join('')}</table>` : empty('link', 'Zatiaľ žiadne. Pripoj ich nižšie.')}</div>
   <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
   ${c('youtube', 'YouTube', `<p class="small muted">1) Nahraj JSON z Google Cloud (OAuth klient „Desktop app“). 2) Klikni Pripojiť kanál a v Google okne vyber kanál. Pre ďalší kanál klikni znova – aj keď sú všetky pod jedným Google účtom, Google ti ponúkne na výber každý kanál zvlášť.</p>
-    ${(S.meta.yt_usage || []).length ? `<table class="small">${S.meta.yt_usage.map(u => `<tr><td>Google projekt ${u.n}</td><td>${u.channels} kanálov</td><td>dnes ${u.today}/${u.limit} nahratí</td></tr>`).join('')}</table><div class="small muted">Limit sa obnovuje každý deň ráno. Čo sa dnes nestihne, nahrá sa samo zajtra, netreba nič robiť.</div>` : ''}
+    ${(S.meta.yt_usage || []).length ? `<table class="small">${S.meta.yt_usage.map(u => `<tr><td>Google projekt ${u.n}</td><td>${u.channels} kanálov</td><td>dnes ${u.today}/${u.limit} nahratí</td>${u.units_limit ? `<td>${u.units}/${u.units_limit} jednotiek na zverejnenie a úpravy</td>` : ''}</tr>`).join('')}</table><div class="small muted">Oba limity sa obnovujú každý deň o 9:00. Čo sa dnes nestihne, nahrá sa samo zajtra, netreba nič robiť.</div>` : ''}
     <input type="file" id="ytJson" accept=".json" style="margin:8px 0"><div class="row"><button class="btn sec sm" onclick="uploadYt()">${I('upload', 's')}${h.yt_client ? 'Pridať ďalší Google projekt' : 'Nahrať JSON'}</button><a class="btn sm" href="/api/accounts/youtube/connect">${I('link', 's')}Pripojiť kanál</a></div>
-    <p class="small dim">Jeden Google projekt zvládne cca 100 nahratí denne. Pri 40 kanáloch a 1–2 videách denne stačí jeden, pri viac pridaj druhý (rovnaký postup, nový projekt v Google Cloud) – nové kanály sa rozložia samé. Keď sa limit minie, video počká do rána.</p>`)}
+    <p class="small dim">Jeden Google projekt zvládne asi 100 nahratí denne. Koľko z nich je dnes minutých, vidíš vyššie. Keď sa limit minie, video počká do rána.</p>`)}
   ${c('facebook', 'Facebook + Instagram', `<p class="small muted">Vlož System User token z Meta Business. Appka sama načíta všetky stránky aj prepojené Instagram účty. Na odpisovanie na správy musí mať token aj práva pages_messaging, pages_manage_metadata a instagram_manage_messages.</p>
     <textarea id="metaTok" placeholder="EAAG…" style="min-height:70px"></textarea><button class="btn sm" style="margin-top:8px" onclick="connectMeta()">${I('link', 's')}Pripojiť</button> <button class="btn sec sm" style="margin-top:8px" onclick="refreshMeta()">Načítať nové stránky</button>`)}
   ${c('tiktok', 'TikTok – veľa účtov', `<p class="small muted">Business API: verejne na tvoje vlastné účty (aj 50+). Potrebuje verejnú adresu v Nastaveniach.</p>${h.ttb_creds ? ok : ''}
@@ -845,11 +849,11 @@ async function pSettings(m) {
     <div class="g2"><div><label class="l">Režim</label><select id="aiMode"><option value="auto" ${st.ai_mode === 'auto' ? 'selected' : ''}>Automaticky</option><option value="manual" ${st.ai_mode === 'manual' ? 'selected' : ''}>Ručne cez claude.ai</option></select></div>
     <div><label class="l">Cesta ku Claude Code (ak ho nenájde)</label><input id="cPath" value="${esc(st.claude_path)}"></div>
     <div><label class="l">Model na vymýšľanie</label><select id="mC">${opt(mo.creative)}</select></div><div><label class="l">Model na preklady</label><select id="mCh">${opt(mo.cheap)}</select></div></div>
-    <p class="small dim">Najlepší pomer: sonnet na vymýšľanie, haiku na preklady. Opus míňa limit najrýchlejšie.</p>
+    <p class="small dim">Najlepší pomer: sonnet na vymýšľanie, haiku na preklady. Opus míňa limit najrýchlejšie. Scenáre dlhých videí teraz píše ${esc(mo.premium || 'opus')}.${(S.meta.ai_now || { ok: true }).ok ? '' : ` <b class="bad-t">Posledné volanie Clauda skončilo chybou${S.meta.ai_now.why === 'limit' ? ' (minutý limit)' : S.meta.ai_now.why === 'login' ? ' (nie je prihlásený)' : ''}.</b>`}</p>
     <button class="btn sm" onclick="saveSettings()">${I('check', 's')}Uložiť</button></div>
   <div class="card"><h2>${I('volume')}Hlas</h2>
     ${voiceUsageHTML(S.meta.google_tts)}
-    <p class="small muted">Najprirodzenejšie znejú <b>Google hlasy (Chirp 3 HD)</b>. Prvý milión znakov mesačne (cca 1 000 minút) je zadarmo. Bez kľúča appka používa bezplatné Microsoft hlasy.</p>
+    <p class="small muted">Najprirodzenejšie znejú <b>Google hlasy (Chirp 3 HD)</b>. Prvý milión znakov mesačne (cca 1 000 minút) je zadarmo. Bez kľúča appka používa bezplatné Microsoft hlasy. ${(v => v ? `<b>Teraz:</b> ${v.local} projektov hovorí hlasom priamo z Macu (zadarmo, bez limitu), ${v.google} Google hlasom, ${v.free} bezplatným Microsoft hlasom.` : '')(S.meta.voice_now)}</p>
     <details><summary class="small">Ako získam kľúč (5 minút)</summary><ol class="small muted">
       <li>Otvor <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank">Cloud Text-to-Speech API</a> v tom istom projekte ako YouTube a klikni <b>Enable</b> (Google si vypýta kartu).</li>
       <li>Choď do <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Credentials</a> → <b>Create credentials → API key</b>.</li>
@@ -904,9 +908,9 @@ async function pSettings(m) {
     <details><summary class="small">Ako získam kľúč (3 minúty)</summary><ol class="small muted">
       <li>Otvor <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank">YouTube Data API v3</a> v tom istom Google projekte ako hlas a klikni <b>Enable</b> (ak už je zapnuté, preskoč).</li>
       <li>Choď do <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Credentials</a> → <b>Create credentials → API key</b>.</li>
-      <li>Pri kľúči daj <b>Restrict key</b> → povoľ len <i>YouTube Data API v3</i>. Skopíruj ho sem. Je zadarmo, appka minie najviac 8 000 z 10 000 bodov denne.</li></ol></details></div>
+      <li>Pri kľúči daj <b>Restrict key</b> → povoľ len <i>YouTube Data API v3</i>. Skopíruj ho sem. Je zadarmo, Radar z neho minie najviac 500 jednotiek denne.</li></ol></details></div>
   <div class="card"><h2>${I('refresh')}Aktualizácie</h2><div id="updBox" class="small muted">Kontrolujem…</div>
-    <p class="small dim">Nové verzie si appka sťahuje sama (pri zapnutí a každé 4 hodiny). Projekty, videá, účty a nastavenia ostávajú.</p>
+    <p class="small dim">Nové verzie si appka sťahuje sama (pri zapnutí a každých 15 minút; počká, kým sa dokončí rozrobené video). Projekty, videá, účty a nastavenia ostávajú.${(S.meta.update_last || {}).ts ? ` Posledná kontrola: ${esc(S.meta.update_last.ts.slice(5))}, ${esc(S.meta.update_last.result || '')}.` : ''}</p>
     <label class="l">Nový zip appky</label><input type="file" id="updZip" accept=".zip"><button class="btn sm" style="margin-top:8px" onclick="updZip()">${I('upload', 's')}Aktualizovať zo zipu</button>
     <div class="row" style="margin-top:8px"><button class="btn sm" onclick="updGh()">${I('refresh', 's')}Skontrolovať teraz</button></div>
     <details style="margin-top:10px"><summary class="small dim">Pokročilé</summary><label class="l">Odkiaľ sa sťahujú nové verzie (GitHub)</label><div class="row"><input id="updRepo" style="flex:1" placeholder="Supnoga/social-manager"></div>
@@ -1012,3 +1016,11 @@ render();
 async function saveYtKey() { const key = $('#ytKey').value.trim(); if (!key) return toast('Vlož kľúč', true); await api('/api/radar/yt-key', { method: 'POST', body: { key } }, 'Skúšam kľúč…'); toast('Kľúč funguje a je uložený'); S.meta = await api('/api/meta'); render(); }
 // po samočinnej aktualizácii appky sa stránka obnoví sama (keď práve nič nerobíš)
 (() => { let v = null; setInterval(async () => { try { const j = await (await fetch('/api/ping')).json(); if (v && j.version !== v && $('#modal').classList.contains('hidden') && $('#busy').classList.contains('hidden')) { location.reload(); return; } v = v || j.version; } catch (e) { } }, 30000); })();
+
+// Prehľad a Publikovanie sa samy obnovia každú minútu, aby neukazovali starý stav (len keď sa nič nevypĺňa ani nedeje)
+setInterval(() => {
+  const r = R(), live = !r[0] || (r[0] === 'p' && r[2] === 'kalendar');
+  if (!live || document.hidden || !$('#modal').classList.contains('hidden') || !$('#busy').classList.contains('hidden')) return;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement || {}).tagName)) return;
+  render(true);
+}, 60000);

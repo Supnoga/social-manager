@@ -493,10 +493,13 @@ def production(since):
     for st, key in (("review", "review"), ("queued", "queued"), ("uploading", "queued"), ("failed", "failed")):
         add(f"""SELECT v.project_id p, {VF} f, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id WHERE p.status=? GROUP BY 1, 2""",
             key, (st,))
+    # 'done' s časom v budúcnosti ešte nie je verejné (leží na sieti s časom zverejnenia): patrí k naplánovaným
     add(f"""SELECT v.project_id p, {VF} f, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id
-           WHERE p.status='done' AND p.updated_at>=? GROUP BY 1, 2""", "done", (since,))
+           WHERE p.status='done' AND p.scheduled_at>? GROUP BY 1, 2""", "queued", (_now(),))
+    add(f"""SELECT v.project_id p, {VF} f, COUNT(*) n FROM posts p JOIN videos v ON v.id=p.video_id
+           WHERE p.status='done' AND p.scheduled_at>=? AND p.scheduled_at<=? GROUP BY 1, 2""", "done", (since, _now()))
     nxt = db.q("""SELECT v.project_id p, MIN(p.scheduled_at) t FROM posts p JOIN videos v ON v.id=p.video_id
-                  WHERE p.status='queued' AND p.scheduled_at>=? GROUP BY v.project_id""", (_now(),))
+                  WHERE p.status IN ('queued','done') AND p.scheduled_at>=? GROUP BY v.project_id""", (_now(),))
     for r in nxt:
         out.setdefault(r["p"], {})["next"] = r["t"]
     return {str(k): v for k, v in out.items() if k is not None}
