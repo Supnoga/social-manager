@@ -149,7 +149,7 @@ KEYWORDS = [
     (r"bank\b|banks\b|loan|mortgage|interest", "bank"),
     (r"saving|savings|piggy", "piggybank"),
     (r"stock|share|market|invest|portfolio|index fund|etf", "candles"),
-    (r"crash|drop|fall|loss|lose", "chart_down"),
+    (r"crash|loss|losses|lose|losing", "chart_down"),
     (r"growth|grow|profit|compound", "growth"),
     (r"credit card|card|debt", "card"),
     (r"wallet|budget|spend", "wallet"),
