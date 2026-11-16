@@ -33,7 +33,7 @@ def _comment_counts():
 
 def _real(since):
     cc = _comment_counts()
-    rows = db.q(f"""SELECT p.id, p.scheduled_at, p.url, p.external_id ext, p.account_id, a.platform, a.name account, a.country acc_country,
+    rows = db.q(f"""SELECT p.id, p.scheduled_at, p.url, p.external_id ext, p.account_id, a.external_id acc_ext, a.platform, a.name account, a.country acc_country,
                           a.lang acc_lang, v.lang vlang, v.title, v.project_id,
                           ps.views, ps.likes, ps.comments, ps.shares, ps.fetched_at, ps.watch_min, ps.avg_pct, ps.subs, v.duration, {db.fmt_sql('v')} fmt
                    FROM posts p JOIN accounts a ON a.id=p.account_id JOIN videos v ON v.id=p.video_id
@@ -43,7 +43,7 @@ def _real(since):
     out = []
     for r in rows:
         lang = r["acc_lang"] or r["vlang"] or ""
-        out.append({"id": r["id"], "d": r["scheduled_at"][:16], "pl": r["platform"], "acc": r["account"] or r["platform"],
+        out.append({"id": r["id"], "d": r["scheduled_at"][:16], "pl": r["platform"], "acc": r["account"] or r["platform"], "ax": r["acc_ext"] or "",
                     "aid": r["account_id"], "c": _country(r["acc_country"], lang), "l": lang, "p": r["project_id"],
                     "t": r["title"] or "", "u": r["url"] or "", "m": 1 if r["fetched_at"] else 0,
                     "v": r["views"] or 0, "lk": r["likes"] or 0, "cm": max(r["comments"] or 0, cc.get((r["platform"], r["ext"]), 0)), "sh": r["shares"] or 0,

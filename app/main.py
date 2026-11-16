@@ -262,6 +262,9 @@ def api_meta():
         "li": {"page_langs": linkedin.page_langs(), "target": db.get_setting("li_target", True),
                "followers": db.get_setting("li_followers", 0) or 0},
         "scheduler": scheduler.state,
+        "scheduler_alive": not scheduler.state.get("last_tick") or (datetime.now() - datetime.fromisoformat(
+            scheduler.state["last_tick"])).total_seconds() < 3600,
+        "ai_now": _ai_now(), "voice_now": _voice_now(), "update_last": db.get_setting("update_last", {}) or {},
         "yt_usage": youtube.usage(),
         "yt_loc": {"log": (db.get_setting("yt_loc_log", []) or [])[-5:], "fixed": len(db.get_setting("yt_loc_done", []) or [])},
         "ffmpeg": bool(media.ffmpeg()),
@@ -324,16 +327,55 @@ def dashboard():
                    SELECT 1 FROM videos v JOIN scripts s2 ON s2.id=v.script_id
                    WHERE v.script_id=s.id OR (s.idea_id IS NOT NULL AND s2.idea_id=s.idea_id)) GROUP BY f""")},
         "posts": c,
-        "upcoming": _posts("p.status IN ('queued','uploading','review')", "p.scheduled_at", 12),
-        "recent": _posts("p.status IN ('done','failed')", "p.updated_at DESC", 12),
+        "planned": db.one(f"SELECT COUNT(*) n FROM posts p WHERE p.status IN ('queued','uploading') OR {FUTURE}")["n"],
+        "public": db.one(f"SELECT COUNT(*) n FROM posts p WHERE p.status='done' AND NOT {FUTURE}")["n"],
+        "upcoming": _posts(f"(p.status IN ('queued','uploading','review') OR {FUTURE})", "p.scheduled_at", 12),
+        "recent": _posts(f"((p.status='done' AND NOT {FUTURE}) OR p.status='failed')", "p.scheduled_at DESC", 12),
+        "reconnect": _broken_accounts(),
         "ai": ai.usage_summary(),
         "scheduler": scheduler.state,
         "expiring": expiring,
     }
 
 
+# 'done' s časom v budúcnosti = video už leží na sieti s nastaveným časom zverejnenia, verejné ešte nie je
+FUTURE = "(p.status='done' AND p.scheduled_at>datetime('now','localtime'))"
+
+
+def _broken_accounts():
+    """Účty, ktorým sieť naposledy odmietla prihlásenie (treba ich pripojiť znova)."""
+    out = []
+    for a in db.q("SELECT name, platform, tokens FROM accounts"):
+        try:
+            if json.loads(a["tokens"] or "{}").get("broken"):
+                out.append({"name": a["name"], "platform": a["platform"]})
+        except Exception:
+            pass
+    return out
+
+
+def _ai_now():
+    """Skutočný stav AI podľa posledného volania (nie len či je Claude nainštalovaný)."""
+    r = db.one("SELECT ts, ok, note FROM ai_log WHERE cached=0 ORDER BY id DESC LIMIT 1")
+    if not r or r["ok"]:
+        return {"ok": True, "last": (r or {}).get("ts")}
+    note = (r["note"] or "").lower()
+    why = "limit" if "limit" in note else "login" if ("login" in note or "auth" in note) else "error"
+    return {"ok": False, "why": why, "last": r["ts"]}
+
+
+def _voice_now():
+    """Koľko projektov hovorí ktorým hlasom (podľa skutočného nastavenia projektov)."""
+    out = {"local": 0, "google": 0, "free": 0}
+    google = bool(db.get_setting("google_tts_key", ""))
+    for p in db.q("SELECT voices FROM projects"):
+        v = p.get("voices") or ""
+        out["local" if "local:" in v else "google" if google else "free"] += 1
+    return out
+
+
 def _posts(where, order, limit, args=()):
-    return db.q(f"""SELECT p.*, a.platform, a.name account_name, v.title, v.original_name, v.lang, v.project_id,
+    return db.q(f"""SELECT p.*, {FUTURE} future, a.platform, a.name account_name, a.external_id acc_ext, v.title, v.original_name, v.lang, v.project_id,
                    pr.name project_name, pr.color, {db.fmt_sql('v')} fmt FROM posts p JOIN accounts a ON a.id=p.account_id
                    JOIN videos v ON v.id=p.video_id LEFT JOIN projects pr ON pr.id=v.project_id
                    WHERE {where} ORDER BY {order} LIMIT {int(limit)}""", args)
@@ -386,6 +428,74 @@ def _yt_unplan(where, args=()):
     return n
 
 
+# ---------- Zložiť znova vybrané videá (16.11.: oprava ikon, ktoré nesedeli k scéne) ----------
+_RERENDER = {"running": False, "done": [], "errors": [], "current": None}
+_rerender_lock = threading.Lock()
+
+
+@app.post("/api/rerender")
+def rerender(data: dict = Body(...)):
+    """Zloží znova videá daných skriptov (bez AI) a nahradí súbor. Kým sa skladá, video sa nenahráva (rerender_todo).
+    Video nahraté vopred a ešte neverejné: na YouTube sa mu zruší čas zverejnenia (ostane súkromné, nič sa nemaže)
+    a po zložení sa nahrá nanovo. Verejné videá sa nemenia. Poradie: čo ide von najskôr, ide prvé."""
+    sids = [int(x) for x in data.get("script_ids") or []]
+    now = scheduler.now_str()
+    todo, skipped = [], []
+    for sid in sids:
+        for v in db.q("SELECT * FROM videos WHERE script_id=?", (sid,)):
+            ps = db.q("SELECT * FROM posts WHERE video_id=?", (v["id"],))
+            if any(p["status"] == "done" and (p["scheduled_at"] or "") <= now for p in ps) or any(p["status"] == "uploading" for p in ps):
+                skipped.append(v["id"])
+                continue
+            _yt_unplan("p.video_id=?", (v["id"],))
+            db.run("""UPDATE posts SET status='queued', external_id='', url='', error='' WHERE video_id=? AND status='done'""", (v["id"],))
+            db.run("UPDATE posts SET stash_id='' WHERE video_id=?", (v["id"],))
+            t = min([p["scheduled_at"] or "9999" for p in ps] or ["9999"])
+            todo.append((t, v["id"], sid))
+    todo.sort()
+    db.set_setting("rerender_todo", sorted(set(db.get_setting("rerender_todo", []) or []) | {vid for _, vid, _ in todo}))
+
+    def run():
+        with _rerender_lock:
+            _RERENDER["running"] = True
+            try:
+                for _, vid, sid in todo:
+                    _RERENDER["current"] = vid
+                    try:
+                        v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+                        r = script_to_video(int(sid), {})
+                        new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
+                        old = Path(v["file_path"])
+                        db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0, qa=?, status=? WHERE id=?",
+                               (new["file_path"], new["size"], new["duration"], new.get("qa") or "", new.get("status") or "ready", vid))
+                        db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                        if (new.get("status") or "") == "hold":   # nové video neprešlo kontrolou: nesmie ísť von
+                            db.run("UPDATE posts SET status='hold', updated_at=? WHERE video_id=? AND status='queued'", (scheduler.now_str(), vid))
+                        for f in (old, old.with_suffix(".jpg")):
+                            if f != Path(new["file_path"]) and f.exists():
+                                f.unlink(missing_ok=True)
+                        for k in ("unlogo_done", "remap_done"):
+                            db.set_setting(k, (db.get_setting(k, []) or []) + [vid])
+                        db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != vid])
+                        _RERENDER["done"].append(vid)
+                    except Exception as e:
+                        _RERENDER["errors"].append([vid, str(e)[:300]])
+                        traceback.print_exc()
+                    finally:
+                        db.set_setting("rerender_todo", [i for i in (db.get_setting("rerender_todo", []) or []) if i != vid])
+            finally:
+                _RERENDER["running"] = False
+                _RERENDER["current"] = None
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"started": len(todo), "videos": [vid for _, vid, _ in todo], "skipped_public": skipped}
+
+
+@app.get("/api/rerender")
+def rerender_status():
+    return dict(_RERENDER, todo=len(db.get_setting("rerender_todo", []) or []))
+
+
 # ---------------- Projekty ----------------
 PROJECT_FIELDS = ["name", "description", "audience", "tone", "goals", "source_lang", "color", "voice_gender", "voice_rate", "glossary", "banned", "brand_tags"]
 
@@ -398,7 +508,11 @@ def projects():
                    (SELECT COUNT(*) FROM posts po JOIN videos v ON v.id=po.video_id WHERE v.project_id=p.id AND po.status='review') review,
                    (SELECT COUNT(*) FROM posts po JOIN videos v ON v.id=po.video_id WHERE v.project_id=p.id AND po.status='failed') failed
                    FROM projects p ORDER BY p.id""")
+    accs = {}
+    for a in db.q("SELECT platform, name, external_id, project_id FROM accounts ORDER BY platform, name"):
+        accs.setdefault(a["project_id"], []).append({"platform": a["platform"], "name": a["name"], "external_id": a["external_id"]})
     for r in rows:
+        r["accounts"] = accs.get(r["id"], [])  # na odkazy „otvoriť kanál“ priamo z appky
         r["languages"] = json.loads(r["languages"] or "[]")
         r["strategy"] = json.loads(r["strategy"]) if r["strategy"] else None
         r["design_colors"] = json.loads(r.get("design_colors") or "[]")
@@ -565,9 +679,10 @@ def board(pid: int):
         (SELECT COUNT(*) FROM scripts s WHERE s.idea_id=i.id AND s.voice_path!='') voices,
         (SELECT COUNT(*) FROM videos v JOIN scripts s ON s.id=v.script_id WHERE s.idea_id=i.id) videos,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
-           WHERE s.idea_id=i.id AND p.status='done') posted,
+           WHERE s.idea_id=i.id AND p.status='done' AND p.scheduled_at<=datetime('now','localtime')) posted,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
-           WHERE s.idea_id=i.id AND p.status IN ('queued','uploading','review')) queued,
+           WHERE s.idea_id=i.id AND (p.status IN ('queued','uploading','review')
+                 OR (p.status='done' AND p.scheduled_at>datetime('now','localtime')))) queued,
         (SELECT COUNT(*) FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
            WHERE s.idea_id=i.id AND p.status='failed') failed
         FROM ideas i WHERE i.project_id=? AND i.status NOT IN ('rejected','inbox','snoozed') ORDER BY i.id DESC""", (pid,))
@@ -2019,7 +2134,7 @@ def video_hold(vid: int, data: dict = Body(default={})):
 
 @app.get("/api/videos")
 def videos(project_id: int = 0, lang: str = "", status: str = "", fmt: str = ""):
-    sql = f"""SELECT v.*, (SELECT GROUP_CONCAT(a.platform || ':' || p.status) FROM posts p JOIN accounts a ON a.id=p.account_id
+    sql = f"""SELECT v.*, (SELECT GROUP_CONCAT(a.platform || ':' || CASE WHEN {FUTURE} THEN 'future' ELSE p.status END) FROM posts p JOIN accounts a ON a.id=p.account_id
              WHERE p.video_id=v.id) posts, {db.fmt_sql('v')} fmt FROM videos v WHERE 1=1"""
     args = []
     if project_id:
@@ -2119,6 +2234,10 @@ def accounts():
     rows = db.q("SELECT a.id, a.platform, a.name, a.external_id, a.project_id, a.lang, a.country, a.tokens, p.name project_name "
                 "FROM accounts a LEFT JOIN projects p ON p.id=a.project_id ORDER BY a.platform, a.name")
     for r in rows:
+        try:
+            r["broken"] = bool(json.loads(r["tokens"] or "{}").get("broken"))
+        except Exception:
+            r["broken"] = False
         exp = linkedin.expiry(r.pop("tokens")) if r["platform"] == "linkedin" else 0
         r["days_left"] = max(0, int((exp - _t.time()) / 86400)) if exp else None
         r["org"] = (r["external_id"] or "").startswith("urn:li:organization")
@@ -2402,12 +2521,19 @@ def review_reject(data: dict = Body(...)):
 
 
 @app.get("/api/posts")
-def posts(status: str = "", limit: int = 300):
+def posts(status: str = "", limit: int = 1000, project_id: int = 0):
     where = "1=1"
     args = ()
-    if status:
+    if status == "queued":   # naplánované = čaká v appke alebo už leží na sieti s časom zverejnenia
+        where = f"(p.status='queued' OR {FUTURE})"
+    elif status == "done":   # zverejnené = naozaj verejné (čas zverejnenia už prešiel)
+        where = f"(p.status='done' AND NOT {FUTURE})"
+    elif status:
         where = "p.status=?"
         args = (status,)
+    if project_id:  # len tento projekt: inak by pri veľa kanáloch staršie zverejnené videá vypadli za hranicu zoznamu
+        where += " AND v.project_id=?"
+        args += (int(project_id),)
     return _posts(where, "p.scheduled_at DESC" if status in ("done", "failed") else "p.scheduled_at", limit, args)
 
 
@@ -2618,7 +2744,7 @@ def main():
         pass
     updater.background_checker(lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
                                or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
-                               or brand._fix_state["running"], drain=_drain)
+                               or brand._fix_state["running"] or _RERENDER["running"], drain=_drain)
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     try:
         _autostart_setup()

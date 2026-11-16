@@ -551,6 +551,157 @@ _TOKEN_SRC = {"coin": "wallet coins coin cash piggy bank", "box": "truck box shi
 _STOP = re.compile(r"(?i)\b(block\w*|denied|reject\w*|fail\w*|stopp?\w*|banned|can'?t|cannot|refus\w*|no access|cut off|locked out)\b")
 
 
+# ---------- ikona musí ukazovať to, o čom scéna hovorí (16.11.: turbo nakreslené ako veterná turbína, výfuk ako dažďový mrak) ----------
+# Značky bez vlastného predmetu (človek, áno/nie, čas, peniaze, dokument, graf): môžu stáť pri čomkoľvek.
+_SYMBOL = set("""user users people family boss person crowd team group audience customer worker check cross warning warning_sign idea bulb target star heart
+trophy thumbs_up search pin location clock hourglass calendar eye key lock shield flag document contract clipboard receipt invoice mail chat share megaphone
+chart chart_down growth pie graph percent calculator scale ruler coin coins banknote money moneybag wallet piggybank card pricetag gift handshake play puzzle
+dice infinity speed gauge meter thermo thermometer_up sound sound_wave wave network code bell power globe globe_pin map compass signpost dot stamp crown
+candles briefcase dollar euro cart hand_coin barrier brain""".split())
+# Ikona s menom, ktoré znie všeobecne, ale kreslí jednu konkrétnu vec: smie sa ukázať, len keď scéna hovorí o tej veci.
+_ICON_ONLY = {"turbine": r"\bwind|breez|\bgust|veter", "cloud": r"cloud|\brain|weather|storm|\bsk(?:y|ies)|\bfog|overcast|vapou?r|steam|humid",
+              "fan": r"\bfans?\b|ventilat|\bblow|cooling fan", "heatpump": r"heat ?pump", "panel": r"solar|photovolt|\bpv\b",
+              "tank": r"\btanks?\b|reservoir|\bstor(?:e|ed|age)|ballast", "pylon": r"pylon|power line|grid|transmission|electric|pole|telegraph|wire",
+              "boiler": r"boiler|furnace|water heater", "radiator": r"radiator|heater|heating", "fridge": r"fridge|refrigerat|freezer|cool",
+              "battletank": r"battle|army|armou?r|military|soldier|\bwar\b|panzer", "fighter": r"fighter|warplane|air force|dogfight|military"}
+# Slová navyše k bežným ikonám (k menu ikony a jej synonymám z knižnice).
+_ICON_MORE = {"phone": "app apps mobile screen call text device swipe tap taps message scan", "wifi": "network hotspot router internet signal online connect",
+              "store": "shop shops grocer retail supermarket aldi buy sell customer mall company bakery baker cafe café pharmacy market", "house": "home apartment flat rent landlord owner own roof room live mortgage property door",
+              "bank": "loan lend account deposit mortgage payment money credit fund treasury mint finance", "ship": "boat vessel hull sea port cargo sail ocean harbor harbour captain",
+              "plane": "flight fly flying aircraft airliner airline pilot airport landing jet crew passenger", "city": "town capital urban street delhi rome london",
+              "server": "data database company cloud storage copy stored account", "drop": "water oil liquid drain leak sea ocean river rain fuel wet pond flood",
+              "truck": "lorry delivery freight haul road trailer driver", "car": "drive driving driver vehicle road traffic ride pedal cart bus", "flame": "fire burn hot heat gas combust",
+              "bolt": "electric electricity power energy volt charge charging current lightning spark", "plug": "socket charger charging outlet power electric cable",
+              "sun": "solar sunlight day summer shadow light", "snow": "cold ice freeze frozen frost winter chill", "leaf": "plant green eco nature organic algae environment",
+              "air": "wind breeze breath oxygen atmosphere pressure sky", "battery": "charge charging cell lithium energy", "gear": "gears cog settings setting mechanism machine config",
+              "tool": "repair fix wrench maintenance service mechanic install", "tree": "forest wood trees plant farm", "engine": "motor cylinder piston combustion",
+              "laptop": "computer desk pc software types typing", "tv": "television screen show shows movie episode", "camera": "photo photos picture image lens",
+              "package": "parcel box boxes order shipment", "warehouse": "hub depot storage stock sorting", "container": "box boxes steel stack", "factory": "plant production assembly line made makes mill mills works furnace industry industrial manufacture employer",
+              "chip": "processor silicon semiconductor cpu", "virus": "bacteria germ microbe", "conveyor": "belt", "trash": "recycling waste garbage bin", "robot": "ai automation bot",
+              "barcode": "scan scanner label tracking tracker", "fish": "larvae marine", "flap": "flaps", "office": "company business corporate headquarters firm startup", "van": "vehicle vehicles shipping delivery courier", "mountain": "hill peak slope", "village": "town province settlement", "satellite": "orbit space gps", "road": "street route highway lane path", "window": "glass view pane"}
+_ICON_STOP = set("the and for with from into over under old new big small real fake hot cold cool your our one two all any".split())
+_ICON_WORDS = {}
+
+
+def _icon_words(canon):
+    """Slová, ktoré ikona znázorňuje: jej meno, synonymá z knižnice ikon a ručné doplnky."""
+    if canon not in _ICON_WORDS:
+        from . import explainer
+        ws = set(canon.split("_")) | set(_ICON_MORE.get(canon, "").split())
+        for k, v in explainer.ICON_ALIAS.items():
+            if v == canon:
+                ws |= set(k.split("_"))
+        _ICON_WORDS[canon] = {re.sub(r"(?:ies|es|s|ing|e)$", "", w) if len(w) > 5 else w for w in ws if len(w) > 1 and w not in _ICON_STOP}
+    return _ICON_WORDS[canon]
+
+
+def icon_fit(icon, label, ctx):
+    """Sedí ikona k scéne? ctx = popis pod ikonou, nadpis, opis a hlas scény. Značky (_SYMBOL) sedia vždy."""
+    from . import explainer
+    canon = explainer.icon_name(icon) or ""
+    if not canon:
+        return False   # neznáme meno by sa nakreslilo ako fajka
+    if canon in _ICON_ONLY:
+        return bool(re.search(_ICON_ONLY[canon], ctx or "", re.I))
+    if canon in _SYMBOL:
+        return True
+    low = (ctx or "").lower()
+    return any(re.search(r"(?<![a-z])" + re.escape(w) + (r"(?![a-z])" if len(w) < 4 else ""), low) for w in _icon_words(canon))
+
+
+_LEAD = r"^(?:the|a|an|your|our|his|her|their|my|old|new|hot|cold|cool|cooler|big|small|real|fake|fresh|dirty|clean|same|whole|full|empty)\s+"
+_ICON_KINDS = ("scene", "icons", "draw", "hero")
+
+
+def _icon_for(label, ctx):
+    """Ikona, ktorú popis pomenúva celý („Turbo“ → turbocharger, „Hot exhaust“ → exhaust). None, keď knižnica takú nemá."""
+    from . import explainer
+    l = re.sub(r"[^a-z0-9 ]+", " ", (label or "").lower()).strip()
+    for cand in dict.fromkeys((l, re.sub(_LEAD, "", l))):
+        if not cand or len(cand.split()) > 3:
+            continue
+        n = cand.replace(" ", "_")
+        for c in (n, re.sub(r"ies$", "y", n), re.sub(r"es$", "", n), re.sub(r"s$", "", n)):
+            c = c if c in explainer._ICON_SET else explainer.ICON_ALIAS.get(c)
+            if c in explainer._ICON_SET and icon_fit(c, label, ctx):
+                return c
+    return None
+
+
+def _nodes(d):
+    """[(ikona, popis)] diagramu s ikonami."""
+    k = d.get("k")
+    try:
+        if k == "scene":
+            return [(str(q[0]), str(q[1]) if len(q) > 1 else "") for q in d.get("n") or [] if isinstance(q, list) and q]
+        if k == "icons":
+            return [(str(q[0]), str(q[1]) if len(q) > 1 else "") if isinstance(q, list) and q else (str(q), "") for q in d.get("i") or [] if q]
+        if k == "draw":
+            return [(str(e.get("i") or "") if e.get("s") == "icon" else "turbine", str(e.get("l") or ""))
+                    for e in d.get("e") or [] if isinstance(e, dict) and e.get("s") in ("icon", "turbine")]
+        if k == "hero" and d.get("i"):
+            return [(str(d["i"]), f"{d.get('w') or ''} {d.get('s') or ''}".strip())]
+    except (TypeError, IndexError):
+        pass
+    return []
+
+
+def bad_icons(d, ctx):
+    """Počet ikon diagramu, ktoré nesedia k scéne."""
+    return sum(1 for i, l in _nodes(d) if not icon_fit(i, l, f"{l} . {ctx}")) if d.get("k") in _ICON_KINDS else 0
+
+
+def fix_icons(d, ctx):
+    """Ikona, ktorá nesedí k scéne, sa vymení za tú, ktorú popis pomenúva; keď taká nie je, ostane neutrálna značka s popisom.
+    Vráti (diagram, počet nesediacich ikon)."""
+    if d.get("k") not in _ICON_KINDS:
+        return d, 0
+    bad = 0
+
+    def pick(i, l):
+        nonlocal bad
+        if icon_fit(i, l, f"{l} . {ctx}"):
+            return i
+        bad += 1
+        return (_icon_for(l, ctx) if l.strip() else None) or "dot"
+    try:
+        k = d["k"]
+        if k == "scene":
+            out = dict(d, n=[[pick(str(q[0]), str(q[1]) if len(q) > 1 else "")] + list(q[1:]) for q in d.get("n") or [] if isinstance(q, list) and q])
+        elif k == "icons":
+            it = []
+            for q in d.get("i") or []:
+                i, l = (str(q[0]), str(q[1]) if len(q) > 1 else "") if isinstance(q, list) and q else (str(q), "")
+                n = pick(i, l)
+                if n != "dot" or l.strip():   # ikona bez popisu, ktorá nesedí, nemá čo ukázať
+                    it.append([n, l])
+            out = dict(d, i=it) if it else {"k": "text", "w": ""}
+        elif k == "draw":
+            el = []
+            for e in d.get("e") or []:
+                if isinstance(e, dict) and e.get("s") == "icon":
+                    e = dict(e, i=pick(str(e.get("i") or ""), str(e.get("l") or "")))
+                elif isinstance(e, dict) and e.get("s") == "turbine":
+                    n = pick("turbine", str(e.get("l") or ""))
+                    if n != "turbine":
+                        p = (list(e.get("p") or []) + [216, 240, 150])[:3]
+                        e = {**{x: y for x, y in e.items() if x not in ("s", "n", "p")}, "s": "icon", "i": n, "p": [p[0], p[1] - p[2] / 2, 90]}
+                el.append(e)
+            out = dict(d, e=el)
+        else:
+            n = pick(str(d.get("i") or ""), f"{d.get('w') or ''} {d.get('s') or ''}".strip()) if d.get("i") else None
+            out = d if n in (None, d.get("i")) else (dict(d, i=n) if n != "dot" else {"k": "text", "w": str(d.get("w") or "")})
+    except (TypeError, ValueError, IndexError):
+        return d, 0
+    return out, bad
+
+
+def _own(topic, d):
+    """Hovorí diagram s ikonami o stroji videa alebo jeho častiach (ikonou či popisom)? Vtedy ho má ukázať presný model, nie ikona."""
+    rx = [r for r, m, _ in _RX if m == topic] + [re.compile(r, re.I) for r in [_SUPPORT.get(topic)] + [p[1] for p in _PARTS.get(topic, ())] if r]
+    return any(r.search(f"{i.replace('_', ' ')} . {l}") for i, l in _nodes(d) for r in rx)
+
+
 def actors(d):
     """Scéna, rad ikon alebo jednoduchá kresba (ikona, šípka, ikona) → presný blok „kto komu“. None, keď účastníkov nevieme nakresliť:
     každý musí mať vlastnú kresbu, pri troch a viac smie jeden ostať čiarovou ikonou na tabuľke."""
@@ -600,12 +751,17 @@ def _fill(d, topic, used, scene, lang):
     inak aspoň nadpis scény: prázdna scéna nesmie vzniknúť nikdy."""
     if d.get("k") != "text" or str(d.get("w") or "").strip():
         return actors(d) or d
-    parts = sorted(p for p in CAM_ONLY.get(topic, ()) if (topic, p) != used.get("_last"))
-    if parts:
-        f = parts[used.get("_fill", 0) % len(parts)]
-        used["_fill"] = used.get("_fill", 0) + 1
-        used["_last"] = (topic, f)
-        return _state(dict({"k": "mech", "m": topic, "f": f}, **({"l": _LABELS[topic]} if _LABELS.get(topic) and lang == "en" else {})), used)
+    # najprv časť, o ktorej scéna hovorí, potom stroj v behu alebo celok (ten sedí vždy), až nakoniec iná časť
+    said = focuses(topic, scene.get("onscreen") or "", scene.get("visual") or "", scene.get("_spoken") or "")
+    rest = sorted(p for p in CAM_ONLY.get(topic, ()) if p not in said)
+    if rest:
+        rest = rest[used.get("_fill", 0) % len(rest):] + rest[:used.get("_fill", 0) % len(rest)]
+    for f in said + (["run"] if topic in RUNS else []) + [""] + rest:
+        if (topic, f) != used.get("_last"):
+            if f in rest:
+                used["_fill"] = used.get("_fill", 0) + 1
+            used["_last"] = (topic, f)
+            return _state(dict({"k": "mech", "m": topic}, **({"f": f} if f else {}), **({"l": _LABELS[topic]} if _LABELS.get(topic) and lang == "en" else {})), used)
     return {"k": "text", "w": str(scene.get("onscreen") or "")}
 
 
@@ -615,6 +771,9 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
     na to, o čom scéna hovorí. Mimo témy videa sa model doplní, len keď scéna sama hovorí o stroji s presným modelom."""
     d = calm_draw(d)
     texts = (scene.get("onscreen") or "", scene.get("visual") or "", spoken or "")
+    if d.get("k") in _ICON_KINDS:   # ikona musí sedieť k scéne; vo videu o stroji jeho časti ukazuje len presný model
+        fixed, bad = fix_icons(d, " . ".join(texts)) if lang == "en" else (d, 0)
+        d = {"k": "text"} if topic and (bad or _own(topic, d)) else fixed
     if topic and (d.get("k") == "svg" or (not long and d.get("k") in SOFT | {"count"}) or (d.get("k") == "mech" and d.get("m") not in PRECISE)):
         d = {"k": "text"}   # kresba od AI, stará hrubá schéma alebo (v krátkom videu) samotné číslo: ukáže sa presný model, číslo naskočí pri ňom
     if d.get("k") == "mech":
@@ -642,13 +801,13 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
         f = focus(topic, *texts)
         if f is None:
             if long and prev == topic:
-                return _fill(d, topic, used, scene, lang)   # v dlhom videu nie dva celkové pohľady po sebe
+                return _fill(d, topic, used, dict(scene, _spoken=spoken), lang)   # v dlhom videu nie dva celkové pohľady po sebe
             f = "run" if topic in RUNS and used.get("_ov", 0) % 2 else ""
             used["_ov"] = used.get("_ov", 0) + 1
         if prev == topic and used.get("_last") == (topic, f):   # nikdy ten istý záber dvakrát po sebe: iná časť, beh naplno alebo celok
             alt = [g for g in focuses(topic, *texts) + (["run"] if topic in RUNS else []) + [""] if (topic, g) != used.get("_last")]
             if long or not alt:
-                return _fill(d, topic, used, scene, lang)
+                return _fill(d, topic, used, dict(scene, _spoken=spoken), lang)
             f = alt[0]
         used["_last"] = (topic, f)
         out = {"k": "mech", "m": topic}

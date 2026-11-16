@@ -971,8 +971,9 @@ def unlogo_pending(pids):
 
 
 def unlogo_blocked(video_id):
-    """Video ešte čaká na odstránenie starého loga: nenahrávať ho."""
-    return int(video_id or 0) in set(db.get_setting("unlogo_todo", []) or [])
+    """Video ešte čaká na odstránenie starého loga alebo na nové zloženie: nenahrávať ho."""
+    vid = int(video_id or 0)
+    return vid in set(db.get_setting("unlogo_todo", []) or []) or vid in set(db.get_setting("rerender_todo", []) or [])
 
 
 def unlogo_now(video_id):
@@ -981,6 +982,10 @@ def unlogo_now(video_id):
     vid = int(video_id or 0)
     if not unlogo_blocked(vid):
         return True
+    if vid in set(db.get_setting("rerender_todo", []) or []):
+        return False   # skladá sa nanovo (oprava obrazu): počká na nové video
+    if vid in set(db.get_setting("remap_todo", []) or []) and vid not in set(db.get_setting("remap_done", []) or []):
+        return False   # čaká na opravu mapy: staré video by nemalo ísť von
     v = db.one(f"SELECT v.*, {db.fmt_sql('v')} fmt FROM videos v WHERE v.id=?", (vid,))
     try:
         if v and v.get("file_path") and Path(v["file_path"]).exists():
@@ -1126,6 +1131,7 @@ def remap_pending(pids):
 
 def remap(pids):
     todo = remap_pending(pids)
+    db.set_setting("remap_todo", sorted(set(db.get_setting("remap_todo", []) or []) | {r["id"] for r in todo}))
     db.set_setting("unlogo_todo", sorted(set(db.get_setting("unlogo_todo", []) or []) | {r["id"] for r in todo}))
 
     def run():
