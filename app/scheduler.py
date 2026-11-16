@@ -35,7 +35,7 @@ def process_one(post):
         db.run("UPDATE posts SET status='failed', error='Účet alebo video už neexistuje' WHERE id=?", (post["id"],))
         return
     from . import brand
-    if brand.unlogo_blocked(vid["id"]):   # ešte so starým logom: počká na opravu
+    if brand.unlogo_blocked(vid["id"]) and not brand.unlogo_now(vid["id"]):   # ešte so starým logom: opraví sa hneď
         return
     if acc["platform"] == "youtube" and not youtube.quota_ok(acc):
         nxt = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=random.randint(0, 59), second=0)
@@ -186,7 +186,7 @@ def ahead_one():
         acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
         vid = db.one("SELECT * FROM videos WHERE id=?", (p["video_id"],))
         from . import brand
-        if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or brand.unlogo_blocked(vid["id"]):
+        if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or (brand.unlogo_blocked(vid["id"]) and not brand.unlogo_now(vid["id"])):
             continue
         k = youtube._client_idx(acc)
         need = 0

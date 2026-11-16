@@ -975,6 +975,24 @@ def unlogo_blocked(video_id):
     return int(video_id or 0) in set(db.get_setting("unlogo_todo", []) or [])
 
 
+def unlogo_now(video_id):
+    """16.11.: video na rade čakalo v rade na odstránenie loga za preskladaním máp a nevyšlo načas.
+    Video, ktoré má ísť von, sa skontroluje (a ak treba, opraví) hneď. True = môže ísť von."""
+    vid = int(video_id or 0)
+    if not unlogo_blocked(vid):
+        return True
+    v = db.one(f"SELECT v.*, {db.fmt_sql('v')} fmt FROM videos v WHERE v.id=?", (vid,))
+    try:
+        if v and v.get("file_path") and Path(v["file_path"]).exists():
+            _unlogo_one(v)
+        db.set_setting("unlogo_done", (db.get_setting("unlogo_done", []) or []) + [vid])
+        db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != vid])
+        return True
+    except Exception as e:
+        print("odstránenie loga (hneď):", vid, e)
+        return False
+
+
 def _has_logo(ff, src, box):
     """Je v rohu naozaj logo? (pozadie je tmavé, logo/podložka svetlé) Nové videá ho už nemajú: tie sa nechajú tak."""
     x, y, w, h = box
@@ -1038,6 +1056,8 @@ def unlogo(pids):
         _unlogo_state["running"] = True
         try:
             for v in todo:
+                if not unlogo_blocked(v["id"]):
+                    continue
                 _unlogo_state["current"] = v["id"]
                 try:
                     _unlogo_one(v)
