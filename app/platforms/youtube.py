@@ -245,10 +245,13 @@ def access_token(account):
         if r.status_code >= 500 or r.status_code == 429:
             raise PlatformError(f"Google dočasne neodpovedá (HTTP {r.status_code}), skúsim neskôr.")
         if r.status_code >= 400:
+            t["broken"] = int(time.time())  # v appke sa pri účte ukáže „treba pripojiť znova“
+            save_tokens(account["id"], t)
             raise PlatformError("YouTube prihlásenie vypršalo (ak je Google appka v režime 'Testing', prepni ju na "
                                 "'In production'). Pripoj účet znova.")
         n = r.json()
     t["access_token"] = n["access_token"]
+    t.pop("broken", None)
     t["expires_at"] = time.time() + n.get("expires_in", 3600) - 60
     save_tokens(account["id"], t)
     return t["access_token"]

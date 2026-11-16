@@ -324,7 +324,7 @@ function topTable(rows, m) {
 function vidTable(list) {
   const yt = list.some(x => x.wm || x.ap);
   return `<table class="dtab"><tr><th>Video</th><th>Sieť</th><th>Účet</th><th>Dátum</th><th>Pozretia</th><th>Lajky</th><th>Komentáre</th>${yt ? '<th>Hodiny</th><th>Pozreté z videa</th>' : ''}<th>Zapojenie</th></tr>
-    ${list.map(x => `<tr><td>${FMT(x.f)} ${x.u ? `<a href="${esc(x.u)}" target="_blank">${esc(x.t || 'Bez názvu')}</a>` : esc(x.t || 'Bez názvu')}</td><td>${plat(x.pl, false)}</td><td class="dim">${esc(x.acc)}</td>
+    ${list.map(x => `<tr><td>${FMT(x.f)} ${x.u ? `<a href="${esc(x.u)}" target="_blank" title="Otvoriť video na sieti">${esc(x.t || 'Bez názvu')} ${I('ext', 's')}</a>` : esc(x.t || 'Bez názvu')}</td><td>${plat(x.pl, false)}</td><td class="dim">${accA(x.pl, x.ax, x.acc)}</td>
       <td class="dim">${x.d.slice(8, 10)}.${x.d.slice(5, 7)}.</td><td>${nf(x.v)}</td><td>${nf(x.lk)}</td><td>${nf(x.cm)}</td>
       ${yt ? `<td>${x.wm ? nf(x.wm / 60) : '–'}</td><td>${x.ap ? Math.round(x.ap) + ' %' : '–'}</td>` : ''}<td>${x.v ? pf(x.r / x.v) : '–'}</td></tr>`).join('')}</table>`;
 }
