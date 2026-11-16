@@ -1299,24 +1299,51 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
         af = ["-map", "0:v", "-map", "1:a", "-af", "apad"]
     cmd += af + ["-t", f"{length:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(fps),
                  "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
+    probe = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .7) * fps)): k for k, d in enumerate(sc_data)}
+    probe2 = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .32) * fps)): k for k, d in enumerate(sc_data)}
+    # záverečný odjazd kamery (prehľad všetkých scén naraz) je zámerný: počas neho sa prekrývanie nemeria, inak padne skoro každé dlhé video na poslednej scéne
+    ld = sc_data[-1]["t1"] - sc_data[-1]["t0"] if sc_data else 0
+    zo0 = total - min(3.2, max(1.8, ld * .5)) if len(sc_data) > 2 and not loop else 1e9
+    job = {"html": html, "vw": vw, "vh": vh, "cmd": cmd, "n": n, "fps": fps, "check_only": bool(check_only), "wide": bool(wide),
+           "probe": probe, "probe2": probe2, "zo0": zo0, "thumb": str(thumb) if thumb and not check_only else "",
+           "thumb_text": (thumb_text or "").strip(), "thumb_i": thumb_index(scenes, sc_data, thumb_scene) if (thumb_text or "").strip() and sc_data else None,
+           "thumb_t": min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6)}
+    with _lock:
+        cover, over = capture_job(job)
+    if check_only:
+        return check(sc_data, cover, over, badic)
+    EVENTS[str(out)] = auto_visual.sound_events(sc_data)   # zvuky k obrazu (domieša audio.finish)
+    QA[str(out)] = check(sc_data, cover, over, badic)
+    if _all_black(out, length):
+        raise RuntimeError("Video vyšlo celé čierne, skús ho vyrobiť znova")
+    return str(out)
+
+
+def _capture(job):
+    """Snímky z prehliadača do ffmpeg + kontrolné snímky. Vráti (cover, over).
+    Beží v samostatnom procese s nižšou prioritou (render_child), aby skladanie videí nebrzdilo appku."""
     import os
     from playwright.sync_api import sync_playwright
-    with _lock, sync_playwright() as pw:
+    cmd, n, fps, check_only, wide = job["cmd"], job["n"], job["fps"], job["check_only"], job["wide"]
+    vw, vh, html, thumb = job["vw"], job["vh"], job["html"], job["thumb"]
+    probe, probe2, zo0 = job["probe"], job["probe2"], job["zo0"]
+    cover, over = {}, {}
+    with sync_playwright() as pw:
         exe = os.environ.get("SM_CHROMIUM")
         b = pw.chromium.launch(executable_path=exe, args=CANVAS_ARGS) if exe else pw.chromium.launch(args=CANVAS_ARGS)
         proc = None if check_only else subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            if thumb and not check_only:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
+            if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
                 tp = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)  # vlastná stránka, video ostane čisté
                 try:
                     tp.set_content(html)
                     tp.wait_for_function("window.READY===true", timeout=20000)
-                    if (thumb_text or "").strip() and sc_data:
-                        tp.evaluate("([i,t])=>thumbMode(i,t)", [thumb_index(scenes, sc_data, thumb_scene), thumb_text.strip()])
+                    if job["thumb_i"] is not None:
+                        tp.evaluate("([i,t])=>thumbMode(i,t)", [job["thumb_i"], job["thumb_text"]])
                     else:
                         tp.evaluate("renderAt(%.2f);document.getElementById('cap').innerHTML='';document.getElementById('bar').style.width=0"
-                                    % min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6))
-                    tp.screenshot(path=str(thumb), type="jpeg", quality=92)
+                                    % job["thumb_t"])
+                    tp.screenshot(path=thumb, type="jpeg", quality=92)
                 except Exception as e:
                     print("náhľad:", e)
                 finally:
@@ -1324,12 +1351,6 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             pg = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)
-            probe = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .7) * fps)): k for k, d in enumerate(sc_data)}
-            probe2 = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .32) * fps)): k for k, d in enumerate(sc_data)}
-            cover, over = {}, {}
-            # záverečný odjazd kamery (prehľad všetkých scén naraz) je zámerný: počas neho sa prekrývanie nemeria, inak padne skoro každé dlhé video na poslednej scéne
-            ld = sc_data[-1]["t1"] - sc_data[-1]["t0"] if sc_data else 0
-            zo0 = total - min(3.2, max(1.8, ld * .5)) if len(sc_data) > 2 and not loop else 1e9
             for i in range(n):
                 if check_only and i not in probe and i not in probe2:
                     continue
@@ -1350,13 +1371,38 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
             if proc and proc.poll() is None:
                 proc.kill()
             b.close()
-    if check_only:
-        return check(sc_data, cover, over, badic)
-    EVENTS[str(out)] = auto_visual.sound_events(sc_data)   # zvuky k obrazu (domieša audio.finish)
-    QA[str(out)] = check(sc_data, cover, over, badic)
-    if _all_black(out, length):
-        raise RuntimeError("Video vyšlo celé čierne, skús ho vyrobiť znova")
-    return str(out)
+    return cover, over
+
+
+def capture_job(job):
+    """Skladanie v samostatnom procese s nižšou prioritou: appka (stránky, plánovač) ostane svižná aj pri 4 videách naraz.
+    Keď sa samostatný proces nedá spustiť (nečakaná chyba prostredia), poskladá sa to postaru priamo v appke."""
+    import os
+    import pickle
+    import sys
+    import tempfile
+    if db.get_setting("render_inproc", False):
+        return _capture(job)
+    fd, res_path = tempfile.mkstemp(suffix=".render")
+    os.close(fd)
+    try:
+        r = subprocess.run([sys.executable, "-m", "app.render_child", res_path], input=pickle.dumps(job),
+                           cwd=str(db.BASE_DIR), capture_output=True, timeout=4 * 3600)
+        try:
+            res = pickle.loads(Path(res_path).read_bytes())
+        except Exception:
+            res = None
+        if isinstance(res, dict) and "error" in res:
+            raise RuntimeError(res["error"])
+        if isinstance(res, dict) and "cover" in res:
+            return res["cover"], res["over"]
+        print("samostatné skladanie nefungovalo, skladám v appke:", (r.stderr or b"").decode(errors="ignore")[-600:])
+    finally:
+        try:
+            os.unlink(res_path)
+        except OSError:
+            pass
+    return _capture(job)
 
 
 def _all_black(path, length):

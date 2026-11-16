@@ -140,6 +140,10 @@ CREATE TABLE IF NOT EXISTS ai_log (
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_videos_project ON videos(project_id, lang);
 CREATE INDEX IF NOT EXISTS idx_ideas_project ON ideas(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_posts_video ON posts(video_id);
+CREATE INDEX IF NOT EXISTS idx_posts_account ON posts(account_id);
+CREATE INDEX IF NOT EXISTS idx_videos_script ON videos(script_id);
+CREATE INDEX IF NOT EXISTS idx_scripts_project ON scripts(project_id, is_source);
 """
 
 
@@ -231,6 +235,23 @@ def _accounts_to_projects(c):
         pass
 
 
+def optimize():
+    """Raz po štarte (a potom každých 12 h): SQLite si zmeria tabuľky a vyberie rýchle poradie čítania.
+    Bez toho stránka projektu pri tisícoch videí prechádzala všetky príspevky pre každý nápad (sekundy namiesto milisekúnd)."""
+    import time
+    time.sleep(30)
+    while True:
+        try:
+            with _lock:
+                c = con()
+                c.execute("PRAGMA analysis_limit=1000")
+                c.execute("ANALYZE")
+                c.commit()
+        except Exception as e:
+            print("Databáza: ANALYZE:", e)
+        time.sleep(12 * 3600)
+
+
 def _reset():
     """Spojenie s databázou sa pokazilo (napr. po chybe zápisu): zahodiť ho a otvoriť nové."""
     global _con
@@ -253,9 +274,56 @@ def _retry(fn):
         return fn()
 
 
+_local = threading.local()
+
+
+def _reader():
+    """Vlastné spojenie na čítanie pre každé vlákno: stránky sa čítajú súbežne a nečakajú jedna na druhú
+    ani na zápisy výroby (WAL dovolí čítať počas zápisu). Zápisy idú ďalej cez jedno spoločné spojenie."""
+    c = getattr(_local, "con", None)
+    if c is None:
+        con()  # tabuľky a migrácie najprv vytvorí spoločné spojenie
+        c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+        c.row_factory = sqlite3.Row
+        c.execute("PRAGMA query_only=1")
+        _local.con = c
+    return c
+
+
+def _read(sql, args):
+    try:
+        return [dict(r) for r in _reader().execute(sql, args).fetchall()]
+    except sqlite3.OperationalError as e:
+        if "readonly" in str(e).lower() or "read-only" in str(e).lower():
+            raise _WriteSql()
+        try:
+            _local.con.close()
+        except Exception:
+            pass
+        _local.con = None
+        return [dict(r) for r in _reader().execute(sql, args).fetchall()]
+
+
+class _WriteSql(Exception):
+    pass
+
+
 def q(sql, args=()):
+    if sql.lstrip()[:4].upper() in ("SELE", "WITH") and not _lock_owned():
+        try:
+            return _read(sql, args)
+        except _WriteSql:
+            pass
     with _lock:
         return _retry(lambda: [dict(r) for r in con().execute(sql, args).fetchall()])
+
+
+def _lock_owned():
+    """Vlákno práve drží zámok zápisu (napr. viac krokov naraz): číta cez spoločné spojenie, aby videlo svoje zmeny."""
+    try:
+        return _lock._is_owned()
+    except Exception:
+        return False
 
 
 def one(sql, args=()):
