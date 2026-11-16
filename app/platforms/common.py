@@ -38,6 +38,8 @@ def check(r, what):
 
 def text_for(video, platform, account=None):
     """Text príspevku podľa siete, krajiny a jazyka (pravidlá v captions.py, bez AI)."""
+    if video.get("fixed_text"):   # Clipper: text klipu je hotový (titulok, popis a povinné značky kampane)
+        return video["fixed_text"][0], video["fixed_text"][1]
     from .. import captions
     b = captions.build(video, platform, account)
     return b["title"], b["text"]

@@ -63,7 +63,8 @@ def _log(source, key, ok, units=0, note=""):
 
 # ---------- projekty, jazyky, krajiny ----------
 def _projects():
-    rows = db.q("SELECT * FROM projects")
+    skip = db.get_setting("clip_project_id")   # projekt Clipper drží len účty, trendy preň netreba
+    rows = [p for p in db.q("SELECT * FROM projects") if p["id"] != skip]
     for p in rows:
         p["languages"] = json.loads(p["languages"] or "[]")
     return rows

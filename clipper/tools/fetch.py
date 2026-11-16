@@ -1,0 +1,62 @@
+"""Stiahne zdrojové video (odkaz z kampane) a titulky s časmi slov, ak ich zdroj má.
+    python fetch.py <url> <priečinok> <ffmpeg> <jazyk> <max výška>
+Výsledok (posledný riadok): {"path","title","duration","subs","lang","id"} alebo {"error"}."""
+import json
+import sys
+from pathlib import Path
+
+
+def main():
+    url, out, ff, lang, height = sys.argv[1:6]
+    import yt_dlp
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    opts = {
+        "outtmpl": str(out / "%(id)s.%(ext)s"),
+        "format": f"bv*[height<={height}][ext=mp4]+ba[ext=m4a]/bv*[height<={height}]+ba/b[height<={height}]/b",
+        "merge_output_format": "mp4",
+        "ffmpeg_location": ff,
+        "noplaylist": True,
+        "quiet": True, "no_warnings": True, "noprogress": True,
+        "writesubtitles": True, "writeautomaticsub": True,
+        "subtitleslangs": [lang, f"{lang}-orig", f"{lang}.*"],
+        "subtitlesformat": "json3",
+        "retries": 5, "fragment_retries": 5,
+        "ignoreerrors": False,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as y:
+            info = y.extract_info(url, download=True)
+            if info.get("_type") == "playlist" and info.get("entries"):
+                info = info["entries"][0]
+            path = Path(y.prepare_filename(info)).with_suffix(".mp4")
+    except Exception as e:
+        # titulky občas zlyhajú (limit): video je dôležitejšie, skús ešte raz bez nich
+        try:
+            opts.update(writesubtitles=False, writeautomaticsub=False)
+            with yt_dlp.YoutubeDL(opts) as y:
+                info = y.extract_info(url, download=True)
+                if info.get("_type") == "playlist" and info.get("entries"):
+                    info = info["entries"][0]
+                path = Path(y.prepare_filename(info)).with_suffix(".mp4")
+        except Exception as e2:
+            print(json.dumps({"error": str(e2)[-300:] or str(e)[-300:]}))
+            return
+    if not path.exists():
+        cand = sorted(out.glob(f"{info.get('id')}.*"), key=lambda p: p.stat().st_size, reverse=True)
+        cand = [c for c in cand if c.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")]
+        if not cand:
+            print(json.dumps({"error": "video sa nestiahlo"}))
+            return
+        path = cand[0]
+    subs = ""
+    for s in sorted(out.glob(f"{info.get('id')}.*.json3")):
+        subs = str(s)
+        if f".{lang}." in s.name:
+            break
+    print(json.dumps({"path": str(path), "title": info.get("title") or "", "duration": float(info.get("duration") or 0),
+                      "subs": subs, "lang": (info.get("language") or lang or "")[:2], "id": str(info.get("id") or "")}))
+
+
+if __name__ == "__main__":
+    main()
