@@ -117,17 +117,17 @@ function vPrehlad(){
 }
 function stTag(s){return {active:'<span class="tag ok">Beží</span>',paused:'<span class="tag warn">Pozastavená</span>',ended:'<span class="tag">Ukončená</span>'}[s]||''}
 
-function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:15,clip_max:45,kind:'auto',name:'',url:'',tags:'',rules:'',about:'',winners:'',sources:''};render()}
+function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:15,clip_max:45,kind:'auto',name:'',url:'',tags:'',rules:'',about:'',winners:'',sources:'',spent:0,clippers:0,age_days:0,viral:0,fit:0};render()}
 function edCamp(id){const c=S.campaigns.find(x=>x.id==id);editCamp=id;form={...c,sources:''};render()}
 function fv(k){const e=document.getElementById('f_'+k);return e?e.value:form[k]}
-function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','winners','lang','per_day','clip_min','clip_max','kind','sources'])form[k]=fv(k);
+function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','winners','lang','per_day','clip_min','clip_max','kind','sources','spent','clippers','age_days','viral','fit'])form[k]=fv(k);
   form.networks=[...document.querySelectorAll('.net:checked')].map(e=>e.value)}
 async function fillBrief(){const text=document.getElementById('brief').value;if(text.trim().length<40){toast('Vlož text zo stránky kampane.',true);return}
   readForm();toast('Čítam pravidlá kampane…');try{const d=await api('/api/clip/brief',{text});
    for(const k in d){if(k=='sources'){if(d.sources.length)form.sources=d.sources.join('\n')}else if(!['risk','verdict','grade'].includes(k)&&d[k]!==''&&d[k]!==null)form[k]=d[k]}
    form.risk=d.risk||'';form.verdict=d.verdict||[];form.grade=d.grade||'';render();toast('Vyplnené, skontroluj čísla.')}catch(e){}}
 async function saveCamp(){readForm();if(!String(form.name).trim()){toast('Daj kampani názov.',true);return}
-  const b={...form};if(editCamp)b.id=editCamp;delete b.totals;delete b.clips;delete b.risk;delete b.verdict;delete b.grade;
+  const b={...form};if(editCamp)b.id=editCamp;delete b.totals;delete b.clips;delete b.risk;delete b.verdict;delete b.grade;delete b.points;
   try{await api('/api/clip/campaign',b);editCamp=null;toast('Uložené.');await load(true)}catch(e){}}
 function fld(k,label,type='text',extra=''){return `<div class="f"><label>${label}</label><input id="f_${k}" type="${type}" value="${esc(form[k])}" ${extra}></div>`}
 function campForm(){
@@ -145,11 +145,23 @@ function campForm(){
    <div class="f"><label>Pravidlá kampane pre klipy</label><textarea id="f_rules">${esc(form.rules)}</textarea></div>
    <div class="f"><label>Čo tu funguje (titulky top klipov z kampane)</label><textarea id="f_winners" placeholder="Napr.: Addictive on purpose: how social media hooks kids before 15 (405K); Social media runs on 3 dials (42K)">${esc(form.winners||'')}</textarea><div class="small muted" style="margin-top:6px">Na stránke kampane je časť „Top clips“. Opíš sem ich titulky a pozretia, appka bude hľadať rovnaké témy a štýl.</div></div>
    ${fld('about','O kom alebo o čom sú zdrojové videá')}</div>
+  <div class="card"><h2>Bodovanie kampane</h2><p class="muted" style="margin-top:0">Čísla zo stránky kampane. Appka z nich dá body 1 až 10 a kampane porovná.</p><div class="fg">
+   ${fld('spent','Už minuté z rozpočtu v $','number')}${fld('clippers','Počet kliperov v kampani','number')}${fld('age_days','Koľko dní kampaň beží','number')}
+   ${fld('viral','Potenciál virality 1 až 10 (0 = odhadne appka)','number','min="0" max="10"')}${fld('fit','Ako sa hodí pre appku 1 až 10 (0 = podľa druhu videa)','number','min="0" max="10"')}</div></div>
   <div class="card"><h2>Výroba</h2><div class="fg">${fld('per_day','Klipov denne z tejto kampane','number')}${fld('clip_min','Dĺžka klipu od (s)','number')}${fld('clip_max','Dĺžka klipu do (s)','number')}
    <div class="f"><label>Podľa čoho vyberať momenty</label><select id="f_kind">${[['auto','Automaticky'],['speech','Podľa reči (podcast, rozhovor, streamer)'],['visual','Podľa obrazu (trailer, hra, šport)']].map(([k,v])=>`<option value="${k}" ${(form.kind||'auto')==k?'selected':''}>${v}</option>`).join('')}</select></div></div>
    <div class="f"><label>${editCamp?'Pridať zdrojové videá':'Zdrojové videá'} (odkazy, každý na nový riadok)</label><textarea id="f_sources" placeholder="https://www.youtube.com/watch?v=…">${esc(form.sources)}</textarea></div>
    <div class="row"><button class="btn" onclick="saveCamp()">Uložiť kampaň</button><button class="btn sec" onclick="editCamp=null;render()">Zrušiť</button></div></div>`;
 }
+function ptsCell(v,why){const col=v>=8?'var(--ok)':v>=5?'var(--text)':'var(--bad)';return `<td title="${esc(why||'')}" style="text-align:center"><b style="color:${col}">${v}</b>${why?`<div class="small muted">${esc(why)}</div>`:''}</td>`}
+function scoreTable(){
+  const cs=S.campaigns.filter(c=>c.status!='ended'&&c.points).sort((a,b)=>b.points.total-a.points.total);
+  if(!cs.length)return '';
+  const rows=cs.map((c,i)=>{const p=c.points,w=p.why||{};return `<tr><td><b>${i+1}. ${esc(c.name)}</b><div class="small muted">${esc(c.site_name)}${c.status=='paused'?' · pozastavená':''}</div></td>
+   ${ptsCell(p.cena,w.cena)}${ptsCell(p.viral,w.viral)}${ptsCell(p.konk,w.konk)}${ptsCell(p.rozp,w.rozp)}${ptsCell(p.fit,w.fit)}
+   <td style="text-align:center"><b style="font-size:18px;color:var(--acc)">${p.total}</b><span class="muted small"> / 50</span></td></tr>`}).join('');
+  return `<div class="card"><h2>Porovnanie kampaní</h2><table class="t"><tr><th>Kampaň</th><th style="text-align:center">Cena</th><th style="text-align:center">Viralita</th><th style="text-align:center">Konkurencia</th><th style="text-align:center">Rozpočet</th><th style="text-align:center">Hodí sa</th><th style="text-align:center">Spolu</th></tr>${rows}</table>
+   <p class="small muted" style="margin:12px 0 0">Každé 1 až 10 bodov, viac je lepšie. Viralita sa počíta zo skutočných pozretí kampane (minuté peniaze na klipera a najlepší klip v „Čo tu funguje“), kým tie nie sú, je to odhad. Konkurencia: menej kliperov = viac bodov. Čísla doplníš v Upraviť.</p></div>`}
 function vKampane(){
   if(editCamp!==null)return campForm();
   const cards=S.campaigns.map(c=>{const k=c.clips;return `<div class="card"><div class="row"><h2 style="margin:0">${esc(c.name)}</h2>${stTag(c.status)}<span class="tag">${esc(c.site_name)}</span><span class="sp"></span>
@@ -158,7 +170,7 @@ function vKampane(){
     ${c.status!='ended'?`<button class="btn sec" onclick="if(confirm('Ukončiť kampaň? Nové klipy sa už nebudú robiť, zverejnené ostanú.'))act('/api/clip/campaign/${c.id}/status',{status:'ended'})">Ukončiť</button>`:''}</div>
     <p class="muted" style="margin:8px 0 12px">${usd(c.rate)} za 1 000 pozretí${c.min_views?` · od ${num(c.min_views)} pozretí`:''}${c.max_payout?` · najviac ${usd(c.max_payout)} na klip`:''}${c.budget?` · rozpočet ${usd(c.budget)}`:''} · ${c.networks.map(n=>NET[n]).join(', ')}</p>
     <div class="row small"><span class="tag">${c.sources} zdrojov čaká</span><span class="tag">${k.picked||0} v strihu</span><span class="tag acc">${k.ready||0} na schválenie</span><span class="tag">${c.totals.queued} v rade</span><span class="tag ok">${c.totals.posted} zverejnených</span><span class="tag">${num(c.totals.views)} pozretí</span><span class="tag ok">odhad ${usd(c.totals.est)}</span></div></div>`}).join('');
-  return `<div class="top"><div><h1>Kampane</h1><p class="sub">Kampaň si vyberieš na stránke platformy, tu jej nastavíš pravidlá a zdrojové videá.</p></div><span class="sp"></span><button class="btn" onclick="newCamp()">${ic('plus','s')}Nová kampaň</button></div>${cards||'<div class="card muted">Zatiaľ žiadna kampaň.</div>'}`;
+  return `<div class="top"><div><h1>Kampane</h1><p class="sub">Kampaň si vyberieš na stránke platformy, tu jej nastavíš pravidlá a zdrojové videá.</p></div><span class="sp"></span><button class="btn" onclick="newCamp()">${ic('plus','s')}Nová kampaň</button></div>${scoreTable()}${cards||'<div class="card muted">Zatiaľ žiadna kampaň.</div>'}`;
 }
 
 const SRC={new:['Čaká',''],fetching:['Sťahuje sa','acc'],transcribing:['Prepisuje sa reč','acc'],ready:['Pripravené','ok'],used:['Vyťažené',''],failed:['Chyba','bad']};

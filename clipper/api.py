@@ -62,6 +62,7 @@ def state():
         c["totals"] = totals.get(c["id"], {"posted": 0, "queued": 0, "views": 0, "est": 0.0, "paid": 0.0, "todo": 0})
         n = {r["status"]: r["n"] for r in store.q("SELECT status, COUNT(*) n FROM clips WHERE campaign_id=? GROUP BY status", (c["id"],))}
         c["clips"] = n
+        c["points"] = track.points(c)
         c["sources"] = store.one("SELECT COUNT(*) n FROM sources WHERE campaign_id=? AND status IN ('new','fetching','transcribing','ready')",
                                  (c["id"],))["n"]
         camps.append(c)
@@ -124,7 +125,7 @@ def _num(v, default=0.0):
 
 
 FIELDS = ("name", "site", "url", "rate", "min_views", "max_payout", "budget", "networks", "tags", "rules", "about", "lang",
-          "per_day", "clip_min", "clip_max", "kind", "winners")
+          "per_day", "clip_min", "clip_max", "kind", "winners", "spent", "clippers", "age_days", "viral", "fit")
 
 
 def _clean(d):
@@ -136,7 +137,13 @@ def _clean(d):
     for k in ("url", "tags", "rules", "about", "winners"):
         if k in d:
             out[k] = str(d[k] or "").strip()[:4000]
-    for k in ("rate", "max_payout", "budget"):
+    for k in ("clippers", "age_days"):
+        if k in d:
+            out[k] = int(max(0, _num(d[k])))
+    for k in ("viral", "fit"):                  # ručný odhad 1-10, 0 = nech to appka odhadne sama
+        if k in d:
+            out[k] = int(min(10, max(0, _num(d[k]))))
+    for k in ("rate", "max_payout", "budget", "spent"):
         if k in d:
             out[k] = max(0.0, _num(d[k]))
     if "min_views" in d:
@@ -203,6 +210,8 @@ async def brief(request: Request):
         '"sources" (array of URLs of source videos or channels found in the text), '
         '"spent" (USD already paid out or used from the budget, 0 if not shown), "clippers" (number of creators who joined or submitted, 0 if not shown), '
         '"age_days" (how many days the campaign has been running, 0 if not shown), '
+        '"viral" (1-10: how likely short clips of this content go viral on TikTok, Reels and Shorts: famous person, emotional or controversial '
+        'topic, broad audience = high; niche product, ad-like footage, little to say = low), '
         '"kind" ("speech" if clips are cut from people talking: podcasts, interviews, talks, streamers; "visual" for trailers, gameplay, '
         'sport, music or product footage; "auto" if unclear), "gambling" (true if it promotes a casino, betting, poker or other gambling), '
         '"risk" ("" or one short Slovak sentence if the campaign is about gambling, betting, casino, crypto trading, adult content or looks like a scam).\n\n'
