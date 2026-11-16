@@ -77,13 +77,13 @@ def _fb(acc, posts):
 
 
 def _ig(acc, posts):
-    t = tokens(acc)
+    U, tok, _ = meta.ig_ctx(acc)
     out = {}
     with client() as c:
         for p in posts:
             vals = {}
             for metric in ("views,likes,comments,shares", "reach,likes,comments,shares"):
-                r = c.get(meta.G(f"{p['external_id']}/insights"), params={"access_token": t["page_token"], "metric": metric})
+                r = c.get(U(f"{p['external_id']}/insights"), params={"access_token": tok, "metric": metric})
                 if r.status_code == 200:
                     vals = {m["name"]: int(((m.get("values") or [{}])[0]).get("value") or 0) for m in r.json().get("data", [])}
                     break
