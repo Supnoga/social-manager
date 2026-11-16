@@ -38,7 +38,7 @@ def _snap(t, cuts, slack):
     return min(near, key=lambda c: abs(c - t)) if near else t
 
 
-def candidates(sig, lo, hi, taken, n=MAX_CAND):
+def candidates(sig, lo, hi, taken, n=MAX_CAND, lim=(0.0, None)):
     """Najživšie úseky videa: zoznam (začiatok, koniec, sila), bez prekrývania a mimo už použitých miest."""
     dur = int(sig.get("dur") or 0)
     loud = [x if x > -90 else -60.0 for x in sig.get("loud") or []][:dur]
@@ -59,8 +59,10 @@ def candidates(sig, lo, hi, taken, n=MAX_CAND):
     for val, s in sorted(sums, reverse=True):
         if len(out) >= n:
             break
-        t0 = max(0.0, _snap(s, cuts, 3))
-        t1 = min(float(dur), _snap(s + length, cuts, 3))
+        if s < lim[0] or (lim[1] is not None and s + length > lim[1]):
+            continue                                         # mimo časti, ktorú kampaň dovoľuje strihať
+        t0 = max(lim[0], _snap(s, cuts, 3))
+        t1 = min(float(dur) if lim[1] is None else min(float(dur), lim[1]), _snap(s + length, cuts, 3))
         if t1 - t0 < lo * 0.8:
             t1 = min(float(dur), t0 + length)
         if t1 - t0 > hi:
@@ -116,7 +118,8 @@ def pick(src, want):
     seen_key = f"vision_seen_{src['id']}"          # úseky, ktoré už Claude videl a nevybral, sa neukazujú znova
     taken += [tuple(x) for x in (store.get(seen_key, []) or [])]
     sig = dict(scan(src), heat=moments.hot(src, n=20))
-    cands = candidates(sig, lo, hi, taken, min(MAX_CAND, want + 4))
+    _, a, b = source.span(src.get("url"))
+    cands = candidates(sig, lo, hi, taken, min(MAX_CAND, want + 4), (a, b))
     if not cands:
         store.run("UPDATE sources SET status='used' WHERE id=?", (src["id"],))
         return 0

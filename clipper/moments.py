@@ -393,14 +393,14 @@ def pick(src, want):
     taken = [(c["t0"], c["t1"]) for c in store.q("SELECT t0, t1 FROM clips WHERE source_id=?", (src["id"],))]
     react, notes = source.reactions(src), source.notes(src)
     punct = punctuated(words)
-    total = words[-1]["e"]
+    first, total = words[0]["s"], words[-1]["e"]      # kampaň môže dovoliť len časť zdroja (od-do)
     window = 40 * 60
     made = 0
-    parts = max(1, round(total / window))
+    parts = max(1, round((total - first) / window))
     for p in range(parts):
         if made >= want:
             break
-        a, b = p * total / parts, (p + 1) * total / parts
+        a, b = first + p * (total - first) / parts, first + (p + 1) * (total - first) / parts
         n = max(1, round((want - made) / (parts - p)))
         lines = _lines(words, a, b)
         if len(lines) < 5:

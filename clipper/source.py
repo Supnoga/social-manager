@@ -14,6 +14,41 @@ NOISE = re.compile(r"\[[^\]]*\]|\([^)]*\)")        # [Music], (Laughter), (Audie
 REACT = re.compile(r"laugh|applau|cheer|chuckl|smiech|potlesk|lach|rire|risa", re.I)   # reakcia publika: do titulkov nie, ale klip ju má nechať dobehnúť
 
 
+def _sec(v):
+    """'1:06:07', '45:50', '1h6m7s', '3967s' alebo '3967' -> sekundy."""
+    v = (v or "").strip().lower()
+    if not v:
+        return None
+    m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", v)
+    if m and any(m.groups()):
+        h, mi, se = (int(x or 0) for x in m.groups())
+        return h * 3600 + mi * 60 + se
+    if re.fullmatch(r"\d+(?::\d{1,2}){0,2}", v):
+        t = 0
+        for x in v.split(":"):
+            t = t * 60 + int(x)
+        return t
+    return None
+
+
+def span(url):
+    """Ktorú časť zdroja kampaň dovoľuje strihať. Za odkazom môže byť @od-do (napr. @1:06:07-3:03:10 alebo @45:50-);
+    inak sa berie začiatok z odkazu (?t=10589s). Vráti (čistý odkaz, od, do), do = None znamená po koniec."""
+    url = (url or "").strip()
+    a, b = 0.0, None
+    m = re.search(r"@([\dhms:]*)-([\dhms:]*)$", url)
+    if m and not Path(url).expanduser().exists():
+        url = url[:m.start()]
+        a, b = float(_sec(m.group(1)) or 0), _sec(m.group(2))
+    else:
+        t = re.search(r"[?&#]t=([\dhms:]+)", url)
+        if t:
+            a = float(_sec(t.group(1)) or 0)
+    if t := re.search(r"[?&]t=[\dhms:]+", url):
+        url = (url[:t.start()] + ("?" if t.group(0)[0] == "?" else "") + url[t.end():].lstrip("&")).rstrip("?&")
+    return url, a, (float(b) if b else None)
+
+
 def add(campaign_id, url):
     url = (url or "").strip()
     if not url:
@@ -75,7 +110,7 @@ def fetch(src):
     lang = (camp.get("lang") or "en")[:2]
     out_dir = store.DIR / "src" / str(src["id"])
     out_dir.mkdir(parents=True, exist_ok=True)
-    url = src["url"]
+    url = span(src["url"])[0]
     subs = ""
     if Path(url).expanduser().exists() and Path(url).suffix.lower() in VIDEO_EXT:
         path = Path(url).expanduser()
@@ -141,13 +176,18 @@ def _split(ws):
     return speech, [(a, b, bool(REACT.search(text))) for text, a, b in notes]
 
 
+def _inside(src, a, b):
+    _, x, y = span(src.get("url"))
+    return a >= x - 0.01 and (y is None or b <= y + 0.01)
+
+
 def words(src):
-    return _split(_raw(src))[0]
+    return [w for w in _split(_raw(src))[0] if _inside(src, w["s"], w["e"])]
 
 
 def notes(src):
     """Poznámky v prepise mimo reči: [(začiatok, koniec, je to reakcia publika)]. Smiech a potlesk, ale aj hudba či text na plátne."""
-    return _split(_raw(src))[1]
+    return [n for n in _split(_raw(src))[1] if _inside(src, n[0], n[1])]
 
 
 def reactions(src):
@@ -165,7 +205,8 @@ def reactions(src):
 def heat(src):
     """Najviac prehrávané časti videa podľa YouTube: [(začiatok, koniec, sila 0-1)]. Prázdne, ak ich video nemá."""
     try:
-        return [tuple(x) for x in json.loads((store.DIR / "src" / str(src["id"]) / "heat.json").read_text(encoding="utf-8"))]
+        rows = json.loads((store.DIR / "src" / str(src["id"]) / "heat.json").read_text(encoding="utf-8"))
+        return [tuple(x) for x in rows if _inside(src, x[0], x[1])]
     except Exception:
         return []
 
