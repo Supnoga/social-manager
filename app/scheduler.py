@@ -197,10 +197,10 @@ def ahead_one():
                     need += 1
             except Exception:
                 pass
-        if p["scheduled_at"] < reset:
-            need = max(0, need - 1)  # samo patrí medzi videá pred obnovením limitu, nahratie teraz nič navyše nestojí
-        if not youtube.quota_ok(acc, reserve=need + youtube.RELEASE_RESERVE) or youtube.units_blocked(acc) \
-                or youtube.units_used(acc) + 150 + (need + youtube.RELEASE_RESERVE) * 110 > youtube.UNITS_LIMIT:
+        # dnešné video samo patrí medzi videá pred obnovením limitu: nahratie teraz nič navyše nestojí, rezerva netreba
+        res = max(0, need - 1) if p["scheduled_at"] < reset else need + youtube.RELEASE_RESERVE
+        if not youtube.quota_ok(acc, reserve=res) or youtube.units_blocked(acc) \
+                or youtube.units_used(acc) + 150 + res * 110 > youtube.UNITS_LIMIT:
             continue
         if (p.get("error") or "").startswith("Nahratie dopredu:") and (p.get("updated_at") or "") > (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S"):
             continue
