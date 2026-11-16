@@ -1,6 +1,7 @@
 """Stiahne zdrojové video (odkaz z kampane) a titulky s časmi slov, ak ich zdroj má.
     python fetch.py <url> <priečinok> <ffmpeg> <jazyk> <max výška>
-Výsledok (posledný riadok): {"path","title","duration","subs","lang","id"} alebo {"error"}."""
+Výsledok (posledný riadok): {"path","title","duration","subs","lang","id"} alebo {"error"}.
+Ak YouTube pri videu ukazuje „najviac prehrávané“, uloží ich do heat.json: [[začiatok, koniec, sila 0-1], ...]."""
 import json
 import sys
 from pathlib import Path
@@ -49,6 +50,13 @@ def main():
             print(json.dumps({"error": "video sa nestiahlo"}))
             return
         path = cand[0]
+    try:
+        heat = [[round(float(h["start_time"]), 1), round(float(h["end_time"]), 1), round(float(h["value"]), 3)]
+                for h in (info.get("heatmap") or [])]
+        if heat:
+            (out / "heat.json").write_text(json.dumps(heat), encoding="utf-8")
+    except Exception:
+        pass
     subs = ""
     for s in sorted(out.glob(f"{info.get('id')}.*.json3")):
         subs = str(s)

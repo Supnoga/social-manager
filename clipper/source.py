@@ -1,5 +1,6 @@
 """Zdrojové video kampane: stiahnutie a prepis reči s časmi slov."""
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,6 +10,7 @@ from app import media
 from . import env, store
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
+NOISE = re.compile(r"\[[^\]]*\]|\([^)]*\)")        # [Music], (Laughter), (Audience applauds): zvuky, nie reč
 
 
 def add(campaign_id, url):
@@ -29,7 +31,8 @@ def _from_json3(path):
         return []
     words = []
     for ev in data.get("events", []):
-        segs = [s for s in (ev.get("segs") or []) if (s.get("utf8") or "").strip()]
+        segs = [dict(s, utf8=NOISE.sub(" ", s.get("utf8") or "")) for s in (ev.get("segs") or [])]
+        segs = [s for s in segs if s["utf8"].strip()]
         if not segs:
             continue
         t0 = (ev.get("tStartMs") or 0) / 1000
@@ -83,14 +86,22 @@ def fetch(src):
               (str(path), title[:300], dur, src["id"]))
     words = _from_json3(subs) if subs else []
     want = camp.get("kind") or "auto"
-    if want != "visual" and len(words) < max(30, dur / 6):   # titulky chýbajú alebo sú deravé: prepis reči na tomto počítači
+    holes = len(words) < max(30, dur / 6)                    # titulky chýbajú alebo sú deravé
+    from .moments import punctuated
+    blind = len(words) >= 60 and not punctuated(words)       # automatické titulky bez bodiek: nevidno, kde sa veta končí
+    if want != "visual" and (holes or blind):                # prepis reči na tomto počítači (zadarmo)
         wav = out_dir / "audio.wav"
-        media._run_ff([media.ffmpeg(), "-y", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", str(wav)])
-        wj = out_dir / "stt.json"
-        r = env.tool("stt", [wav, wj, lang or "auto", store.get("stt_model", "small")], timeout=6 * 3600)
-        words = json.loads(wj.read_text(encoding="utf-8"))
-        wav.unlink(missing_ok=True)
-        lang = (r.get("lang") or lang)[:2]
+        try:
+            media._run_ff([media.ffmpeg(), "-y", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", str(wav)])
+            wj = out_dir / "stt.json"
+            r = env.tool("stt", [wav, wj, lang or "auto", store.get("stt_model", "small")], timeout=6 * 3600)
+            words = json.loads(wj.read_text(encoding="utf-8"))
+            lang = (r.get("lang") or lang)[:2]
+        except Exception:
+            if holes:
+                raise
+        finally:
+            wav.unlink(missing_ok=True)
     per_min = len(words) / max(1.0, dur / 60)
     kind = "visual" if want == "visual" or (want == "auto" and per_min < 60) else "speech"   # rozhovor má 130 až 180 slov za minútu
     if kind == "speech" and len(words) < 20:
@@ -103,7 +114,16 @@ def fetch(src):
 
 def words(src):
     try:
-        return json.loads(Path(src["words_path"]).read_text(encoding="utf-8"))
+        ws = json.loads(Path(src["words_path"]).read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    return [w for w in ws if not NOISE.fullmatch(w["w"])]
+
+
+def heat(src):
+    """Najviac prehrávané časti videa podľa YouTube: [(začiatok, koniec, sila 0-1)]. Prázdne, ak ich video nemá."""
+    try:
+        return [tuple(x) for x in json.loads((store.DIR / "src" / str(src["id"]) / "heat.json").read_text(encoding="utf-8"))]
     except Exception:
         return []
 
