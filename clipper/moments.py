@@ -241,7 +241,7 @@ def _review(cands, words, camp, lo, hi, punct):
         + 'Return JSON: {"clips":[{"id":<clip number>,"ok":true,"drop_first":0,"add_after":0,"cut_last":0,"hook":"","problem":"max 10 words, empty if fine"}]}. '
         "Set ok to false only when these changes cannot save the clip.\n\n" + "\n\n".join(blocks))
     try:
-        data = ai.ask(prompt, "clip_review", kind="creative", timeout=600)
+        data = ai.ask(prompt, "clip_review", kind="cheap", timeout=600)
     except ai.NeedManual:
         raise
     except Exception as e:
