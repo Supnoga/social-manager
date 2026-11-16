@@ -45,7 +45,12 @@ RULES = [
     (r"air ?condition|\bac unit", "aircon", ["Compressor", "Cooling", "Heat outside"]),
     (r"fridge|refrigerator", "fridge", ["Compressor", "Condenser", "Expansion", "Evaporator"]),
     (r"generator|dynamo|alternator", "generator", ["Turbine", "Generator", "Bulb"]),
-    (r"electric motor|e-motor|ev motor", "motor", ["Magnet", "Coil", "Battery"]),
+    (r"lithium[- ]ion|li-ion|\blithium batter|batter(y|ies) (wears?|wear out|degrad\w*|health|life|cells?|chemistry|ages?|aging)|phone batter\w*|how (a |the )?batter(y|ies) works?|\banodes?\b|\bcathodes?\b|charge cycles?",
+     "battery", ["Anode", "Cathode", "Separator", "Electrons"]),
+    (r"electric motors?|e-?motors?|ev motors?|traction motors?|induction motors?|brushless|permanent[- ]magnet motors?|synchronous motors?|servo ?motors?|\bstator\b|regenerative braking|motor (spins|turns)", "emotor",
+     ["Stator coils", "Rotor magnets", "Magnetic field", "Shaft"]),
+    (r"robot(ic)? arms?|industrial robots?|factory robots?|welding robots?|robots? (in|on) (the |a )?(factory|assembly|car plant)|pick[- ]and[- ]place|cobots?|\brobotics?\b|robots? (build|weld|assemble|make)", "robot_arm",
+     ["Base", "Shoulder", "Elbow", "Gripper"]),
     (r"transistors?\b|mosfet", "transistor", ["Source", "Gate", "Drain", "Channel"]),
     (r"circuit breakers?|breaker trips?|\bfuses?\b|\bmcb\b", "breaker", ["Contacts", "Bimetal strip", "Solenoid", "Arc chute"]),
     (r"transformer|high voltage|substation", "transformer", ["Primary coil", "Iron core", "Secondary coil"]),
@@ -171,12 +176,28 @@ _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_me
               ("speed", r"sideways|speed|kilomet|\bfast|velocity"), ("path", r"orbit|circle|\blaps?\b|around")],
     "jet": [("nozzle", r"nozzle|exhaust|thrust|newton"), ("turbine", r"turbine"), ("combustor", r"combust|\bfuel\b|\bburn|flame|ignit|kerosene"),
             ("compressor", r"compress|squeez|\bstages?\b"), ("fan", r"\bfan\b|bypass|intake|\bblades?\b|\bsucks?")],
+    "battery": [("wear", r"wears? out|degrad|aging|ages|capacity (drops|falls|loss)|\bSEI\b|trapped|lose|80 ?%|cycles?"),
+                ("charge", r"\bcharg(e|es|ing|er)\b|plug(ged)? in|fast charg|recharg"),
+                ("separator", r"separator|short circuit|\bfire\b|thermal runaway|puncture"),
+                ("anode", r"anode|graphite|negative (side|electrode)"),
+                ("cathode", r"cathode|cobalt|nickel|metal oxide|\bLFP\b|\biron phosphate|positive (side|electrode)"),
+                ("circuit", r"electrons?|\bwires?\b|current|power(s)? (your|the) (phone|car)|circuit")],
+    "robot_arm": [("weld", r"\bweld|spark|\bseams?\b|car bod(y|ies)|spot weld"),
+                  ("gripper", r"gripp|grab|\bpicks?\b|\bhand\b|finger|\bplace\b|\bholds?\b|suction"),
+                  ("elbow", r"elbow|\breach|forearm|inverse kinematics|\bpath\b|precis"),
+                  ("shoulder", r"shoulder|\bmotors?\b|servo|\bjoints?\b|\baxis|\baxes|gearbox|torque"),
+                  ("base", r"\bbase\b|rotat|bolted|\bfloor\b|\bcages?\b|safety")],
+    "emotor": [("regen", r"regenerat|recuperat|braking (charges|recharges|puts)|back into the battery|motor becomes a generator|acts as a generator"),
+               ("field", r"magnetic field|rotating field|\bfield\b|phases?|three[- ]phase|alternating|\bAC\b|inverter|frequency"),
+               ("magnets", r"\bmagnets?\b|\brotor\b|neodymium|rare earth|\bpoles?\b|north|south|attract|repel"),
+               ("coils", r"\bcoils?\b|\bstator\b|copper|windings?|electromagnet|current"),
+               ("shaft", r"\bshaft\b|torque|\bwheels?\b|axle|gear|output")],
     "car_brake": [("caliper", r"caliper|brake pads?|\bpads?\b|\bpistons?\b|brake fluid|hydraulic|squeez|clamp|pedal"),
                   ("disc", r"\bdis[ck]s?\b|\brotors?\b|\bheat|degrees|glow|friction|\bfade")],
 }
 FOCUS = {m: [(f, re.compile(r, re.I)) for f, r in _STROKES] for m in ("piston", "wankel", "rotary")}
 FOCUS.update({m: [(f, re.compile(r, re.I)) for f, r in v] for m, v in _PARTS.items()})
-RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump", "wind_turbine")
+RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump", "wind_turbine", "emotor", "robot_arm")
 # zábery, ktoré len posunú kameru (stav stroja nemenia): v rámci jednej scény môže kamera prejsť z jedného na druhý
 CAM_ONLY = {"turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "valve", "belt"}, "car_brake": {"caliper", "disc"},
             "gearbox": {"input", "gears", "collar", "output"}, "differential": {"pinion", "spider"},
@@ -188,7 +209,7 @@ CAM_ONLY = {"turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "va
             "elevator": {"car", "counterweight", "sheave", "brake"}, "fridge": {"compressor", "condenser", "valve", "evaporator"},
             "jet": {"fan", "compressor", "combustor", "turbine", "nozzle"},
             "wall": {"inside", "masonry", "insulation", "outside"}, "pinlock": {"keypins", "drivers", "shear", "plug"}, "canal_lock": {"gates", "valves", "chamber", "ship"}, "orbit": {"gravity", "speed", "path"},
-            "transistor": {"source", "gate", "drain", "channel"}, "breaker": {"contacts", "bimetal", "coil", "arc"}}
+            "transistor": {"source", "gate", "drain", "channel"}, "emotor": {"coils", "magnets", "field", "shaft"}, "battery": {"anode", "cathode", "separator", "circuit"}, "robot_arm": {"base", "shoulder", "elbow", "gripper"}, "breaker": {"contacts", "bimetal", "coil", "arc"}}
 # tenké schémy, ktoré v krátkom videu o stroji nahradí model (grafy s číslami ostávajú)
 SOFT = {"flow", "cycle", "steps", "network", "tree", "layers", "split", "stack", "level", "zoom", "size", "sim", "forces", "myth", "dots",
         "funnel", "venn", "house", "crack", "clock", "matrix"}   # modely, ktoré vedia záber „beží naplno“
@@ -227,9 +248,12 @@ _SUPPORT = {"wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": 
             "orbit": r"gravity|orbit|sideways|speed|\bfalls?\b|falling|altitude|\bburns?\b|\bdrag\b|kilomet",
             "transistor": r"\bgate\b|\bsource\b|\bdrain\b|channel|silicon|electrons?|voltage|switch|current",
             "breaker": r"contacts?|bimetal|\bstrip\b|\bcoil\b|solenoid|\barc\b|\btrips?\b|overload|short circuit|\bamps?\b|\bfuses?\b",
+            "battery": r"\bions?\b|anode|cathode|electrolyte|separator|lithium|electrons?|graphite|cobalt|charge cycles?|capacity",
+            "robot_arm": r"\bjoints?\b|\bmotors?\b|servo|gripp|\bweld|\barms?\b|elbow|shoulder|precis|\baxis|\baxes|repeat|\bcars?\b|factory|assembly|program",
+            "emotor": r"\bcoils?\b|\bstator\b|\brotor\b|\bmagnets?\b|magnetic field|copper|windings?|torque|\binverter\b|\bphases?\b|\bshaft\b|\bRPM\b",
             "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
 # model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
-_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3, "dam": 3, "submarine": 3, "hydraulic": 3, "elevator": 3, "fridge": 3, "jet": 3, "transistor": 3, "breaker": 3, "canal_lock": 3, "orbit": 3, "pinlock": 3, "wall": 3}
+_NEEDS = {"heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3, "dam": 3, "submarine": 3, "hydraulic": 3, "elevator": 3, "fridge": 3, "jet": 3, "transistor": 3, "breaker": 3, "canal_lock": 3, "orbit": 3, "pinlock": 3, "wall": 3, "emotor": 3, "battery": 3, "robot_arm": 3}
 
 
 def topic(full, title="", strict=False):
@@ -259,6 +283,9 @@ _AVOID = {"car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine b
           "wall": r"\bdrill|\bquiz\b|\broof|\bloft|attic|noise|sound|great wall|firewall|wall street|\bpaint|cracks?|shel(f|ves)|wall plug",
           "pinlock": r"smart lock|electronic|\bquiz\b|padlock|seat ?belt|canal|67 years",
           "canal_lock": r"\bquiz\b|suez|pay by|too wide",
+          "battery": r"\bquiz\b|solid[- ]state|sodium|lead[- ]acid|flow batter|artillery|battery of|grid (storage|batter)|power ?wall|nuclear batter|potato|lemon",
+          "robot_arm": r"\bquiz\b|humanoid|robot (dog|vacuum|lawn)|surg|chatbot|\bAI\b|android|terminator|mars|rover|\bbot\b|walking robot",
+          "emotor": r"\bquiz\b|stepper|linear motor|maglev|motor ?(oil|cycle|way|home|boat|racing|sport)|motorist|motor vehicle|motor neurons?|motor skills|motor cortex",
           "orbit": r"\bgps\b|submarine|\bspot|\bsees?\b|see through|\bjam|millimet|early warning|\bpings?\b|without gps|\bimages?\b|camera|\bspy|\bquiz\b|navigation|indoors|internet",
           "transistor": r"vacuum tube|from sand|\d+ steps|wafer|\bquiz\b|shortage",
           "breaker": r"\brcd\b|\bgfci\b|shock|multimeter|blown? your|\bquiz\b|fuse box|fused? (together|into)|fusion",
@@ -303,7 +330,7 @@ def _topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing", "dam": "Hydroelectric dam", "submarine": "Submarine", "hydraulic": "Hydraulic jack", "elevator": "Elevator", "fridge": "Refrigerator", "jet": "Jet engine", "wall": "Wall cross-section", "pinlock": "Pin tumbler lock", "canal_lock": "Canal lock", "orbit": "Orbit", "transistor": "Transistor", "breaker": "Circuit breaker"}
+NAMES = {"robot_arm": "Robot arm", "battery": "Battery cell", "emotor": "Electric motor", "piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing", "dam": "Hydroelectric dam", "submarine": "Submarine", "hydraulic": "Hydraulic jack", "elevator": "Elevator", "fridge": "Refrigerator", "jet": "Jet engine", "wall": "Wall cross-section", "pinlock": "Pin tumbler lock", "canal_lock": "Canal lock", "orbit": "Orbit", "transistor": "Transistor", "breaker": "Circuit breaker"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
