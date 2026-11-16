@@ -427,6 +427,8 @@ def rerender(data: dict = Body(...)):
                         db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0, qa=?, status=? WHERE id=?",
                                (new["file_path"], new["size"], new["duration"], new.get("qa") or "", new.get("status") or "ready", vid))
                         db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                        if (new.get("status") or "") == "hold":   # nové video neprešlo kontrolou: nesmie ísť von
+                            db.run("UPDATE posts SET status='hold', updated_at=? WHERE video_id=? AND status='queued'", (scheduler.now_str(), vid))
                         for f in (old, old.with_suffix(".jpg")):
                             if f != Path(new["file_path"]) and f.exists():
                                 f.unlink(missing_ok=True)
