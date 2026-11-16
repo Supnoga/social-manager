@@ -150,7 +150,7 @@ function campForm(){
    ${fld('viral','Potenciál virality 1 až 10 (0 = odhadne appka)','number','min="0" max="10"')}${fld('fit','Ako sa hodí pre appku 1 až 10 (0 = podľa druhu videa)','number','min="0" max="10"')}</div></div>
   <div class="card"><h2>Výroba</h2><div class="fg">${fld('per_day','Klipov denne z tejto kampane','number')}${fld('clip_min','Dĺžka klipu od (s)','number')}${fld('clip_max','Dĺžka klipu do (s)','number')}
    <div class="f"><label>Podľa čoho vyberať momenty</label><select id="f_kind">${[['auto','Automaticky'],['speech','Podľa reči (podcast, rozhovor, streamer)'],['visual','Podľa obrazu (trailer, hra, šport)']].map(([k,v])=>`<option value="${k}" ${(form.kind||'auto')==k?'selected':''}>${v}</option>`).join('')}</select></div></div>
-   <div class="f"><label>${editCamp?'Pridať zdrojové videá':'Zdrojové videá'} (odkazy, každý na nový riadok)</label><textarea id="f_sources" placeholder="https://www.youtube.com/watch?v=…">${esc(form.sources)}</textarea></div>
+   <div class="f"><label>${editCamp?'Pridať zdrojové videá':'Zdrojové videá'} (odkazy, každý na nový riadok; len časť videa: za odkaz @od-do, napr. @1:06:07-3:03:10)</label><textarea id="f_sources" placeholder="https://www.youtube.com/watch?v=…">${esc(form.sources)}</textarea></div>
    <div class="row"><button class="btn" onclick="saveCamp()">Uložiť kampaň</button><button class="btn sec" onclick="editCamp=null;render()">Zrušiť</button></div></div>`;
 }
 function ptsCell(v,why){const col=v>=8?'var(--ok)':v>=5?'var(--text)':'var(--bad)';return `<td title="${esc(why||'')}" style="text-align:center"><b style="color:${col}">${v}</b>${why?`<div class="small muted">${esc(why)}</div>`:''}</td>`}
