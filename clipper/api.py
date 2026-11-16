@@ -198,6 +198,8 @@ async def brief(request: Request):
         '"rules" (the content rules a clip editor must follow, max 600 characters, in English), '
         '"about" (who or what the source content is, max 200 characters), "lang" (2-letter language of the content), '
         '"sources" (array of URLs of source videos or channels found in the text), '
+        '"spent" (USD already paid out or used from the budget, 0 if not shown), "clippers" (number of creators who joined or submitted, 0 if not shown), '
+        '"age_days" (how many days the campaign has been running, 0 if not shown), '
         '"risk" ("" or one short Slovak sentence if the campaign is about gambling, betting, casino, crypto trading, adult content or looks like a scam).\n\n'
         "TEXT:\n" + text)
     try:
@@ -210,6 +212,8 @@ async def brief(request: Request):
     out["networks"] = json.loads(out.get("networks", '["youtube","instagram","tiktok"]'))
     out["sources"] = [u for u in (data.get("sources") or []) if isinstance(u, str) and u.startswith("http")][:20]
     out["risk"] = str(data.get("risk") or "")[:200]
+    out["grade"], out["verdict"] = track.judge(out.get("rate"), out.get("budget"), _num(data.get("spent")), _num(data.get("clippers")),
+                                               _num(data.get("age_days")))
     return out
 
 
