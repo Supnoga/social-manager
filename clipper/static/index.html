@@ -120,7 +120,7 @@ function stTag(s){return {active:'<span class="tag ok">Beží</span>',paused:'<s
 function newCamp(){tab='kampane';location.hash='#/kampane';editCamp=0;form={site:'whop',rate:1,min_views:0,max_payout:0,budget:0,networks:['youtube','instagram','tiktok'],lang:'en',per_day:6,clip_min:15,clip_max:45,kind:'auto',name:'',url:'',tags:'',rules:'',about:'',winners:'',sources:'',spent:0,clippers:0,age_days:0,viral:0,fit:0};render()}
 function edCamp(id){const c=S.campaigns.find(x=>x.id==id);editCamp=id;form={...c,sources:''};render()}
 function fv(k){const e=document.getElementById('f_'+k);return e?e.value:form[k]}
-function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','winners','lang','per_day','clip_min','clip_max','kind','sources','spent','clippers','age_days','viral','fit','logo'])form[k]=fv(k);
+function readForm(){for(const k of ['name','site','url','rate','min_views','max_payout','budget','tags','rules','about','winners','lang','per_day','clip_min','clip_max','kind','sources','spent','clippers','age_days','viral','fit','logo','caption'])form[k]=fv(k);
   form.networks=[...document.querySelectorAll('.net:checked')].map(e=>e.value)}
 async function fillBrief(){const text=document.getElementById('brief').value;if(text.trim().length<40){toast('Vlož text zo stránky kampane.',true);return}
   readForm();toast('Čítam pravidlá kampane…');try{const d=await api('/api/clip/brief',{text});
@@ -141,8 +141,9 @@ function campForm(){
    ${fld('url','Odkaz na stránku kampane')}${fld('rate','Sadzba v $ za 1 000 pozretí','number','step="0.01"')}${fld('min_views','Minimum pozretí na klip','number')}
    ${fld('max_payout','Strop v $ na jeden klip (0 = bez)','number')}${fld('budget','Rozpočet kampane v $ (0 = neviem)','number')}${fld('lang','Jazyk videí (en, de, …)')}</div>
    <div class="f"><label>Siete, ktoré kampaň platí</label><div>${Object.entries(NET).map(([k,v])=>`<label class="ck"><input type="checkbox" class="net" value="${k}" ${form.networks.includes(k)?'checked':''}>${v}</label>`).join('')}</div></div>
-   ${fld('tags','Povinné značky v popise (napr. #znacka @tvorca)')}
+   ${fld('tags','Povinné značky v popise (napr. #Ad @tvorca; len pre jednu sieť: instagram:@sega)')}
    <div class="f"><label>Pravidlá kampane pre klipy</label><textarea id="f_rules">${esc(form.rules)}</textarea></div>
+   <div class="f"><label>Presný popis (len ak ho kampaň predpisuje slovo od slova)</label><textarea id="f_caption" placeholder="Nechaj prázdne: popis napíše appka ku každému klipu">${esc(form.caption||'')}</textarea></div>
    <div class="f"><label>Logo v klipe (len ak ho kampaň vyžaduje)</label><input id="f_logo" placeholder="Odkaz na obrázok loga (png, jpg)" value="${esc(form.logo||'')}"></div>
    <div class="f"><label>Čo tu funguje (titulky top klipov z kampane)</label><textarea id="f_winners" placeholder="Napr.: Addictive on purpose: how social media hooks kids before 15 (405K); Social media runs on 3 dials (42K)">${esc(form.winners||'')}</textarea><div class="small muted" style="margin-top:6px">Na stránke kampane je časť „Top clips“. Opíš sem ich titulky a pozretia, appka bude hľadať rovnaké témy a štýl.</div></div>
    ${fld('about','O kom alebo o čom sú zdrojové videá')}</div>

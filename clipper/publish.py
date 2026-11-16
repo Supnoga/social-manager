@@ -24,25 +24,42 @@ DISCLOSE = {"#ad", "#sponsored", "#advertisement", "#paidpartnership", "#paid", 
 MAX_HASH = 5       # viac hashtagov dosah znižuje a Instagram ich viac neberie
 
 
-def _tags(camp):
-    """Povinné značky kampane: (označenie spolupráce, hashtagy, označenia účtov) tak, ako ich kampaň chce."""
-    found = re.findall(r"[#@][\w.]+", camp.get("tags") or "")
+def _tags(camp, platform=None):
+    """Povinné značky kampane: (označenie spolupráce, hashtagy, označenia účtov) tak, ako ich kampaň chce.
+    Značka môže platiť len pre jednu sieť: „instagram:@sega youtube:@sega_west“."""
+    found = []
+    for net, t in re.findall(r"(?:\b(youtube|instagram|tiktok|facebook):)?([#@][\w.]+)", camp.get("tags") or "", re.I):
+        if not net or platform is None or net.lower() == platform:
+            found.append(t)
+    found = list(dict.fromkeys(found))
     disc = [t for t in found if t.lower() in DISCLOSE]
     return disc, [t for t in found if t.startswith("#") and t not in disc], [t for t in found if t.startswith("@")]
 
 
 def texts(clip, camp, platform):
+    """Popis: text klipu (alebo presný text, ktorý kampaň predpisuje) a označenia účtov v prvom riadku,
+    označenie spolupráce (#Ad) na vlastnom riadku ako prvý hashtag, za ním ostatné hashtagy."""
     title = re.sub(r"[<>]", "", (clip.get("title") or clip.get("hook") or "Clip")).strip()
-    body = re.sub(r"[<>]", "", (clip.get("caption") or title)).strip()
-    own = re.findall(r"#\w+", body)
-    body = re.sub(r"\s+", " ", re.sub(r"#\w+", "", body)).strip() or title
-    disc, req, mentions = _tags(camp)
+    fixed = (camp.get("caption") or "").strip()
+    disc, req, mentions = _tags(camp, platform)
+    if fixed:                                     # kampaň chce presne svoj text: nič v ňom nemeniť
+        body, own = fixed, []
+        low = fixed.lower()
+        disc = [t for t in disc if t.lower() not in low]
+        req = [t for t in req if t.lower() not in low]
+        mentions = [t for t in mentions if t.lower() not in low]
+    else:
+        body = re.sub(r"[<>]", "", (clip.get("caption") or title)).strip()
+        own = re.findall(r"#\w+", body)
+        body = re.sub(r"\s+", " ", re.sub(r"#\w+", "", body)).strip() or title
     have = {t.lower() for t in disc + req}
     room = MAX_HASH - len(disc) - len(req) - (1 if platform == "youtube" else 0)
+    if disc:                                      # značkové kampane: za #Ad najviac 3 ďalšie hashtagy
+        room = min(room, 3 - len(req) - (1 if platform == "youtube" else 0))
     extra = [t for t in dict.fromkeys(own) if t.lower() not in have][:max(0, min(3, room))]
-    first = (body + (" " + " ".join(disc) if disc else "")).strip()      # označenie spolupráce hneď v prvom riadku
-    tail = " ".join(mentions + req + extra + (["#shorts"] if platform == "youtube" else []))
-    text = (first + ("\n\n" + tail if tail else "")).strip()
+    first = (body + (" " + " ".join(mentions) if mentions else "")).strip()
+    tail = " ".join(disc + req + extra + (["#shorts"] if platform == "youtube" else []))
+    text = (first + ("\n" + tail if tail else "")).strip()
     if platform == "youtube":
         t = title[:92]
         if req and len(t) + len(" ".join(req)) < 96:
