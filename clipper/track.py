@@ -10,7 +10,20 @@ from app import stats as appstats
 from . import store
 
 EVERY = 3 * 3600
-SUBMIT = ("todo", "submitted", "approved", "rejected", "paid")
+SUBMIT = ("todo", "submitted", "approved", "rejected", "paid", "missed")
+# Do koľkých minút od zverejnenia berie platforma odkaz (Whop / Content Rewards 30 minút, Clipping.net 72 hodín).
+WINDOW = {"whop": 30, "clipping": 72 * 60}
+
+
+def deadline(posted_at, site):
+    """Dokedy treba odkaz vložiť do kampane ('' = bez termínu)."""
+    w = WINDOW.get(site or "")
+    if not w or not posted_at:
+        return ""
+    try:
+        return (datetime.strptime(posted_at, "%Y-%m-%d %H:%M:%S") + timedelta(minutes=w)).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return ""
 
 
 def tick(force=False):
@@ -63,7 +76,7 @@ def campaign_totals():
         if r["status"] == "posted":
             t["posted"] += 1
             t["views"] += r["views"] or 0
-            if r["submit"] != "rejected":
+            if r["submit"] not in ("rejected", "missed"):
                 t["est"] += earn(r["views"], camps.get(r["campaign_id"]) or {})
             if r["submit"] == "todo":
                 t["todo"] += 1

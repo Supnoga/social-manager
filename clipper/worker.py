@@ -2,10 +2,12 @@
 
 zdroj -> stiahnuť a prepísať -> vybrať momenty (AI, len text) -> strih -> schválenie -> rozvrh -> zverejnenie -> čísla.
 Všetko je zapísané v databáze, takže po reštarte alebo aktualizácii pokračuje tam, kde skončila."""
+import subprocess
+import sys
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import env, moments, publish, render, source, store, track
 
@@ -103,8 +105,36 @@ def _publish_one():
     if not post:
         return False
     _work("Zverejňujem klip")
-    publish.publish(post)
+    if publish.publish(post):
+        _notify()
     return True
+
+
+def _notify():
+    """Upozornenie na Macu, že sú vonku nové odkazy s termínom (Whop berie odkaz len 30 minút od zverejnenia).
+    Ozve sa na konci dávky, pri dlhej dávke priebežne každých 10 minút."""
+    try:
+        fmt = "%Y-%m-%d %H:%M:%S"
+        last = store.get("notified_at", "") or ""
+        new = [p for p in store.q("SELECT p.posted_at, k.site FROM posts p JOIN clips c ON c.id=p.clip_id JOIN campaigns k ON k.id=c.campaign_id "
+                                  "WHERE p.status='posted' AND p.submit='todo' AND p.url!='' AND p.posted_at>?", (last,))
+               if track.deadline(p["posted_at"], p["site"]) > store.now()]
+        if not new:
+            return
+        soon = (datetime.now() + timedelta(minutes=3)).strftime(fmt)
+        more = store.one("SELECT COUNT(*) n FROM posts WHERE status='queued' AND scheduled_at<=?", (soon,))["n"]
+        oldest = min(p["posted_at"] for p in new)
+        if more and (datetime.now() - datetime.strptime(oldest, fmt)).total_seconds() < 600:
+            return
+        store.put("notified_at", store.now())
+        until = min(track.deadline(p["posted_at"], p["site"]) for p in new)[11:16]
+        text = f"Nové klipy vonku: {len(new)}. Odkazy vlož do kampane do {until}."
+        STATE["last_note"] = text
+        if sys.platform == "darwin":
+            subprocess.run(["osascript", "-e", f'display notification "{text}" with title "Clipper" sound name "Glass"'],
+                           timeout=10, capture_output=True, stdin=subprocess.DEVNULL)
+    except Exception:
+        traceback.print_exc()
 
 
 def _cleanup():

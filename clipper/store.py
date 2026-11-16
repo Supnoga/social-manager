@@ -30,8 +30,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
   about TEXT DEFAULT '',
   lang TEXT DEFAULT 'en',
   per_day INTEGER DEFAULT 6,
-  clip_min INTEGER DEFAULT 20,
-  clip_max INTEGER DEFAULT 55,
+  clip_min INTEGER DEFAULT 15,
+  clip_max INTEGER DEFAULT 45,
   status TEXT DEFAULT 'active',
   created_at TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -97,6 +97,9 @@ def con():
         _con.row_factory = sqlite3.Row
         _con.execute("PRAGMA journal_mode=WAL")
         _con.executescript(SCHEMA)
+        if "posted_at" not in [r[1] for r in _con.execute("PRAGMA table_info(posts)")]:
+            _con.execute("ALTER TABLE posts ADD COLUMN posted_at TEXT DEFAULT ''")
+            _con.execute("UPDATE posts SET posted_at=updated_at WHERE status='posted'")
         _con.commit()
     return _con
 
@@ -165,7 +168,7 @@ def accounts():
     conf = {r["account_id"]: r for r in q("SELECT * FROM clip_accounts")}
     out = []
     for a in rows:
-        c = conf.get(a["id"]) or {"active": 1, "per_day": get("per_day_default", 6)}
+        c = conf.get(a["id"]) or {"active": 1, "per_day": get("per_day_default", 3)}
         try:
             broken = bool(json.loads(a["tokens"] or "{}").get("broken"))
         except Exception:
