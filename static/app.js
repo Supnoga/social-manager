@@ -99,14 +99,22 @@ function modal(html) { $('#modalBody').innerHTML = html; $('#modal').classList.r
 function closeModal() { $('#modal').classList.add('hidden'); }
 const empty = (icon, text) => `<div class="empty">${I(icon)}<div>${text}</div></div>`;
 
+// kedy naposledy Oliver klikol alebo písal: appka sa vtedy neaktualizuje ani nereštartuje
+let _lastInput = Date.now();
+['pointerdown', 'keydown', 'wheel'].forEach(e => addEventListener(e, () => { _lastInput = Date.now(); }, { passive: true, capture: true }));
+const _userHdr = () => (Date.now() - _lastInput < 60000 && !document.hidden) ? { 'X-User': '1' } : {};
+const _wait = ms => new Promise(res => setTimeout(res, ms));
 async function api(url, opts = {}, busyText) {
-  if (opts.body && !(opts.body instanceof FormData)) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(opts.body); }
+  const method = (opts.method || 'GET').toUpperCase();
+  if (method !== 'GET') _baseAt = 0;   // po zmene načítať prehľad a projekty nanovo
+  opts.headers = Object.assign({}, _userHdr(), opts.headers || {});
+  if (opts.body && !(opts.body instanceof FormData)) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(opts.body); }
   if (busyText) busy(true, busyText);
   try {
     let r, d;
     if (busyText && !(opts.body instanceof FormData) && (opts.method || 'GET') !== 'GET') {
       // dlhá úloha: beží na pozadí, prehliadač sa len pýta na stav
-      const j = await (await fetch('/api/job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, method: opts.method, body: opts.body ? JSON.parse(opts.body) : null }) })).json();
+      const j = await (await fetch('/api/job', { method: 'POST', headers: Object.assign(_userHdr(), { 'Content-Type': 'application/json' }), body: JSON.stringify({ url, method: opts.method, body: opts.body ? JSON.parse(opts.body) : null }) })).json();
       let st;
       for (let miss = 0; ;) {
         await new Promise(res => setTimeout(res, 1500));
@@ -115,7 +123,18 @@ async function api(url, opts = {}, busyText) {
       }
       r = { ok: st.status < 400, status: st.status }; d = st.body || {};
     } else {
-      r = await fetch(url, opts);
+      // appka sa práve reštartuje (aktualizácia): čítanie chvíľu počká a skúsi znova, namiesto chyby
+      let shown = false;
+      try {
+        for (let i = 0; ; i++) {
+          try { r = await fetch(url, opts); break; }
+          catch (e) {
+            if (method !== 'GET' || i >= 45) throw e;
+            if (i === 2 && !busyText && $('#busy').classList.contains('hidden')) { shown = true; busy(true, 'Appka sa práve zapína, chvíľu počkaj…'); }
+            await _wait(2000);
+          }
+        }
+      } finally { if (shown) busy(false); }
       d = await r.json().catch(() => ({}));
     }
     if (d.manual) { busy(false); return await manualAI(d); }
@@ -147,8 +166,22 @@ const go = h => { location.hash = '#/' + h; };
 window.addEventListener('hashchange', render);
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 
+// Prehľad appky a zoznam projektov: pri prechode medzi stránkami sa použije posledný stav (stránka sa ukáže hneď)
+// a čerstvý sa dotiahne na pozadí. Po každej zmene (uloženie, schválenie…) sa načíta nanovo.
+let _baseAt = 0, _baseBg = null;
 async function loadBase() {
+  const age = Date.now() - _baseAt;
+  if (S.meta && S.projects && age < 60000) {
+    if (age > 5000 && !_baseBg) {
+      const t = _baseAt;
+      _baseBg = Promise.all([fetch('/api/meta').then(r => r.ok ? r.json() : Promise.reject()), fetch('/api/projects').then(r => r.ok ? r.json() : Promise.reject())])
+        .then(([m, p]) => { if (_baseAt !== t) return; S.meta = m; S.projects = p; _baseAt = Date.now(); sidebar(); })
+        .catch(() => { }).finally(() => { _baseBg = null; });
+    }
+    return;
+  }
   [S.meta, S.projects] = await Promise.all([api('/api/meta'), api('/api/projects')]);
+  _baseAt = Date.now();
 }
 
 function sidebar() {

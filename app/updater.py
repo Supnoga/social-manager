@@ -183,7 +183,7 @@ def restart():
     threading.Timer(1.0, lambda: os._exit(3)).start()
 
 
-def background_checker(is_busy, every_minutes=15, drain=None):
+def background_checker(is_busy, every_minutes=15, drain=None, user_active=None):
     """Každých 15 minút (podľa hodín, nie spánku Macu) pozrie, či je nová verzia. Keď appka práve nič nerobí,
     aktualizuje sa a reštartuje sama. Prehliadač sa potom obnoví sám."""
     import logging
@@ -201,6 +201,11 @@ def background_checker(is_busy, every_minutes=15, drain=None):
                     db.set_setting("update_last", {"ts": time.strftime("%Y-%m-%d %H:%M"), "result": r.get("error") or
                                                    (f"nová verzia {r['available']}" if r.get("available") else "aktuálna")})
                     if r.get("available"):
+                        # Oliver práve pracuje v appke: s aktualizáciou počkať, kým prestane (najviac 2 hodiny)
+                        for _ in range(120):
+                            if not (user_active and user_active()):
+                                break
+                            time.sleep(60)
                         # výroba dokončí rozrobené video a nové nezačne; po reštarte pokračuje sama (drain(False) = pustiť ďalej)
                         if drain:
                             drain(True)
@@ -208,6 +213,11 @@ def background_checker(is_busy, every_minutes=15, drain=None):
                         try:
                             for _ in range(90):
                                 if not is_busy():
+                                    break
+                                time.sleep(60)
+                            # Oliver práve kliká v appke: reštart počká, kým 3 minúty nič nerobí (najviac 15 minút navyše)
+                            for _ in range(15):
+                                if not (user_active and user_active()):
                                     break
                                 time.sleep(60)
                             if not is_busy():

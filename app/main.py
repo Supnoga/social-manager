@@ -54,6 +54,9 @@ _oauth_states = _States()
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
 
 
+LAST_UI = {"t": 0.0}   # kedy naposledy Oliver niečo robil v appke (klik, písanie) – aktualizácia vtedy nereštartuje
+
+
 @app.middleware("http")
 async def only_local(request: Request, call_next):
     """Ochrana: zvonka (cez tunel) je dostupné len /pub/ (tajné odkazy na videá), návrat z TikToku a overovací súbor."""
@@ -62,6 +65,8 @@ async def only_local(request: Request, call_next):
         p = request.url.path
         if not (p.startswith("/pub/") or p.startswith("/oauth/ttb/callback") or (p.count("/") == 1 and p.endswith(".txt"))):
             return JSONResponse({"error": "forbidden"}, status_code=403)
+    if request.headers.get("x-user"):
+        LAST_UI["t"] = time.time()
     return await call_next(request)
 
 
@@ -91,6 +96,17 @@ async def _crash(request, exc):
 async def _manual(request, exc):
     return JSONResponse({"manual": True, "prompt": exc.prompt, "task": exc.purpose,
                          "params": getattr(exc, "params", {})})
+
+
+@app.on_event("startup")
+async def _pool():
+    """Viac súbežných požiadaviek: dlhé úlohy (AI, nahrávanie, /api/job) držia vlákno aj hodinu.
+    Pri predvolených 40 vláknach sa stránky potom nemali kde vybaviť a appka „zamrzla“."""
+    try:
+        import anyio.to_thread
+        anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+    except Exception as e:
+        print("vlákna:", e)
 
 
 @app.on_event("startup")
@@ -2792,7 +2808,8 @@ def main():
     updater.background_checker(lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
                                or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
                                or brand._fix_state["running"] or _RERENDER["running"]
-                               or bool(_clip_worker() and _clip_worker().busy()), drain=_drain)
+                               or bool(_clip_worker() and _clip_worker().busy()), drain=_drain,
+                               user_active=lambda: time.time() - LAST_UI["t"] < 180)
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     threading.Thread(target=db.optimize, daemon=True).start()
     try:
