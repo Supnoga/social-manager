@@ -1686,6 +1686,15 @@ def _mp_autoresume():
     if job and not MPROD["running"]:
         _mp_start(job)
         MPROD["log"].append(f"{dt_now()} pokračujem po reštarte appky")
+    # 17.11.: rozrobené prerábanie videí pokračuje samo (predtým ho reštart po aktualizácii zastavil)
+    try:
+        left = db.get_setting("rerender_todo", []) or []
+        if left and not _RERENDER["running"]:
+            sids = sorted({r["script_id"] for r in db.q("SELECT script_id FROM videos WHERE id IN (%s)" % ",".join("?" * len(left)), tuple(left)) if r["script_id"]})
+            if sids:
+                rerender({"script_ids": sids})
+    except Exception:
+        pass
 
 
 def _drain(on):
