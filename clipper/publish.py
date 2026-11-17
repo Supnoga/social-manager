@@ -268,13 +268,23 @@ def fill_links():
     if not rows:
         return
     accs = {a["id"]: a for a in store.accounts()}
-    for p in rows:
+    used = {r["url"] for r in store.q("SELECT url FROM posts WHERE platform='tiktok' AND url!=''")}
+    vids = {}
+    for p in sorted(rows, key=lambda r: r["posted_at"]):
         acc = accs.get(p["account_id"])
         if not acc or tokens(acc).get("api") != "business":
             continue
+        url = ""
         try:
             url = tiktok_business.post_link(acc, p["external_id"])
+            if not url:          # záloha: video toho účtu vytvorené najbližšie k času zverejnenia
+                if acc["id"] not in vids:
+                    vids[acc["id"]] = tiktok_business.recent_videos(acc)
+                at = datetime.strptime(p["posted_at"], FMT).timestamp()
+                best = sorted((abs(t - at), u) for _, t, u in vids[acc["id"]] if u not in used and abs(t - at) < 900)
+                url = best[0][1] if best else ""
         except Exception:
             continue
         if url:
+            used.add(url)
             store.run("UPDATE posts SET url=? WHERE id=?", (url, p["id"]))
