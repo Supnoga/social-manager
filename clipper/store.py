@@ -109,6 +109,8 @@ def con():
                 _con.execute(f"ALTER TABLE campaigns ADD COLUMN {col} {kind}")
         if "kind" not in [r[1] for r in _con.execute("PRAGMA table_info(sources)")]:
             _con.execute("ALTER TABLE sources ADD COLUMN kind TEXT DEFAULT 'speech'")      # speech | visual
+        if "camps" not in [r[1] for r in _con.execute("PRAGMA table_info(clip_accounts)")]:
+            _con.execute("ALTER TABLE clip_accounts ADD COLUMN camps TEXT DEFAULT ''")   # účet berie len tieto kampane (id čiarkou)
         if "posted_at" not in [r[1] for r in _con.execute("PRAGMA table_info(posts)")]:
             _con.execute("ALTER TABLE posts ADD COLUMN posted_at TEXT DEFAULT ''")
             _con.execute("UPDATE posts SET posted_at=updated_at WHERE status='posted'")
@@ -180,11 +182,12 @@ def accounts():
     conf = {r["account_id"]: r for r in q("SELECT * FROM clip_accounts")}
     out = []
     for a in rows:
-        c = conf.get(a["id"]) or {"active": 1, "per_day": get("per_day_default", 3)}
+        c = conf.get(a["id"]) or {"active": 1, "per_day": get("per_day_default", 3), "camps": ""}
         try:
             broken = bool(json.loads(a["tokens"] or "{}").get("broken"))
         except Exception:
             broken = False
         out.append({"id": a["id"], "platform": a["platform"], "name": a["name"], "external_id": a["external_id"],
-                    "active": int(c["active"]), "per_day": int(c["per_day"]), "broken": broken})
+                    "active": int(c["active"]), "per_day": int(c["per_day"]), "broken": broken,
+                    "camps": [int(x) for x in str(c["camps"] or "").split(",") if x.strip().isdigit()]})
     return out

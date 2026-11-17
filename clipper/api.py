@@ -341,12 +341,17 @@ async def account_edit(account_id: int, request: Request):
     d = await request.json()
     if not appdb.one("SELECT id FROM accounts WHERE id=? AND project_id=?", (account_id, store.project_id())):
         raise HTTPException(404)
-    cur = store.one("SELECT * FROM clip_accounts WHERE account_id=?", (account_id,)) or {"active": 1, "per_day": store.get("per_day_default", 3)}
+    cur = store.one("SELECT * FROM clip_accounts WHERE account_id=?", (account_id,)) or {"active": 1, "per_day": store.get("per_day_default", 3), "camps": ""}
     active = int(bool(d.get("active", cur["active"])))
     per_day = int(min(6, max(1, _num(d.get("per_day", cur["per_day"]), 3))))
-    store.run("INSERT INTO clip_accounts(account_id, active, per_day) VALUES(?,?,?) "
-              "ON CONFLICT(account_id) DO UPDATE SET active=excluded.active, per_day=excluded.per_day", (account_id, active, per_day))
-    return {"ok": True, "moved": publish.rehome()}
+    camps = cur.get("camps") or ""
+    if "camps" in d:       # účet berie len tieto kampane (prázdne = všetky ostatné)
+        raw = d["camps"] if isinstance(d["camps"], list) else re.split(r"[,;\s]+", str(d["camps"]))
+        camps = ",".join(str(int(x)) for x in raw if str(x).strip().isdigit())
+    store.run("INSERT INTO clip_accounts(account_id, active, per_day, camps) VALUES(?,?,?,?) "
+              "ON CONFLICT(account_id) DO UPDATE SET active=excluded.active, per_day=excluded.per_day, camps=excluded.camps",
+              (account_id, active, per_day, camps or ""))
+    return {"ok": True, "moved": publish.rehome(), "resorted": publish.resort(account_id)}
 
 
 @router.post("/api/clip/settings")
