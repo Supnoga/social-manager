@@ -189,5 +189,22 @@ def post_link(account, pid):
     ids = s.get("post_ids") or []
     if not ids:
         return ""
+    return _link(account, ids[0])
+
+
+def _link(account, item_id):
+    ids = [item_id]
     who = (account.get("name") or "").strip().lstrip("@")
     return f"https://www.tiktok.com/@{who}/video/{ids[0]}" if who and " " not in who else f"https://www.tiktok.com/video/{ids[0]}"
+
+
+def recent_videos(account, n=20):
+    """Posledné videá účtu: [(item_id, čas vytvorenia v sekundách, odkaz)]. Záloha, keď stav zverejnenia nedá číslo príspevku."""
+    tok = access_token(account)
+    with client(timeout=30) as c:
+        r = c.get(f"{API}/business/video/list/", headers={"Access-Token": tok}, params={
+            "business_id": account["external_id"], "max_count": n,
+            "fields": json.dumps(["item_id", "create_time"])})
+    vids = ((r.json() if r.status_code == 200 else {}).get("data") or {}).get("videos") or []
+    return [(str(v.get("item_id")), int(v.get("create_time") or 0), _link(account, str(v.get("item_id"))))
+            for v in vids if v.get("item_id")]
