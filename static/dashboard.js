@@ -66,6 +66,8 @@ async function pDash(m) {
   const match = (x, skip) => (!proj || x.p === proj) && (skip === 'pl' || !f.pl || x.pl === f.pl) && (skip === 'c' || !f.c || x.c === f.c) && (skip === 'l' || !f.l || x.l === f.l) && (x.f === undefined || fmtOk(x.f));
   const all = DD.rows.map(x => ({ ...x, r: x.lk + x.cm + x.sh, ts: ts(x) }));
   const cur = all.filter(x => x.ts >= cut && match(x)), prev = all.filter(x => x.ts >= cut0 && x.ts < cut && match(x));
+  const pend = (DD.pend || []).map(x => ({ ...x, m: 0, v: 0, lk: 0, cm: 0, sh: 0, r: 0, ts: ts(x) }));
+  const pCur = pend.filter(x => x.ts >= cut && match(x)), pPrev = pend.filter(x => x.ts >= cut0 && x.ts < cut && match(x));
   const A = agg(cur), P = agg(prev);
   // účty v rozsahu filtrov (aj tie bez príspevkov)
   const accs = (DD.accounts || []).filter(a => match(a));
@@ -119,7 +121,7 @@ async function pDash(m) {
   <div class="dkpis d6">${['v', 'lk', 'cm'].map(kpi).join('')}${kpiF}${kpiW}${kpi('er')}</div>
   ${prodCard(proj, f.days)}
   ${nothing ? `<div class="card">${empty('dash', anyF ? 'Pre tieto filtre zatiaľ nie sú žiadne čísla. Skús iné obdobie alebo zruš filtre.' : 'Zatiaľ žiadne dáta. Čísla sa objavia samé po prvých zverejnených videách (sťahujú sa každých 6 hodín).')}</div>` : ''}
-  ${cur.length ? `<div class="card"><div class="row"><h2 style="margin:0;flex:1">${DM[f.m][0]} podľa dňa zverejnenia</h2>${legend([['var(--acc)', 'Toto obdobie'], ['#6b6b6b', 'Predchádzajúce obdobie', 1]])}</div><div id="dLine" class="dline"></div></div>` : ''}
+  ${cur.length || pCur.length ? `<div class="card"><div class="row"><h2 style="margin:0;flex:1">${DM[f.m][0]} podľa dňa zverejnenia</h2>${legend([['var(--acc)', 'Toto obdobie'], ['#6b6b6b', 'Predchádzajúce obdobie', 1]])}</div><div id="dLine" class="dline"></div></div>` : ''}
   ${dCur.length ? `<div class="card"><div class="row" style="flex-wrap:wrap;gap:10px"><h2 style="margin:0;flex:1">YouTube deň po dni</h2>
       <div class="seg">${YM.map(([k, n]) => `<button class="${f.ym === k ? 'on' : ''}" onclick="dSet('ym','${k}')">${n}</button>`).join('')}</div></div>
       <p class="small dim" style="margin:6px 0 0">Skutočné denné čísla všetkých videí kanálov z YouTube Analytics (YouTube ich dopĺňa s oneskorením 2 až 3 dni).</p><div id="dYt" class="dline"></div></div>` : ''}
@@ -140,7 +142,7 @@ async function pDash(m) {
   </div>` : ''}
   ${gapsCard(accs, DD)}
   <p class="small dim" style="margin-top:14px">Iba skutočné čísla zo sietí, nič vymyslené${DD.last ? ' · posledné stiahnutie ' + esc(DD.last.slice(8, 10) + '.' + DD.last.slice(5, 7) + '. ' + DD.last.slice(11, 16)) : ''} · Zapojenie = (lajky + komentáre + zdieľania) ÷ zobrazenia. LinkedIn ráta zobrazenia ako impresie, Instagram bez zobrazení ako dosah.</p>`;
-  if (cur.length) lineChart($('#dLine'), cur, prev, f, cut, cut0);
+  if (cur.length || pCur.length) lineChart($('#dLine'), cur.concat(pCur), prev.concat(pPrev), f, cut, cut0);
   if (dCur.length) ytChart($('#dYt'), daily, f, cut, cut0);
 }
 
@@ -334,31 +336,41 @@ function lineChart(el, cur, prev, f, cut, cut0) {
   const W = Math.max(320, el.clientWidth), H = 240, L = 54, R = 12, T = 12, B = 28;
   const day = 864e5, step = f.days <= 31 ? day : f.days <= 120 ? 7 * day : 30.4 * day;
   const nb = Math.ceil(f.days * day / step);
-  const bucket = (rows, start) => { const b = Array.from({ length: nb }, () => []); for (const x of rows) { const i = Math.min(nb - 1, Math.floor((x.ts - start) / step)); if (i >= 0) b[i].push(x); } return b.map(rs => { const a = agg(rs); return { ...a, val: mval(f.m, a) }; }); };
+  // st: 'none' = v ten deň nič nevyšlo (bez bodu), 'wait' = vyšlo, ale čísla ešte nie sú stiahnuté (nie je to nula)
+  const bucket = (rows, start) => { const b = Array.from({ length: nb }, () => []); for (const x of rows) { const i = Math.min(nb - 1, Math.floor((x.ts - start) / step)); if (i >= 0) b[i].push(x); }
+    return b.map(rs => { const ms = f.m === 'n' ? rs : rs.filter(x => x.m), a = agg(ms); return { ...a, val: mval(f.m, a), cnt: rs.length, mc: ms.length, st: !rs.length ? 'none' : !ms.length ? 'wait' : 'ok' }; }); };
   const c = bucket(cur, cut), p = bucket(prev, cut0);
-  const top = Math.max(...c.map(x => x.val), ...p.map(x => x.val), 1e-9);
+  const top = Math.max(...c.filter(x => x.st === 'ok').map(x => x.val), ...p.filter(x => x.st === 'ok').map(x => x.val), 1e-9);
   const nice = (() => { const e = Math.pow(10, Math.floor(Math.log10(top))), r = top / e; return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * e; })();
   const X = i => L + (nb === 1 ? (W - L - R) / 2 : i * (W - L - R) / (nb - 1)), Y = v => T + (H - T - B) * (1 - v / nice);
-  const path = arr => arr.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(x.val).toFixed(1)}`).join('');
+  const segs = arr => { const out = []; let cur = null; arr.forEach((x, i) => { if (x.st === 'ok') { (cur = cur || []).push(i); } else if (cur) { out.push(cur); cur = null; } }); if (cur) out.push(cur); return out; };
+  const path = arr => segs(arr).map(sg => sg.map((i, k) => `${k ? 'L' : 'M'}${X(i).toFixed(1)},${Y(arr[i].val).toFixed(1)}`).join('')).join('');
+  const area = arr => segs(arr).map(sg => sg.map((i, k) => `${k ? 'L' : 'M'}${X(i).toFixed(1)},${Y(arr[i].val).toFixed(1)}`).join('') + `L${X(sg[sg.length - 1])},${Y(0)}L${X(sg[0])},${Y(0)}Z`).join('');
+  const dots = arr => arr.map((x, i) => x.st === 'ok' && (i === 0 || arr[i - 1].st !== 'ok') && (i === arr.length - 1 || arr[i + 1].st !== 'ok') ? `<circle cx="${X(i)}" cy="${Y(x.val)}" r="3" fill="#FF6B00"/>` : '').join('');
+  const bw = nb > 1 ? (W - L - R) / (nb - 1) : 40;
+  const waits = c.map((x, i) => x.st === 'wait' ? `<rect x="${Math.max(L, X(i) - bw / 2)}" y="${T}" width="${Math.min(bw, W - R - Math.max(L, X(i) - bw / 2))}" height="${H - T - B}" fill="url(#dwait)"/>` : '').join('');
   const dlab = i => { const d = new Date(cut + i * step); return step >= 30 * day ? ['jan', 'feb', 'mar', 'apr', 'máj', 'jún', 'júl', 'aug', 'sep', 'okt', 'nov', 'dec'][d.getMonth()] : `${d.getDate()}.${d.getMonth() + 1}.`; };
   const every = Math.max(1, Math.ceil(nb / Math.floor((W - L) / 70)));
   const grid = [0, .25, .5, .75, 1].map(t => `<line x1="${L}" x2="${W - R}" y1="${Y(nice * t)}" y2="${Y(nice * t)}" stroke="#262626"/><text x="${L - 8}" y="${Y(nice * t) + 4}" text-anchor="end">${mfmt(f.m, nice * t)}</text>`).join('');
   const xl = c.map((_, i) => i % every === 0 ? `<text x="${X(i)}" y="${H - 8}" text-anchor="middle">${dlab(i)}</text>` : '').join('');
   el.innerHTML = `<svg width="${W}" height="${H}" class="dsvg">
-    <defs><linearGradient id="dgr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF6B00" stop-opacity=".28"/><stop offset="1" stop-color="#FF6B00" stop-opacity="0"/></linearGradient></defs>
-    ${grid}${xl}
+    <defs><linearGradient id="dgr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF6B00" stop-opacity=".28"/><stop offset="1" stop-color="#FF6B00" stop-opacity="0"/></linearGradient>
+      <pattern id="dwait" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="rgba(255,255,255,.025)"/><line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255,255,255,.09)" stroke-width="3"/></pattern></defs>
+    ${grid}${waits}${xl}
     <path d="${path(p)}" fill="none" stroke="#6b6b6b" stroke-width="2" stroke-dasharray="5 5"/>
-    <path d="${path(c)}L${X(nb - 1)},${Y(0)}L${X(0)},${Y(0)}Z" fill="url(#dgr)"/>
-    <path d="${path(c)}" fill="none" stroke="#FF6B00" stroke-width="2" stroke-linejoin="round"/>
+    <path d="${area(c)}" fill="url(#dgr)"/>
+    <path d="${path(c)}" fill="none" stroke="#FF6B00" stroke-width="2" stroke-linejoin="round"/>${dots(c)}
+    ${c.some(x => x.st === 'wait') ? `<text x="${W - R}" y="${T + 12}" text-anchor="end" fill="#8a8a8a">šrafované = čaká na údaje</text>` : ''}
     <line id="dX" y1="${T}" y2="${H - B}" stroke="#555" style="display:none"/><circle id="dO" r="5" fill="#FF6B00" stroke="#121212" stroke-width="2" style="display:none"/>
     <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" id="dHit"/></svg>`;
   const hit = el.querySelector('#dHit'), xL = el.querySelector('#dX'), o = el.querySelector('#dO');
   hit.onmousemove = e => {
     const bx = e.clientX - el.querySelector('svg').getBoundingClientRect().left;
     const i = Math.max(0, Math.min(nb - 1, Math.round((bx - L) / ((W - L - R) / Math.max(1, nb - 1)))));
-    xL.setAttribute('x1', X(i)); xL.setAttribute('x2', X(i)); xL.style.display = ''; o.setAttribute('cx', X(i)); o.setAttribute('cy', Y(c[i].val)); o.style.display = '';
-    const per = step === day ? dlab(i) : `od ${dlab(i)}`;
-    dTip(e, `<b>${per}</b><br>${DM[f.m][0]}: ${mfmt(f.m, c[i].val)}<br><span class="dim">predtým: ${mfmt(f.m, p[i].val)}</span><br><span class="dim">${c[i].n} príspevkov</span>`);
+    xL.setAttribute('x1', X(i)); xL.setAttribute('x2', X(i)); xL.style.display = ''; o.setAttribute('cx', X(i)); o.setAttribute('cy', Y(c[i].st === 'ok' ? c[i].val : 0)); o.style.display = c[i].st === 'ok' ? '' : 'none';
+    const per = step === day ? dlab(i) : `od ${dlab(i)}`, x = c[i];
+    const now = x.st === 'none' ? 'nič nevyšlo' : x.st === 'wait' ? `čaká na údaje (${x.cnt} príspevkov, čísla sa ešte nestiahli)` : mfmt(f.m, x.val) + (x.mc < x.cnt ? ` <span class="dim">(zmerané ${x.mc} z ${x.cnt})</span>` : '');
+    dTip(e, `<b>${per}</b><br>${DM[f.m][0]}: ${now}<br><span class="dim">predtým: ${p[i].st === 'ok' ? mfmt(f.m, p[i].val) : p[i].st === 'wait' ? 'bez údajov' : 'nič nevyšlo'}</span>${x.st === 'ok' ? `<br><span class="dim">${x.cnt} príspevkov</span>` : ''}`);
   };
   hit.onmouseleave = e => { xL.style.display = 'none'; o.style.display = 'none'; dTip(e, ''); };
 }

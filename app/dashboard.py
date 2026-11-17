@@ -68,7 +68,8 @@ def dash(days: int = 365, pdays: int = 0):
             x = pub.setdefault(str(r["p"]), [0, 0])
             x[0] += 1
             x[1] += r["m"]
-    return {"rows": rows, "real_posts": len(real), "real_measured": measured,
+    pend = [{k: r[k] for k in ("d", "pl", "aid", "c", "l", "p", "f")} for r in real if not r["m"]]  # vyšlo, čísla ešte chýbajú
+    return {"rows": rows, "pend": pend, "real_posts": len(real), "real_measured": measured,
             "last": (last or {}).get("t"), "countries": languages.COUNTRY_NAMES,
             "langs": {k: v[0] for k, v in languages.LANGUAGES.items()},
             "accounts": accs, "daily": daily, "analytics_off": aoff, "prod": insights.production(psince),
