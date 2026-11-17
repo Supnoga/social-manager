@@ -173,7 +173,26 @@ def next_slot(account_id, per_day):
 
 
 LIVE = ("JOIN clips c ON c.id=p.clip_id JOIN campaigns k ON k.id=c.campaign_id "
-        "WHERE p.status='queued' AND k.status='active'")      # pozastavená kampaň drží svoje klipy, nič z nej nejde von
+        "WHERE p.status='queued' AND k.status='active' "      # pozastavená kampaň drží svoje klipy, nič z nej nejde von
+        "AND p.account_id NOT IN (SELECT account_id FROM clip_accounts WHERE active=0)")   # vypnutý účet nič nezverejní
+
+
+def rehome():
+    """Klipy naplánované na vypnutý účet presunie na zapnutý účet tej istej siete (keď taký je). Vráti počet."""
+    off = [r["account_id"] for r in store.q("SELECT account_id FROM clip_accounts WHERE active=0")]
+    if not off:
+        return 0
+    accs = [a for a in store.accounts() if a["active"] and not a["broken"]]
+    n = 0
+    for p in store.q(f"SELECT id, platform FROM posts WHERE status='queued' AND account_id IN ({','.join('?' * len(off))}) "
+                     "ORDER BY scheduled_at", tuple(off)):
+        mine = [a for a in accs if a["platform"] == p["platform"]]
+        if not mine:
+            continue
+        when, acc = sorted(((next_slot(a["id"], a["per_day"]), a) for a in mine), key=lambda x: x[0])[0]
+        store.run("UPDATE posts SET account_id=?, scheduled_at=? WHERE id=?", (acc["id"], when, p["id"]))
+        n += 1
+    return n
 
 
 def replan():
