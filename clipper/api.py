@@ -346,7 +346,7 @@ async def account_edit(account_id: int, request: Request):
     per_day = int(min(6, max(1, _num(d.get("per_day", cur["per_day"]), 3))))
     store.run("INSERT INTO clip_accounts(account_id, active, per_day) VALUES(?,?,?) "
               "ON CONFLICT(account_id) DO UPDATE SET active=excluded.active, per_day=excluded.per_day", (account_id, active, per_day))
-    return {"ok": True}
+    return {"ok": True, "moved": publish.rehome()}
 
 
 @router.post("/api/clip/settings")

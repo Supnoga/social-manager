@@ -128,6 +128,7 @@ def _pub_loop():
                     STATE["links_at"] = time.time()
                     try:
                         publish.fill_links()
+                        publish.rehome()
                     except Exception as e:
                         STATE["links_err"] = str(e)[-200:]
         except Exception:
