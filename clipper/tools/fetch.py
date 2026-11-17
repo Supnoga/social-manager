@@ -15,7 +15,10 @@ def drive(url, out):
     import gdown
     out.mkdir(parents=True, exist_ok=True)
     if "/folders/" in url:
-        got = gdown.download_folder(url, output=str(out), quiet=True, remaining_ok=True) or []
+        try:
+            got = gdown.download_folder(url, output=str(out), quiet=True, remaining_ok=True) or []
+        except TypeError:        # novší gdown tento parameter nemá
+            got = gdown.download_folder(url, output=str(out), quiet=True) or []
     else:
         got = [gdown.download(url, output=str(out) + "/", quiet=True, fuzzy=True)]
     files = sorted(str(Path(f)) for f in got if f and Path(f).suffix.lower() in VIDEO and Path(f).exists())
