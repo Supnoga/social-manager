@@ -1689,6 +1689,49 @@ def _mp_start(data):
     threading.Thread(target=_mp_run, args=(job["workers"], job["until"]), daemon=True).start()
 
 
+def _kill_orphans():
+    """17.11.: po reštarte appky ostávali bežať jej staré pomocné procesy (skladanie videa s prehliadačom a ffmpeg,
+    lokálny hlas, prepis reči v Clipperi). Ich výsledok už nikto nečaká, len brali Macu asi 5 jadier.
+    Pri štarte ich ukončí (len tie, ktorým rodič zanikol, ppid 1)."""
+    import signal
+    import subprocess as sp
+    marks = ("app.render_child", "tts_local.py", "tools/stt.py")
+    try:
+        out = sp.run(["ps", "-Ao", "pid=,ppid=,pgid=,command="], capture_output=True, text=True, timeout=20, stdin=sp.DEVNULL).stdout
+    except Exception:
+        return
+    me = os.getpid()
+    for line in out.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) < 4 or not parts[0].isdigit():
+            continue
+        pid, ppid, pgid, cmd = int(parts[0]), parts[1], int(parts[2]), parts[3]
+        if ppid != "1" or pid == me or not any(m in cmd for m in marks):
+            continue
+        try:
+            if pgid == pid:      # vlastná skupina (start_new_session): zastaví aj prehliadač a ffmpeg pod ním
+                os.killpg(pgid, signal.SIGTERM)
+            else:
+                os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+    # potomkovia zabitých (prehliadač, ffmpeg), ktorí po smrti rodiča tiež ostali na ppid 1
+    time.sleep(5)
+    try:
+        out = sp.run(["ps", "-Ao", "pid=,ppid=,command="], capture_output=True, text=True, timeout=20, stdin=sp.DEVNULL).stdout
+    except Exception:
+        return
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 3 or parts[1] != "1":
+            continue
+        if ("chrome-headless-shell" in parts[2] and "ms-playwright" in parts[2]) or any(m in parts[2] for m in marks):
+            try:
+                os.kill(int(parts[0]), signal.SIGKILL)
+            except Exception:
+                pass
+
+
 def _mp_autoresume():
     """Po štarte appky: rozbehnutá mesačná výroba pokračuje (čo už je vyrobené, si pamätá month_plan_made)."""
     import time as _t
@@ -2810,6 +2853,7 @@ def main():
                                or brand._fix_state["running"] or _RERENDER["running"]
                                or bool(_clip_worker() and _clip_worker().busy()), drain=_drain,
                                user_active=lambda: time.time() - LAST_UI["t"] < 180)
+    threading.Thread(target=_kill_orphans, daemon=True).start()
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     threading.Thread(target=db.optimize, daemon=True).start()
     try:
