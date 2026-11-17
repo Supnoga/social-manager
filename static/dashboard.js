@@ -74,6 +74,10 @@ async function pDash(m) {
   const accIds = new Set(accs.map(a => a.id));
   const daily = (DD.daily || []).filter(x => accIds.has(x.a));
   const dCur = daily.filter(x => x.d >= cutD), dPrev = daily.filter(x => x.d >= cut0D && x.d < cutD);
+  // pozretia deň po dni (kedy ľudia pozerali): YouTube Analytics, kde chýba, rozdiel celkových pozretí kanála
+  const vkey = new Set(daily.map(x => x.a + '|' + x.d));
+  const vday = daily.map(x => ({ a: x.a, d: x.d, v: x.v })).concat((DD.vdaily || []).filter(x => accIds.has(x.a) && !vkey.has(x.a + '|' + x.d)));
+  const vdCur = vday.filter(x => x.d >= cutD);
   const sumd = (rs, k) => rs.reduce((s, x) => s + (k === 'sn' ? x.sg - x.sl : x[k]), 0);
   const ytAcc = accs.filter(a => a.pl === 'youtube');
   // sledovatelia: YouTube z denných čísel (presne), ostatné siete z vlastných meraní (od prvého merania)
@@ -121,6 +125,7 @@ async function pDash(m) {
   <div class="dkpis d6">${['v', 'lk', 'cm'].map(kpi).join('')}${kpiF}${kpiW}${kpi('er')}</div>
   ${prodCard(proj, f.days)}
   ${nothing ? `<div class="card">${empty('dash', anyF ? 'Pre tieto filtre zatiaľ nie sú žiadne čísla. Skús iné obdobie alebo zruš filtre.' : 'Zatiaľ žiadne dáta. Čísla sa objavia samé po prvých zverejnených videách (sťahujú sa každých 6 hodín).')}</div>` : ''}
+  ${vdCur.length ? `<div class="card"><div class="row"><h2 style="margin:0;flex:1">Pozretia YouTube deň po dni</h2><span class="small dim">koľko ľudia pozerali v daný deň (všetky videá)</span></div><div id="dVd" class="dline"></div></div>` : ''}
   ${cur.length || pCur.length ? `<div class="card"><div class="row"><h2 style="margin:0;flex:1">${DM[f.m][0]} podľa dňa zverejnenia</h2>${legend([['var(--acc)', 'Toto obdobie'], ['#6b6b6b', 'Predchádzajúce obdobie', 1]])}</div><div id="dLine" class="dline"></div></div>` : ''}
   ${dCur.length ? `<div class="card"><div class="row" style="flex-wrap:wrap;gap:10px"><h2 style="margin:0;flex:1">YouTube deň po dni</h2>
       <div class="seg">${YM.map(([k, n]) => `<button class="${f.ym === k ? 'on' : ''}" onclick="dSet('ym','${k}')">${n}</button>`).join('')}</div></div>
@@ -142,6 +147,7 @@ async function pDash(m) {
   </div>` : ''}
   ${gapsCard(accs, DD)}
   <p class="small dim" style="margin-top:14px">Iba skutočné čísla zo sietí, nič vymyslené${DD.last ? ' · posledné stiahnutie ' + esc(DD.last.slice(8, 10) + '.' + DD.last.slice(5, 7) + '. ' + DD.last.slice(11, 16)) : ''} · Zapojenie = (lajky + komentáre + zdieľania) ÷ zobrazenia. LinkedIn ráta zobrazenia ako impresie, Instagram bez zobrazení ako dosah.</p>`;
+  if (vdCur.length) ytChart($('#dVd'), vday, { ...f, ym: 'v' }, cut, cut0);
   if (cur.length || pCur.length) lineChart($('#dLine'), cur.concat(pCur), prev.concat(pPrev), f, cut, cut0);
   if (dCur.length) ytChart($('#dYt'), daily, f, cut, cut0);
 }
