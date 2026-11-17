@@ -178,3 +178,16 @@ def upload(account, video, privacy="public"):
     if post_ids:
         return pid, f"https://www.tiktok.com/video/{post_ids[0]}"
     return pid, "koncept v TikTok appke" if status == "SEND_TO_USER_INBOX" else ""
+
+
+def post_link(account, pid):
+    """Odkaz na už zverejnené video: TikTok dá číslo príspevku často až chvíľu po zverejnení. "" keď ešte nie je."""
+    tok = access_token(account)
+    with client(timeout=30) as c:
+        s = c.get(f"{API}/business/publish/status/", headers={"Access-Token": tok},
+                  params={"business_id": account["external_id"], "publish_id": pid}).json().get("data") or {}
+    ids = s.get("post_ids") or []
+    if not ids:
+        return ""
+    who = (account.get("name") or "").strip().lstrip("@")
+    return f"https://www.tiktok.com/@{who}/video/{ids[0]}" if who and " " not in who else f"https://www.tiktok.com/video/{ids[0]}"

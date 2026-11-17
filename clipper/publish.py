@@ -244,3 +244,22 @@ def recover():
     """Po reštarte: čo ostalo v stave „zverejňuje sa“, vráti do radu (o 10 minút, nech sa nezdvojí rozbehnuté)."""
     when = (datetime.now() + timedelta(minutes=10)).strftime(FMT)
     store.run("UPDATE posts SET status='queued', scheduled_at=MAX(scheduled_at, ?) WHERE status='posting'", (when,))
+
+
+def fill_links():
+    """TikTok: doplní odkazy, ktoré pri zverejnení ešte neboli (Whop ich potrebuje do 30 minút)."""
+    rows = store.q("SELECT * FROM posts WHERE platform='tiktok' AND status='posted' AND url='' AND external_id!='' "
+                   "AND posted_at>=datetime('now','localtime','-1 day')")
+    if not rows:
+        return
+    accs = {a["id"]: a for a in store.accounts()}
+    for p in rows:
+        acc = accs.get(p["account_id"])
+        if not acc or tokens(acc).get("api") != "business":
+            continue
+        try:
+            url = tiktok_business.post_link(acc, p["external_id"])
+        except Exception:
+            continue
+        if url:
+            store.run("UPDATE posts SET url=? WHERE id=?", (url, p["id"]))
