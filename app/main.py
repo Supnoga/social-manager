@@ -2910,6 +2910,21 @@ def main():
         from . import explainer
         explainer.render_jobs_cleanup(_started)
     threading.Thread(target=_rj_cleanup, daemon=True).start()
+
+    def _plan_refresh():
+        """17.11.: mesačný plán sa prestavia sám každé 3 hodiny (nové modely, nové nápady, čo sa vyrobilo).
+        Rovnaký začiatok a dĺžka plánu; vyrobené dni ostávajú na svojom mieste."""
+        from . import monthplan
+        time.sleep(300)
+        while True:
+            try:
+                pl = db.get_setting("month_plan", {}) or {}
+                if pl.get("start"):
+                    monthplan.build(None, pl["start"], pl.get("days") or 30)
+            except Exception as e:
+                print("prestavanie plánu:", e)
+            time.sleep(3 * 3600)
+    threading.Thread(target=_plan_refresh, daemon=True).start()
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     threading.Thread(target=db.optimize, daemon=True).start()
     try:
