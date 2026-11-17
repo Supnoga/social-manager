@@ -468,6 +468,29 @@ def accounts_data(since_day):
     return out, daily, [{"project": k, "channels": v} for k, v in off_projects.items()]
 
 
+def views_daily(since_day):
+    """Pozretia YouTube kanálov deň po dni z rozdielu celkových pozretí kanála (0 tokenov, bez Analytics).
+    Rovnaké číslo ako predtým sa berie ako „nezmerané“ (zálohový zdroj odberateľov pozretia nemení), rozdiel sa rozloží
+    rovnomerne na dni medzi dvoma meraniami."""
+    rows = db.q("""SELECT s.account_id a, s.day d, s.views_total vt FROM account_stats s JOIN accounts x ON x.id=s.account_id
+                   WHERE x.platform='youtube' AND s.views_total IS NOT NULL ORDER BY s.account_id, s.day""")
+    out, last = [], {}
+    for r in rows:
+        prev = last.get(r["a"])
+        if prev and r["vt"] == prev[1]:
+            continue
+        last[r["a"]] = (r["d"], r["vt"])
+        if not prev or r["vt"] < prev[1]:
+            continue
+        d0, d1 = dt.date.fromisoformat(prev[0]), dt.date.fromisoformat(r["d"])
+        n = max(1, (d1 - d0).days)
+        for i in range(1, n + 1):
+            day = (d0 + dt.timedelta(days=i)).isoformat()
+            if day >= since_day:
+                out.append({"a": r["a"], "d": day, "v": round((r["vt"] - prev[1]) / n)})
+    return out
+
+
 def production(since):
     """Koľko je vymyslené, napísané, vyrobené, na schválenie, naplánované a zverejnené (po projektoch).
     Každé číslo má aj časť pre dlhé videá (kľúč s príponou _l); krátke = celok mínus dlhé."""
