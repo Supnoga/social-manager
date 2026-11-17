@@ -62,6 +62,7 @@ RULES = [
     (r"hard ?disks?|hard ?drives?|\bhdds?\b|read/write heads?|\bplatters?\b", "harddrive",
      ["Platter", "Head", "Spindle"]),
     (r"transformer|high voltage|substation", "transformer", ["Primary coil", "Iron core", "Secondary coil"]),
+    (r"\bzipp?ers?\b|zip fasteners?|\bzips\b", "zipper", ["Teeth", "Slider"]),
     (r"tower cranes?|construction cranes?|\bjibs?\b|\bcranes?\b", "crane", ["Counterweight", "Trolley", "Hook"]),
     (r"circuit|electric current|\bohm|voltage", "circuit", ["Battery", "Switch", "Bulb"]),
     (r"conveyor|assembly line|production line|factory line|mass production", "conveyor", ["Weld", "Paint", "Check"]),
@@ -96,6 +97,18 @@ _STROKES = [("intake", r"intake|air (and fuel )?(in\b|enters|rushes)|(pulls?|suc
             ("power", r"power stroke|\bpower\b|spark|ignit|\bburn|combust|explo|expand|bang\b|pushes? the (piston|rotor)"),
             ("exhaust", r"exhaust|used gas|burnt gas|burned gas|swept out|pushed out")]
 _PARTS = {   # zábery na časti ďalších modelov (názvy záberov sú v zz_mech_pro_b.js)
+    "escalator": [("steps", r"step|stair|tread"), ("drive", r"motor|drive|chain|top|pulls?")],
+    "conveyor": [("rollers", r"roller|drum|pulley|spin|turn"), ("load", r"load|box|boxes|package|parcel|cargo|goods|items?")],
+    "pulley": [("wheel", r"pulley|wheel|sheave|axle"), ("rope", r"rope|cable|\bline\b|pull"), ("load", r"load|lift|hoist|weight|box")],
+    "lever": [("load", r"load|weight|lift|heavy|rock|boulder"), ("effort", r"effort|push|press|pull|\bforce\b"), ("fulcrum", r"fulcrum|pivot|balance point|support")],
+    "rocket": [("nose", r"nose|payload|capsule|upper stage|second stage"), ("booster", r"booster|first stage|lower stage|stages?|separat"), ("nozzle", r"nozzle|engines?|thrust|exhaust|burn")],
+    "zipper": [("teeth", r"teeth|tooth|interlock|rows?"), ("slider", r"slider|\bpulls?\b|\btab\b|zip(per)? (up|down)")],
+    "drill": [("motor", r"motor|chuck|body|trigger|battery"), ("bit", r"\bbit\b|drill|hole|spiral|twist|rotat"), ("chips", r"chips?|dust|debris|shavings|cut")],
+    "generator": [("turbine", r"turbine|blades?|water|steam|wind|spin"), ("stator", r"stator|coils?|copper|wires?|induc"), ("bulb", r"bulb|light|lamp|output|electric|power")],
+    "fission": [("fuel", r"fuel|uranium|rods?|atoms?|split|nucle"), ("control", r"control|absorb|boron|cadmium|slow"), ("steam", r"steam|turbine|water|heat|cool")],
+    "rotor": [("rotor", r"rotor|blades?|lift|propeller|spin"), ("tail", r"tail|torque|yaw"), ("air", r"air|push|downwash|wind")],
+    "aircon": [("indoor", r"indoor|inside|room|fan"), ("outdoor", r"outdoor|outside|compressor|condenser"), ("pipe", r"pipe|refrigerant|coolant|gas|loop")],
+    "pendulum": [("pivot", r"pivot|hinge|hang|suspend|support"), ("rod", r"rod|arm|length|rope|string"), ("bob", r"bob|weight|mass|swing|period")],
     "transformer": [("secondary", r"secondary|output|\blow voltage|\b23 ?V\b|\blamp\b|bulb|\bload\b"), ("primary", r"primary|input|\b230 ?V\b|\bplug\b|mains"), ("core", r"\bcore\b|iron|steel|\bflux\b|magnetic|\blaminat")],
     "crane": [("trolley", r"trolley|\bjib\b|\barm\b|\bboom\b|moves? (along|out|in)"), ("hook", r"\bhook\b|\bcable\b|\brope\b|\bload\b|lift|lower"), ("counterweight", r"counterweight|\bbalance\b|\bmast\b|\btower\b|\bweight\b")],
     "harddrive": [("head", r"\bhead\b|flies|flying|\bnm\b|air cushion|hover|gap|reads?\b|writes?\b"), ("spindle", r"spindle|\bmotor\b|\bspins?\b|\brpm\b|\bhub\b|rotates?"), ("platter", r"platter|\bdisks?\b|tracks?|sectors?|\bbits?\b|magnetic")],
@@ -225,7 +238,7 @@ FOCUS = {m: [(f, re.compile(r, re.I)) for f, r in _STROKES] for m in ("piston", 
 FOCUS.update({m: [(f, re.compile(r, re.I)) for f, r in v] for m, v in _PARTS.items()})
 RUNS = ("piston", "wankel", "rotary", "turbo", "camshaft", "gearbox", "heatpump", "wind_turbine", "emotor", "robot_arm")
 # zábery, ktoré len posunú kameru (stav stroja nemenia): v rámci jednej scény môže kamera prejsť z jedného na druhý
-CAM_ONLY = {"harddrive": {"platter", "head", "spindle"}, "transformer": {"core", "primary", "secondary"}, "crane": {"trolley", "hook", "counterweight"}, "turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "valve", "belt"}, "car_brake": {"caliper", "disc"},
+CAM_ONLY = {"harddrive": {"platter", "head", "spindle"}, "escalator": {"steps", "drive"}, "conveyor": {"rollers", "load"}, "pulley": {"wheel", "rope", "load"}, "lever": {"load", "effort", "fulcrum"}, "rocket": {"nose", "booster", "nozzle"}, "zipper": {"teeth", "slider"}, "drill": {"motor", "bit", "chips"}, "generator": {"turbine", "stator", "bulb"}, "fission": {"fuel", "control", "steam"}, "rotor": {"rotor", "tail", "air"}, "aircon": {"indoor", "outdoor", "pipe"}, "pendulum": {"pivot", "rod", "bob"}, "transformer": {"core", "primary", "secondary"}, "crane": {"trolley", "hook", "counterweight"}, "turbo": {"turbine", "shaft", "compressor"}, "camshaft": {"cam", "valve", "belt"}, "car_brake": {"caliper", "disc"},
             "gearbox": {"input", "gears", "collar", "output"}, "differential": {"pinion", "spider"},
             "heatpump": {"evap", "comp", "cond", "valve"}, "wind_turbine": {"rotor", "gearbox", "generator"},
             "solar": {"light", "junction", "circuit"}, "tunnel": {"cutter", "jacks", "rings", "conveyor"},
@@ -252,7 +265,7 @@ def find(text):
 
 
 # slová, ktoré tému len podporujú (samy model nespustia): pomáhajú spoznať, o ktorom stroji je celé video
-_SUPPORT = {"transformer": r"primary|secondary|\bcoils?\b|\bcore\b|\bflux\b|windings?|turns", "crane": r"trolley|\bjib\b|counterweight|\bhook\b|\bmast\b|\bcables?\b|\bropes?\b", "harddrive": r"platter|\bhead\b|spindle|\bbits?\b|magnetic|tracks?|sectors?|actuator|flies|\bnm\b", "wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": r"crankshaft|\bstrokes?\b|\bvalves?\b|connecting rod",
+_SUPPORT = {"escalator": r"steps?|stairs?|treads?|handrails?|chains?|motor|escalator", "conveyor": r"rollers?|belts?|conveyor|loads?|boxes|drums?", "pulley": r"pulleys?|wheels?|ropes?|cables?|sheaves?|loads?|lift", "lever": r"levers?|fulcrum|pivot|effort|load|arms?", "rocket": r"rockets?|stages?|boosters?|thrust|nozzles?|fuel", "zipper": r"zippers?|teeth|slider|interlock", "drill": r"drills?|bits?|chips?|spiral|rotat|hole", "generator": r"generators?|turbines?|coils?|magnets?|rotors?|stators?", "fission": r"fission|uranium|neutrons?|reactors?|fuel|control rods?", "rotor": r"rotors?|blades?|helicopter|tail|lift", "aircon": r"air conditioner|indoor|outdoor|refrigerant|compressor|condenser", "pendulum": r"pendulums?|swings?|bob|period|clock", "transformer": r"primary|secondary|\bcoils?\b|\bcore\b|\bflux\b|windings?|turns", "crane": r"trolley|\bjib\b|counterweight|\bhook\b|\bmast\b|\bcables?\b|\bropes?\b", "harddrive": r"platter|\bhead\b|spindle|\bbits?\b|magnetic|tracks?|sectors?|actuator|flies|\bnm\b", "wankel": r"\brotors?\b|\bpockets?\b|\brotary\b|housing", "piston": r"crankshaft|\bstrokes?\b|\bvalves?\b|connecting rod",
             "gears": r"\bteeth\b|\btooth\b|\bmesh|\bratio", "turbo": r"turbine|compressor|\bboost|exhaust gas|intercooler|\bspool",
             "camshaft": r"\blobes?\b|\bvalves?\b|timing|\bcams?\b", "car_brake": r"caliper|\bpads?\b|\bdis[ck]s?\b|friction|brake fluid|pedal",
             "gearbox": r"\bgears?\b|\bshift|clutch|\bratio|synchro|\bshafts?\b", "differential": r"\bwheels?\b|corner|axle|spider|pinion|ring gear|\bturns?\b",
@@ -282,7 +295,7 @@ _SUPPORT = {"transformer": r"primary|secondary|\bcoils?\b|\bcore\b|\bflux\b|wind
             "emotor": r"\bcoils?\b|\bstator\b|\brotor\b|\bmagnets?\b|magnetic field|copper|windings?|torque|\binverter\b|\bphases?\b|\bshaft\b|\bRPM\b",
             "heatpump": r"compressor|evaporat|condens|expansion valve|\bCOP\b|outdoor unit|kompres|výparn|kondenz|verdicht|verdampf"}
 # model vo videu len vtedy, keď text hovorí o tom, ako stroj funguje (reklamné video o tepelnom čerpadle nemá byť celé na reze okruhu)
-_NEEDS = {"transformer": 3, "crane": 3, "harddrive": 3, "heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3, "dam": 3, "submarine": 3, "hydraulic": 3, "elevator": 3, "fridge": 3, "jet": 3, "transistor": 3, "breaker": 3, "canal_lock": 3, "orbit": 3, "pinlock": 3, "wall": 3, "emotor": 3, "battery": 3, "robot_arm": 3, "neuron": 3, "touchscreen": 3, "hurricane": 3}
+_NEEDS = {"escalator": 2, "conveyor": 2, "pulley": 2, "lever": 2, "rocket": 2, "zipper": 2, "drill": 2, "generator": 2, "fission": 2, "rotor": 2, "aircon": 2, "pendulum": 2, "transformer": 3, "crane": 3, "harddrive": 3, "heatpump": 2, "wind_turbine": 3, "solar": 3, "tunnel": 3, "radar": 3, "bridge": 3, "wing": 3, "dam": 3, "submarine": 3, "hydraulic": 3, "elevator": 3, "fridge": 3, "jet": 3, "transistor": 3, "breaker": 3, "canal_lock": 3, "orbit": 3, "pinlock": 3, "wall": 3, "emotor": 3, "battery": 3, "robot_arm": 3, "neuron": 3, "touchscreen": 3, "hurricane": 3}
 
 
 def topic(full, title="", strict=False):
@@ -295,7 +308,7 @@ def topic(full, title="", strict=False):
 
 
 # názov menuje stroj, ale video je o jeho inej podobe, ktorú model neukazuje (rekuperačné brzdenie nie je kotúčová brzda): radšej žiadny model
-_AVOID = {"transformer": r"\bquiz\b|transformers? (movie|film|toy|robot)|optimus|megatron|autobot|decepticon|voltage (spike|drop)|\bbatter", "crane": r"\bquiz\b|\bbirds?\b|crane fl|sandhill|whooping|origami|crane game|claw machine|\bdiving\b", "harddrive": r"\bssd\b|solid[- ]state|\bflash\b|floppy|\btapes?\b|\bquiz\b", "car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine brak|air brake",
+_AVOID = {"rocket": r"\bquiz\b|rocket (league|science|salad)|arugula", "zipper": r"zip (file|code)|zipcode|\bquiz\b|zip it", "transformer": r"\bquiz\b|transformers? (movie|film|toy|robot)|optimus|megatron|autobot|decepticon|voltage (spike|drop)|\bbatter", "crane": r"\bquiz\b|\bbirds?\b|crane fl|sandhill|whooping|origami|crane game|claw machine|\bdiving\b", "harddrive": r"\bssd\b|solid[- ]state|\bflash\b|floppy|\btapes?\b|\bquiz\b", "car_brake": r"regenerat|single[- ]pedal|elevator|safety gear|engine brak|air brake",
           "gearbox": r"\bcvt\b|no gears|hybrid|direct[- ]drive|cycloidal|dual[- ]mass|dual[- ]clutch|automatic|planetary",
           "gears": r"\bcvt\b|no gears", "wankel": r"[1-9][- ]stroke|one[- ]stroke|rival", "heatpump": r"brushless|\bmotors?\b|\bcost\b",
           "piston": r"opposed|two[- ]stroke|2[- ]stroke|deactivat|diesel|spark plug makes|\bquiz\b|lasts longer",
@@ -362,7 +375,7 @@ def _topic(full, title=""):
     return best[0][0]
 
 
-NAMES = {"transformer": "Transformer", "crane": "Tower crane", "harddrive": "Hard disk drive", "hurricane": "Hurricane", "touchscreen": "Touchscreen", "neuron": "Nerve cell", "robot_arm": "Robot arm", "battery": "Battery cell", "emotor": "Electric motor", "piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing", "dam": "Hydroelectric dam", "submarine": "Submarine", "hydraulic": "Hydraulic jack", "elevator": "Elevator", "fridge": "Refrigerator", "jet": "Jet engine", "wall": "Wall cross-section", "pinlock": "Pin tumbler lock", "canal_lock": "Canal lock", "orbit": "Orbit", "transistor": "Transistor", "breaker": "Circuit breaker"}
+NAMES = {"escalator": "Escalator", "conveyor": "Conveyor belt", "pulley": "Pulley", "lever": "Lever", "rocket": "Rocket", "zipper": "Zipper", "drill": "Drill", "generator": "Generator", "fission": "Nuclear reactor", "rotor": "Helicopter rotor", "aircon": "Air conditioner", "pendulum": "Pendulum", "transformer": "Transformer", "crane": "Tower crane", "harddrive": "Hard disk drive", "hurricane": "Hurricane", "touchscreen": "Touchscreen", "neuron": "Nerve cell", "robot_arm": "Robot arm", "battery": "Battery cell", "emotor": "Electric motor", "piston": "Piston engine", "wankel": "Rotary engine", "rotary": "Rotary engine", "gears": "Gears", "turbo": "Turbocharger", "camshaft": "Camshaft", "car_brake": "Disc brake", "gearbox": "Gearbox", "differential": "Differential", "heatpump": "Heat pump", "wind_turbine": "Wind turbine", "solar": "Solar panel", "tunnel": "Tunnel boring machine", "radar": "Radar", "bridge": "Suspension bridge", "wing": "Wing", "dam": "Hydroelectric dam", "submarine": "Submarine", "hydraulic": "Hydraulic jack", "elevator": "Elevator", "fridge": "Refrigerator", "jet": "Jet engine", "wall": "Wall cross-section", "pinlock": "Pin tumbler lock", "canal_lock": "Canal lock", "orbit": "Orbit", "transistor": "Transistor", "breaker": "Circuit breaker"}
 _CMP = re.compile(r"\bvs\.?\b|versus|compared|unlike|instead of|rather than|difference|\bthan an?\b|side by side|normal engine|regular engine|conventional", re.I)
 
 
