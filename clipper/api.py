@@ -372,3 +372,23 @@ async def settings_save(request: Request):
     if d.get("refresh_stats"):
         threading.Thread(target=track.tick, kwargs={"force": True}, daemon=True).start()
     return {"ok": True, "settings": _settings()}
+
+
+@router.get("/api/clip/tiktok_check/{post_id}")
+def tiktok_check(post_id: int):
+    """Diagnostika: čo TikTok vracia k zverejnenému klipu (stav a posledné videá účtu)."""
+    from app.platforms import tiktok_business
+    p = store.one("SELECT * FROM posts WHERE id=?", (post_id,))
+    acc = next((a for a in store.accounts() if a["id"] == p["account_id"]), None)
+    out = {}
+    try:
+        tok = tiktok_business.access_token(acc)
+        with tiktok_business.client(timeout=30) as c:
+            out["status"] = c.get(f"{tiktok_business.API}/business/publish/status/", headers={"Access-Token": tok},
+                                  params={"business_id": acc["external_id"], "publish_id": p["external_id"]}).json()
+            out["list"] = c.get(f"{tiktok_business.API}/business/video/list/", headers={"Access-Token": tok}, params={
+                "business_id": acc["external_id"], "max_count": 10,
+                "fields": json.dumps(["item_id", "create_time", "share_url"])}).json()
+    except Exception as e:
+        out["error"] = repr(e)[-500:]
+    return out
