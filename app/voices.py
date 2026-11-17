@@ -407,7 +407,7 @@ LOCAL_VOICES = [("af_heart", "F", "teplý, prirodzený", "en-us"), ("af_bella", 
                 ("am_puck", "M", "mladší, svižný", "en-us"), ("bf_emma", "F", "britský, jemný", "en-gb"),
                 ("bm_george", "M", "britský rozprávač", "en-gb")]
 LOCAL = {"installing": False, "error": ""}
-_local_lock = threading.Lock()
+_local_lock = threading.BoundedSemaphore(2)   # 17.11.: dva hlasy naraz (Mac M5 to zvládne, výroba nečaká v rade)
 
 
 def _local_py():

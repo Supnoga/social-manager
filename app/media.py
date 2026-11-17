@@ -13,6 +13,28 @@ VOICE_DIR = db.MEDIA_DIR / "voice"
 VOICE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+_HW = {}
+
+
+def h264(crf=20, wide=True):
+    """17.11.: na Macu kóduje video hardvér (VideoToolbox), procesor ostane na skladanie obrazu.
+    Kvalita: pevný vysoký dátový tok (lepší ako doterajšie crf 20). Inde alebo bez podpory ostáva libx264."""
+    import sys
+    if "vt" not in _HW:
+        ok = False
+        if sys.platform == "darwin":
+            try:
+                import subprocess as sp
+                ok = "h264_videotoolbox" in sp.run([ffmpeg(), "-hide_banner", "-encoders"], capture_output=True, text=True,
+                                                   timeout=20, stdin=sp.DEVNULL).stdout
+            except Exception:
+                ok = False
+        _HW["vt"] = ok
+    if _HW["vt"]:
+        return ["-c:v", "h264_videotoolbox", "-b:v", "6M", "-maxrate", "10M", "-bufsize", "12M", "-profile:v", "high", "-allow_sw", "1"]
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf)]
+
+
 def ffmpeg():
     p = shutil.which("ffmpeg")
     if p:
