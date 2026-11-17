@@ -267,7 +267,7 @@ def fill_links():
                    "AND posted_at>=datetime('now','localtime','-1 day')")
     if not rows:
         return
-    accs = {a["id"]: a for a in store.accounts()}
+    accs = {r["account_id"]: appdb.one("SELECT * FROM accounts WHERE id=?", (r["account_id"],)) for r in rows}
     used = {r["url"] for r in store.q("SELECT url FROM posts WHERE platform='tiktok' AND url!=''")}
     vids = {}
     for p in sorted(rows, key=lambda r: r["posted_at"]):
