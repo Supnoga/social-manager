@@ -283,7 +283,8 @@ def fill_links():
                 at = datetime.strptime(p["posted_at"], FMT).timestamp()
                 best = sorted((abs(t - at), u) for _, t, u in vids[acc["id"]] if u not in used and abs(t - at) < 900)
                 url = best[0][1] if best else ""
-        except Exception:
+        except Exception as e:
+            store.put("links_err", str(e)[-200:])
             continue
         if url:
             used.add(url)

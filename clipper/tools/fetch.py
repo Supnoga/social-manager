@@ -14,14 +14,23 @@ def drive(url, out):
     """Google Drive: priečinok (stiahne všetky videá) alebo jeden súbor. Kampane tam často dávajú zábery."""
     import gdown
     out.mkdir(parents=True, exist_ok=True)
-    if "/folders/" in url:
-        try:
-            got = gdown.download_folder(url, output=str(out), quiet=True, remaining_ok=True) or []
-        except TypeError:        # novší gdown tento parameter nemá
-            got = gdown.download_folder(url, output=str(out), quiet=True) or []
-    else:
-        got = [gdown.download(url, output=str(out) + "/", quiet=True, fuzzy=True)]
-    files = sorted(str(Path(f)) for f in got if f and Path(f).suffix.lower() in VIDEO and Path(f).exists())
+    got, err = [], ""
+    try:
+        if "/folders/" in url:
+            try:
+                got = gdown.download_folder(url, output=str(out), quiet=True, remaining_ok=True) or []
+            except TypeError:        # novší gdown tento parameter nemá
+                got = gdown.download_folder(url, output=str(out), quiet=True) or []
+        else:
+            got = [gdown.download(url, output=str(out) + "/", quiet=True, fuzzy=True)]
+    except Exception as e:       # Drive občas niektoré súbory nedá (limit sťahovaní): použijeme tie, čo prišli
+        err = str(e).strip().splitlines()[0][:200] if str(e).strip() else type(e).__name__
+    files = {str(Path(f)) for f in got if f and Path(f).suffix.lower() in VIDEO and Path(f).exists()}
+    files |= {str(f) for f in out.rglob("*") if f.suffix.lower() in VIDEO and f.stat().st_size > 100_000}
+    files = sorted(files)
+    if not files and err:
+        print(json.dumps({"error": "Google Drive: " + err}))
+        return
     if not files:
         print(json.dumps({"error": "na Google Drive som nenašiel video (alebo priečinok nie je zdieľaný odkazom)"}))
         return
