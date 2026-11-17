@@ -81,7 +81,7 @@ def _video(clip, camp, platform):
     title, text = texts(clip, camp, platform)
     v = {"id": clip["id"], "file_path": clip["path"], "duration": clip.get("duration") or 0, "title": title,
          "lang": camp.get("lang") or "en", "kind": "short", "fixed_text": (title, text)}
-    if platform == "tiktok":
+    if platform in ("tiktok", "instagram"):
         v["public_url"] = public_url(clip["id"])
     return v
 
