@@ -1665,7 +1665,16 @@ def _mp_run(workers, until):
             th.join()
     finally:
         MPROD["running"] = False
-        if not MPROD.get("drain"):  # dokončené alebo zastavené ručne; pri aktualizácii/páde ostáva zapísané a po štarte pokračuje
+        job = db.get_setting("month_plan_job") or {}
+        if job.get("ahead") and not MPROD.get("stop") and not MPROD.get("drain"):
+            # 17.11.: výroba stále drží zásobu N dní dopredu: o hodinu sa sama spustí znova s posunutým koncom
+            def _again():
+                time.sleep(3600)
+                j = db.get_setting("month_plan_job")
+                if j and j.get("ahead") and not MPROD["running"]:
+                    _mp_start(j)
+            threading.Thread(target=_again, daemon=True).start()
+        elif not MPROD.get("drain"):  # dokončené alebo zastavené ručne; pri aktualizácii/páde ostáva zapísané a po štarte pokračuje
             db.set_setting("month_plan_job", None)
         MPROD["log"].append(f"{dt_now()} koniec: {MPROD['done']['long']} dlhých, {MPROD['done']['short']} krátkych")
 
@@ -1690,6 +1699,10 @@ def _mp_start(data):
     except Exception:
         par = 4
     job = {"workers": max(int(data.get("workers") or 3), par), "until": data.get("until") or "", "publish": bool(data.get("publish"))}
+    if data.get("ahead"):   # stála zásoba: koniec = dnes + ahead dní (prepočíta sa pri každom spustení)
+        import datetime as _dt
+        job["ahead"] = max(1, min(30, int(data["ahead"])))
+        job["until"] = (_dt.date.today() + _dt.timedelta(days=job["ahead"])).isoformat()
     db.set_setting("month_plan_job", job)
     MPROD.update(running=True, log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=job["publish"])
     threading.Thread(target=_mp_run, args=(job["workers"], job["until"]), daemon=True).start()
