@@ -42,6 +42,27 @@ table.t tr:last-child td{border-bottom:0}
 .sw{position:relative;width:40px;height:22px;border-radius:99px;background:var(--panel3);border:1px solid var(--line2);cursor:pointer;flex:none}
 .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#aaa;transition:.15s}
 .sw.on{background:var(--acc);border-color:var(--acc)}.sw.on::after{left:20px;background:#000}
+details.fold{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px}
+details.fold>summary{cursor:pointer;padding:14px 18px;font-weight:650;list-style:none;display:flex;gap:10px;align-items:center}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"";width:7px;height:7px;border-right:2px solid var(--dim);border-bottom:2px solid var(--dim);transform:rotate(-45deg);transition:.15s}
+details.fold[open]>summary::before{transform:rotate(45deg)}
+details.fold>.in2{padding:0 18px 16px}
+.sec-h{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);font-weight:700;margin:22px 0 10px}
+.cg{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.cc{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.cc h3{margin:0;font-size:16px;line-height:1.25}
+.cc .meta{font-size:13px;color:var(--muted)}
+.cc .nums{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.cc .nums div{background:var(--panel2);border-radius:var(--rs);padding:7px 4px}
+.cc .nums b{display:block;font-size:16px}.cc .nums span{font-size:11px;color:var(--dim)}
+.cc .acts{display:flex;gap:6px;flex-wrap:wrap}
+.cc .acts .btn{padding:6px 10px;font-size:12px}
+.warnl{font-size:12px;color:var(--warn)}
+.sl{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.sl:first-child{border-top:0}
+.sl .nm{flex:1;min-width:0}.sl .nm b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.sl .nm .small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -68,6 +89,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const num=n=>Number(n||0).toLocaleString('sk-SK');
 const usd=n=>Number(n||0).toLocaleString('sk-SK',{minimumFractionDigits:2,maximumFractionDigits:2})+' $';
 const when=s=>{if(!s)return'';const d=new Date(s.replace(' ','T'));return d.toLocaleString('sk-SK',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})};
+let srcCamp=0;const OPEN={};const fold=k=>`data-k="${k}" ${OPEN[k]?'open':''} ontoggle="OPEN[this.dataset.k]=this.open"`;
 let S=null,tab=(location.hash.slice(2)||'prehlad'),clipFilter='ready',editCamp=null,form={},busy=false;
 
 function toast(t,bad){const e=document.getElementById('toast');e.innerHTML=`<div class="toast ${bad?'bad':''}">${esc(t)}</div>`;clearTimeout(toast.t);toast.t=setTimeout(()=>e.innerHTML='',bad?7000:2600)}
@@ -83,7 +105,7 @@ async function load(force){
   if(!force&&[...document.querySelectorAll('video')].some(v=>!v.paused))return;
   try{S=await api('/api/clip/state');render(!force)}catch(e){}
 }
-function go(t){tab=t;location.hash='#/'+t;editCamp=null;render();window.scrollTo(0,0)}
+function go(t){if(t!='zdroje')srcCamp=0;tab=t;location.hash='#/'+t;editCamp=null;render();window.scrollTo(0,0)}
 async function act(path,body,msg){if(busy)return;busy=true;try{await api(path,body);if(msg)toast(msg);await load(true)}catch(e){}busy=false}
 
 function side(){
@@ -164,28 +186,58 @@ function scoreTable(){
    <td style="text-align:center"><b style="font-size:18px;color:var(--acc)">${p.total}</b><span class="muted small"> / 50</span></td></tr>`}).join('');
   return `<div class="card"><h2>Porovnanie kampaní</h2><table class="t"><tr><th>Kampaň</th><th style="text-align:center">Cena</th><th style="text-align:center">Viralita</th><th style="text-align:center">Konkurencia</th><th style="text-align:center">Rozpočet</th><th style="text-align:center">Hodí sa</th><th style="text-align:center">Spolu</th></tr>${rows}</table>
    <p class="small muted" style="margin:12px 0 0">Každé 1 až 10 bodov, viac je lepšie. Viralita sa počíta zo skutočných pozretí kampane (minuté peniaze na klipera a najlepší klip v „Čo tu funguje“), kým tie nie sú, je to odhad. Konkurencia: menej kliperov = viac bodov. Čísla doplníš v Upraviť.</p></div>`}
+function campCard(c){const k=c.clips,t=c.totals,srcs=S.sources.filter(x=>x.campaign_id==c.id);
+  const ready=srcs.filter(x=>x.status=='ready').length,work=srcs.filter(x=>['new','fetching','transcribing'].includes(x.status)).length;
+  const bad=srcs.filter(x=>x.status=='failed').length;
+  const warn=c.status=='ended'?'':!srcs.length?'Chýba zdrojové video':bad&&!ready&&!work?'Zdrojové video sa nepodarilo stiahnuť':!ready&&!work&&!(k.picked||k.ready)?'Zdroje sú vyťažené, pridaj nové video':'';
+  return `<div class="cc"><div class="row" style="align-items:flex-start"><div style="flex:1;min-width:0"><h3>${esc(c.name)}</h3>
+   <div class="meta">${esc(c.site_name)} · ${usd(c.rate)} / 1 000 · ${c.networks.map(n=>NET[n]).join(', ')}</div></div>${stTag(c.status)}</div>
+   <div class="nums"><div><b>${t.posted}</b><span>vonku</span></div><div><b>${t.queued}</b><span>v rade</span></div><div><b>${num(t.views)}</b><span>pozretí</span></div><div><b>${usd(t.est).replace(',00','')}</b><span>odhad</span></div></div>
+   <div class="small muted">Zdroje: ${srcs.length} ${work?`· ${work} sa pripravuje `:''}${ready?`· ${ready} pripravené `:''}· klipy v strihu ${k.picked||0}${k.ready?` · <b style="color:var(--acc)">${k.ready} na schválenie</b>`:''}</div>
+   ${warn?`<div class="warnl">${warn}</div>`:''}
+   <div class="acts">${c.url?`<a class="btn sec" href="${esc(c.url)}" target="_blank" rel="noopener">${ic('ext','s')}Stránka</a>`:''}
+    <button class="btn sec" onclick="srcCamp=${c.id};go('zdroje')">${ic('src','s')}Zdroje</button>
+    <button class="btn sec" onclick="edCamp(${c.id})">${ic('edit','s')}Upraviť</button>
+    ${c.status=='active'?`<button class="btn sec" onclick="act('/api/clip/campaign/${c.id}/status',{status:'paused'})">Pozastaviť</button>`:c.status=='paused'?`<button class="btn sec" onclick="act('/api/clip/campaign/${c.id}/status',{status:'active'})">Spustiť</button>`:''}
+    ${c.status!='ended'?`<button class="btn sec" onclick="if(confirm('Ukončiť kampaň? Nové klipy sa už nebudú robiť, zverejnené ostanú.'))act('/api/clip/campaign/${c.id}/status',{status:'ended'})">Ukončiť</button>`:''}</div></div>`}
 function vKampane(){
   if(editCamp!==null)return campForm();
-  const cards=S.campaigns.map(c=>{const k=c.clips;return `<div class="card"><div class="row"><h2 style="margin:0">${esc(c.name)}</h2>${stTag(c.status)}<span class="tag">${esc(c.site_name)}</span><span class="sp"></span>
-    ${c.url?`<a class="btn sec" href="${esc(c.url)}" target="_blank" rel="noopener">${ic('ext','s')}Stránka kampane</a>`:''}<button class="btn sec" onclick="edCamp(${c.id})">${ic('edit','s')}Upraviť</button>
-    ${c.status=='active'?`<button class="btn sec" onclick="act('/api/clip/campaign/${c.id}/status',{status:'paused'})">Pozastaviť</button>`:`<button class="btn sec" onclick="act('/api/clip/campaign/${c.id}/status',{status:'active'})">Spustiť</button>`}
-    ${c.status!='ended'?`<button class="btn sec" onclick="if(confirm('Ukončiť kampaň? Nové klipy sa už nebudú robiť, zverejnené ostanú.'))act('/api/clip/campaign/${c.id}/status',{status:'ended'})">Ukončiť</button>`:''}</div>
-    <p class="muted" style="margin:8px 0 12px">${usd(c.rate)} za 1 000 pozretí${c.min_views?` · od ${num(c.min_views)} pozretí`:''}${c.max_payout?` · najviac ${usd(c.max_payout)} na klip`:''}${c.budget?` · rozpočet ${usd(c.budget)}`:''} · ${c.networks.map(n=>NET[n]).join(', ')}</p>
-    <div class="row small"><span class="tag">${c.sources} zdrojov čaká</span><span class="tag">${k.picked||0} v strihu</span><span class="tag acc">${k.ready||0} na schválenie</span><span class="tag">${c.totals.queued} v rade</span><span class="tag ok">${c.totals.posted} zverejnených</span><span class="tag">${num(c.totals.views)} pozretí</span><span class="tag ok">odhad ${usd(c.totals.est)}</span></div></div>`}).join('');
-  return `<div class="top"><div><h1>Kampane</h1><p class="sub">Kampaň si vyberieš na stránke platformy, tu jej nastavíš pravidlá a zdrojové videá.</p></div><span class="sp"></span><button class="btn" onclick="newCamp()">${ic('plus','s')}Nová kampaň</button></div>${scoreTable()}${cards||'<div class="card muted">Zatiaľ žiadna kampaň.</div>'}`;
+  const by=st=>S.campaigns.filter(c=>c.status==st).sort((a,b)=>(b.points?.total||0)-(a.points?.total||0));
+  const on=by('active'),pa=by('paused'),en=by('ended');
+  const grid=l=>`<div class="cg">${l.map(campCard).join('')}</div>`;
+  return `<div class="top"><div><h1>Kampane</h1><p class="sub">Kampaň si vyberieš na stránke platformy, tu jej nastavíš pravidlá a zdrojové videá.</p></div><span class="sp"></span><button class="btn" onclick="newCamp()">${ic('plus','s')}Nová kampaň</button></div>
+  ${!S.campaigns.length?'<div class="card muted">Zatiaľ žiadna kampaň.</div>':''}
+  ${on.length?`<div class="sec-h">Bežia (${on.length})</div>${grid(on)}`:''}
+  ${pa.length?`<div class="sec-h">Pozastavené (${pa.length})</div>${grid(pa)}`:''}
+  ${en.length?`<details class="fold" ${fold('ended')} style="margin-top:22px"><summary>Ukončené (${en.length})</summary><div class="in2">${grid(en)}</div></details>`:''}
+  ${S.campaigns.length>1?`<details class="fold" ${fold('score')} style="margin-top:22px"><summary>Porovnanie kampaní (body)</summary><div class="in2">${scoreTable().replace('<div class="card">','<div>').replace('<h2>Porovnanie kampaní</h2>','')}</div></details>`:''}`;
 }
 
 const SRC={new:['Čaká',''],fetching:['Sťahuje sa','acc'],transcribing:['Prepisuje sa reč','acc'],ready:['Pripravené','ok'],used:['Vyťažené',''],failed:['Chyba','bad']};
-async function addSrc(){const campaign_id=document.getElementById('s_c').value,urls=document.getElementById('s_u').value;try{await api('/api/clip/source',{campaign_id,urls});toast('Pridané.');await load(true)}catch(e){}}
+async function addSrc(){const campaign_id=document.getElementById('s_c').value,urls=document.getElementById('s_u').value;try{await api('/api/clip/source',{campaign_id,urls});toast('Pridané.');document.getElementById('s_u').value='';await load(true)}catch(e){}}
+function srcName(s){if(s.title)return s.title;const u=s.url||'';if(u.startsWith('/')||u.startsWith('~'))return u.split('/').pop();return u.replace(/^https?:\/\/(www\.)?/,'').slice(0,70)}
+function srcWhere(u){u=u||'';if(u.startsWith('/')||u.startsWith('~'))return 'Súbor na Macu';if(u.includes('drive.google'))return 'Google Drive';if(u.includes('youtu'))return 'YouTube';if(u.includes('twitch'))return 'Twitch';if(u.includes('kick.com'))return 'Kick';return 'Odkaz'}
+const errLine=e=>{const l=String(e).split('\n').map(x=>x.trim()).filter(x=>x&&!/^[\^~]+$/.test(x));return (l.pop()||'').slice(0,180)};
+const nVid=n=>n==1?'1 video':n>=2&&n<=4?n+' videá':n+' videí';
+function srcRow(s){const t=SRC[s.status]||[s.status,''];const part=(s.url||'').match(/@([\d:]+-[\d:]*)$/);
+  return `<div class="sl"><div class="nm"><b title="${esc(s.url)}">${esc(srcName(s))}</b><div class="small muted">${srcWhere(s.url)}${s.duration?' · '+Math.round(s.duration/60)+' min':''}${part?' · len časť '+esc(part[1]):''}${s.clips?' · '+s.clips+' klipov':''}</div>
+   ${s.error&&s.status=='failed'?`<div class="small" style="color:var(--bad)">${esc(errLine(s.error))}</div>`:''}</div>
+   <span class="tag ${t[1]}">${t[0]}</span>
+   ${s.status=='failed'||s.status=='used'?`<button class="btn sec" style="padding:6px 10px;font-size:12px" onclick="act('/api/clip/source/${s.id}/retry')">${ic('redo','s')}${s.status=='used'?'Znova':'Skúsiť znova'}</button>`:''}</div>`}
 function vZdroje(){
   const act_=S.campaigns.filter(c=>c.status!='ended');
-  const rows=S.sources.map(s=>{const t=SRC[s.status]||[s.status,''];return `<tr><td><b>${esc(s.title||s.url)}</b>${s.title?`<div class="small muted">${esc(s.url)}</div>`:''}${s.error?`<div class="small" style="color:var(--bad)">${esc(s.error)}</div>`:''}</td>
-   <td>${esc(s.campaign)}</td><td>${s.duration?Math.round(s.duration/60)+' min':''}</td><td><span class="tag ${t[1]}">${t[0]}</span></td><td>${s.clips}</td>
-   <td>${s.status=='failed'||s.status=='used'?`<button class="btn sec" onclick="act('/api/clip/source/${s.id}/retry')">${ic('redo','s')}${s.status=='used'?'Vyťažiť znova':'Skúsiť znova'}</button>`:''}</td></tr>`}).join('');
-  return `<div class="top"><div><h1>Zdrojové videá</h1><p class="sub">Dlhé videá tvorcu, z ktorých sa strihajú klipy. Stiahnutie, prepis reči aj výber momentov ide samo.</p></div></div>
-  ${act_.length?`<div class="card"><h2>Pridať videá</h2><div class="f"><label>Kampaň</label><select id="s_c">${act_.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
-   <div class="f"><label>Odkazy na videá (každý na nový riadok)</label><textarea id="s_u" placeholder="https://www.youtube.com/watch?v=…"></textarea></div><button class="btn" onclick="addSrc()">Pridať</button></div>`:''}
-  <div class="card">${rows?`<table class="t"><tr><th>Video</th><th>Kampaň</th><th>Dĺžka</th><th>Stav</th><th>Klipy</th><th></th></tr>${rows}</table>`:'<p class="muted" style="margin:0">Žiadne zdrojové video.</p>'}</div>`;
+  const order={active:0,paused:1,ended:2};
+  const camps=[...S.campaigns].sort((a,b)=>(order[a.status]-order[b.status])||a.name.localeCompare(b.name)).filter(c=>!srcCamp||c.id==srcCamp);
+  const groups=camps.map(c=>{const l=S.sources.filter(x=>x.campaign_id==c.id);const live=l.filter(x=>x.status!='used'),old=l.filter(x=>x.status=='used');
+    if(!l.length&&c.status!='active')return '';
+    return `<div class="card"><div class="row"><h2 style="margin:0">${esc(c.name)}</h2>${stTag(c.status)}<span class="sp"></span><span class="small muted">${nVid(l.length)}</span></div>
+     <div style="margin-top:8px">${live.map(srcRow).join('')||(old.length?'':'<p class="warnl" style="margin:6px 0">Žiadne zdrojové video. Pridaj ho cez „Pridať videá“ hore.</p>')}</div>
+     ${old.length?`<details class="fold" ${fold('used'+c.id)} style="margin:8px 0 0;background:var(--panel2)"><summary class="small">Vyťažené (${old.length})</summary><div class="in2">${old.map(srcRow).join('')}</div></details>`:''}</div>`}).join('');
+  return `<div class="top"><div><h1>Zdrojové videá</h1><p class="sub">Dlhé videá, z ktorých sa strihajú klipy. Stiahnutie, prepis reči aj výber momentov ide samo.</p></div></div>
+  <div class="chips"><span class="chip ${!srcCamp?'on':''}" onclick="srcCamp=0;render()">Všetky kampane</span>${S.campaigns.filter(c=>c.status!='ended').map(c=>`<span class="chip ${srcCamp==c.id?'on':''}" onclick="srcCamp=${c.id};render()">${esc(c.name.length>28?c.name.slice(0,27)+'…':c.name)}</span>`).join('')}</div>
+  ${act_.length?`<details class="fold" ${fold('add')}><summary>${ic('plus','s')}Pridať videá</summary><div class="in2"><div class="f"><label>Kampaň</label><select id="s_c">${act_.map(c=>`<option value="${c.id}" ${srcCamp==c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+   <div class="f"><label>Odkazy na videá alebo cesta k súboru na Macu (každý na nový riadok; len časť videa: za odkaz @od-do)</label><textarea id="s_u" placeholder="https://www.youtube.com/watch?v=…"></textarea></div><button class="btn" onclick="addSrc()">Pridať</button></div></details>`:''}
+  ${groups||'<div class="card muted">Žiadne zdrojové video.</div>'}`;
 }
 
 const CF=[['ready','Na schválenie'],['picked','V strihu'],['planned','Schválené'],['failed','Chyby'],['rejected','Zamietnuté']];
