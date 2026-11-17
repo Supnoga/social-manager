@@ -2356,6 +2356,12 @@ def ttb_creds(data: dict = Body(...)):
     return {"ok": True}
 
 
+@app.post("/api/accounts/ttb/verify_url")
+def ttb_verify_url():
+    """TikTok: overenie, že verejná adresa (tunel) patrí nám - inak TikTok video nestiahne (chyba 40002)."""
+    return tiktok_business.verify_property()
+
+
 @app.get("/api/accounts/ttb/connect")
 def ttb_connect(project_id: int = 0, lang: str = ""):
     st = "ttb:" + secrets.token_urlsafe(12)

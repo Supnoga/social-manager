@@ -65,6 +65,30 @@ def public_url(video):
     return f"{public_base()}/pub/{video['id']}/{video_token(video['id'])}{ext}"
 
 
+def verify_property():
+    """Overí vlastníctvo verejnej adresy (URL prefix https://<tunel>/) cez API: TikTok dá podpis a meno súboru,
+    appka ten súbor sama vystaví na koreni adresy (/<meno>.txt) a dá TikToku overiť. Bez DNS a bez klikania."""
+    app_id, sec = creds()
+    meta = {"property_type": 2, "url": public_base() + "/"}
+    body = {"app_id": app_id, "secret": sec, "url_property_meta": meta}
+    out = {}
+    with client(timeout=60) as c:
+        r = c.post(f"{API}/business/property/add/", json=body).json()
+        info = (r.get("data") or {}).get("url_property_info") or {}
+        out["add"] = {"code": r.get("code"), "message": r.get("message"), "status": info.get("property_status")}
+        if info.get("file_name") and info.get("signature"):
+            vf = db.get_setting("verify_files", {}) or {}
+            name = info["file_name"] if info["file_name"].endswith(".txt") else info["file_name"] + ".txt"
+            vf[name] = info["signature"]
+            db.set_setting("verify_files", vf)
+            out["file"] = name
+        time.sleep(3)
+        r = c.post(f"{API}/business/property/verify/", json=body).json()
+        info = (r.get("data") or {}).get("url_property_info") or r.get("data") or {}
+        out["verify"] = {"code": r.get("code"), "message": r.get("message"), "status": info.get("property_status")}
+    return out
+
+
 def auth_url(state):
     app_id, _ = creds()
     scope = db.get_setting("ttb_scopes", "user.info.basic,user.info.username,video.upload,video.publish")
