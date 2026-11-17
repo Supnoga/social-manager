@@ -17,6 +17,7 @@ const ang=u*90/R*1.0;
 x.beginPath();x.arc(WX,WY,R,0,TAU);x.fillStyle=ST;x.fill();x.strokeStyle='#e6eaee';x.lineWidth=4;x.stroke();
 for(let k=0;k<4;k++){const an=ang+k*TAU/4;x.beginPath();x.moveTo(WX,WY);x.lineTo(WX+Math.cos(an)*R*.85,WY+Math.sin(an)*R*.85);x.strokeStyle='#4a525c';x.lineWidth=6;x.stroke()}
 x.beginPath();x.arc(WX,WY,10,0,TAU);x.fillStyle='#1d2228';x.fill();
+x.strokeStyle='#8a939c';x.lineWidth=2;x.beginPath();x.moveTo(WX-8,WY-R-12);x.lineTo(WX+8,WY-R-12);x.stroke();
 // lano: ľavá strana drží bremeno, pravá strana ju ťahá dole
 const yL=330-90*u,yR=240+90*u;
 x.strokeStyle=ROPE;x.lineWidth=5;x.beginPath();x.moveTo(WX-R,WY);x.lineTo(WX-R,yL);x.moveTo(WX+R,WY);x.lineTo(WX+R,yR);x.stroke();

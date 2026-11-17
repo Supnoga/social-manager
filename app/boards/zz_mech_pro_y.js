@@ -17,6 +17,7 @@ x.strokeStyle='#2a2f36';x.lineWidth=12;x.beginPath();x.moveTo(AX,AY-72);x.lineTo
 x.strokeStyle='#e6eaee';x.lineWidth=3;x.beginPath();x.moveTo(AX,AY-78);x.lineTo(BX,BY-78);x.stroke();
 // schodíky: putujú po reťazi (ich tvar ostáva vodorovný)
 for(let k=0;k<14;k++){const u=((k/14+t*.07)%1),px=AX+(BX-AX)*u,py=AY+(BY-AY)*u;x.fillStyle=STEP;x.fillRect(px-20,py-12,40,10);x.fillStyle=TRU;x.fillRect(px-20,py-2,40,12)}
+x.fillStyle='#3b4048';x.fillRect(AX-24,AY-6,48,18);x.fillRect(BX-24,BY-6,48,18);
 // hnací motor hore
 x.beginPath();x.arc(BX+30,BY-6,30,0,TAU);x.fillStyle='#3b4048';x.fill();x.strokeStyle='#9aa3ab';x.lineWidth=4;x.stroke();
 for(let k=0;k<3;k++){const an=t*2+k*TAU/3;x.beginPath();x.moveTo(BX+30,BY-6);x.lineTo(BX+30+Math.cos(an)*22,BY-6+Math.sin(an)*22);x.strokeStyle='#9aa3ab';x.lineWidth=3;x.stroke()}

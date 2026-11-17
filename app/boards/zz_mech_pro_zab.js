@@ -18,6 +18,7 @@ x.save();x.translate(450,380);x.rotate(th);
 x.beginPath();x.moveTo(-300,0);x.lineTo(300,0);x.strokeStyle=ST;x.lineWidth=14;x.stroke();
 // bremeno na ľavom konci (ide s pákou)
 x.fillStyle=LOAD;x.fillRect(-330,-52,60,52);x.strokeStyle='rgba(0,0,0,.35)';x.lineWidth=2;x.strokeRect(-330,-52,60,52);
+for(let k=-240;k<=240;k+=60){x.beginPath();x.moveTo(k,0);x.lineTo(k,10);x.strokeStyle='#e6eaee';x.lineWidth=2;x.stroke()}
 // šípka úsilia na pravom konci: tlačí dole
 x.strokeStyle=A;x.lineWidth=5;x.beginPath();x.moveTo(270,-70);x.lineTo(270,-6);x.stroke();
 x.fillStyle=A;x.beginPath();x.moveTo(270,-2);x.lineTo(256,-22);x.lineTo(284,-22);x.closePath();x.fill();

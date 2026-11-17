@@ -18,6 +18,7 @@ x.strokeStyle=BELT;x.lineWidth=14;x.stroke();x.strokeStyle='#4a525c';x.lineWidth
 [[200,380],[700,380]].forEach(([cx,cy],i)=>{x.beginPath();x.arc(cx,cy,44,0,TAU);x.fillStyle=ST;x.fill();x.strokeStyle='#e6eaee';x.lineWidth=3;x.stroke();
 for(let k=0;k<3;k++){const an=t*2.5*(i?1:1)+k*TAU/3;x.beginPath();x.moveTo(cx,cy);x.lineTo(cx+Math.cos(an)*40,cy+Math.sin(an)*40);x.strokeStyle='#4a525c';x.lineWidth=5;x.stroke()}
 x.beginPath();x.arc(cx,cy,8,0,TAU);x.fillStyle='#1d2228';x.fill()});
+x.fillStyle='#3b4048';x.fillRect(180,500,40,30);x.fillRect(680,500,40,30);
 // náklad na hornej vetve: putuje spolu s pásom
 for(let k=0;k<6;k++){const u=(k/6+t*.1)%1,bx=230+u*440;x.fillStyle=LOAD;x.fillRect(bx-30,298,60,32);x.strokeStyle='rgba(0,0,0,.35)';x.lineWidth=2;x.strokeRect(bx-30,298,60,32)}
 // popisy

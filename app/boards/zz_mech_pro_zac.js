@@ -19,7 +19,7 @@ x.fillStyle=HULL;x.fillRect(415,300,70,120);x.fillStyle=FIN;x.beginPath();x.move
 // horný stupeň: nos, trup, zadný valec
 const up=Math.min(sep,4)*4;x.save();x.translate(0,-up);
 x.beginPath();x.moveTo(450,110);x.lineTo(415,190);x.lineTo(485,190);x.closePath();x.fillStyle=HULL;x.fill();
-x.fillStyle=HULL;x.fillRect(415,190,70,110);x.strokeStyle='#8a939c';x.lineWidth=2;x.beginPath();x.moveTo(415,250);x.lineTo(485,250);x.stroke();
+x.fillStyle=HULL;x.fillRect(415,190,70,110);x.beginPath();x.arc(450,228,11,0,TAU);x.fillStyle='#2a3138';x.fill();x.strokeStyle='#ff8a1e';x.lineWidth=4;x.beginPath();x.moveTo(415,262);x.lineTo(485,262);x.stroke();x.strokeStyle='#8a939c';x.lineWidth=2;x.beginPath();x.moveTo(415,250);x.lineTo(485,250);x.stroke();
 if(boost){x.fillStyle=HULL;x.fillRect(415,300,70,120);x.fillStyle=FIN;x.beginPath();x.moveTo(415,380);x.lineTo(385,440);x.lineTo(415,440);x.fill();x.beginPath();x.moveTo(485,380);x.lineTo(515,440);x.lineTo(485,440);x.fill();}
 x.fillStyle=NOZ;x.beginPath();x.moveTo(425,420);x.lineTo(475,420);x.lineTo(465,436);x.lineTo(435,436);x.closePath();x.fill();
 // plamene: pulzujú, keď motory ťahajú

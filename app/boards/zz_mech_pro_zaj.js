@@ -11,6 +11,7 @@ const PX=450,PY=150,LEN=300;
 return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=ez((cm[2]/zf-1)/.25);
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);x.lineJoin='round';x.lineCap='round';
 const th=.5*Math.sin(t*2.4),bx=PX+LEN*Math.sin(th),by=PY+LEN*Math.cos(th);
+for(let k=-3;k<=3;k++){const an=Math.PI/2+k*.12;x.beginPath();x.moveTo(PX+Math.cos(an)*(LEN+10),PY+Math.sin(an)*(LEN+10));x.lineTo(PX+Math.cos(an)*(LEN+26),PY+Math.sin(an)*(LEN+26));x.strokeStyle='#8a939c';x.lineWidth=3;x.stroke()}
 // stopa: záves na pevnej konzole
 x.fillStyle='#3b4048';x.fillRect(400,100,100,30);
 // dráha kyvu (bodkovaná)
