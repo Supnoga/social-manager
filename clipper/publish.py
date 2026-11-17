@@ -142,7 +142,7 @@ def batches():
 def day_cap(account_id, per_day, day):
     """Koľko klipov smie účet v daný deň zverejniť. Nový účet sa rozbieha pomaly (1, 1, 2, 2, potom plný počet),
     lebo siete nový účet s veľa videami naraz berú ako spam a nepustia ho k ľuďom."""
-    lim = min(max(1, int(per_day)), len(batches()))
+    lim = min(max(1, int(per_day)), 2 * len(batches()))      # najviac 2 klipy na dávku
     if not store.get("warmup", True):
         return lim
     first = store.one(f"SELECT MIN(scheduled_at) m FROM posts WHERE account_id=? AND status IN {ACTIVE}", (account_id,))["m"]
@@ -162,10 +162,13 @@ def next_slot(account_id, per_day):
         mine = [t for t in taken if t.date() == day.date()]
         if len(mine) >= day_cap(account_id, per_day, day.date()):
             continue
+        per_batch = -(-day_cap(account_id, per_day, day.date()) // max(1, len(batches())))   # 6 denne pri 3 dávkach = 2 na dávku
         for b in batches():
             t = day + timedelta(minutes=b)
-            if t >= now and not any(abs((x - t).total_seconds()) < 1500 for x in mine):
-                return (t + timedelta(seconds=random.randint(0, 300))).strftime(FMT)
+            near = sum(1 for x in mine if -60 <= (x - t).total_seconds() < 1500)
+            if t >= now and near < per_batch:
+                # druhý klip tej istej dávky o 8-12 minút neskôr (stále sa stihne vložiť do 30 minút)
+                return (t + timedelta(seconds=near * 600 + random.randint(0, 120 if near else 300))).strftime(FMT)
     return (now + timedelta(days=120)).strftime(FMT)
 
 
