@@ -177,6 +177,15 @@ LIVE = ("JOIN clips c ON c.id=p.clip_id JOIN campaigns k ON k.id=c.campaign_id "
         "AND p.account_id NOT IN (SELECT account_id FROM clip_accounts WHERE active=0)")   # vypnutý účet nič nezverejní
 
 
+def pick(accs, campaign_id):
+    """Účty siete, ktoré smú dostať klip kampane: účet s vlastným zoznamom kampaní berie len tie, ostatné berú zvyšok."""
+    own = [a for a in accs if a.get("camps") and campaign_id in a["camps"]]
+    if own:
+        return own
+    free = [a for a in accs if not a.get("camps")]
+    return free or accs
+
+
 def rehome():
     """Klipy naplánované na vypnutý účet presunie na zapnutý účet tej istej siete (keď taký je). Vráti počet."""
     off = [r["account_id"] for r in store.q("SELECT account_id FROM clip_accounts WHERE active=0")]
@@ -184,9 +193,9 @@ def rehome():
         return 0
     accs = [a for a in store.accounts() if a["active"] and not a["broken"]]
     n = 0
-    for p in store.q(f"SELECT id, platform FROM posts WHERE status='queued' AND account_id IN ({','.join('?' * len(off))}) "
-                     "ORDER BY scheduled_at", tuple(off)):
-        mine = [a for a in accs if a["platform"] == p["platform"]]
+    for p in store.q(f"SELECT p.id, p.platform, c.campaign_id FROM posts p JOIN clips c ON c.id=p.clip_id WHERE p.status='queued' "
+                     f"AND p.account_id IN ({','.join('?' * len(off))}) ORDER BY p.scheduled_at", tuple(off)):
+        mine = pick([a for a in accs if a["platform"] == p["platform"]], p["campaign_id"])
         if not mine:
             continue
         when, acc = sorted(((next_slot(a["id"], a["per_day"]), a) for a in mine), key=lambda x: x[0])[0]
@@ -225,7 +234,7 @@ def plan(clip):
     accs = [a for a in store.accounts() if a["active"] and not a["broken"] and a["platform"] in nets]
     made = 0
     for net in nets:
-        mine = [a for a in accs if a["platform"] == net]
+        mine = pick([a for a in accs if a["platform"] == net], clip["campaign_id"])
         if not mine or store.one("SELECT id FROM posts WHERE clip_id=? AND platform=?", (clip["id"], net)):
             continue
         slots = sorted(((next_slot(a["id"], a["per_day"]), a) for a in mine), key=lambda x: x[0])
@@ -235,6 +244,21 @@ def plan(clip):
     if made or store.one("SELECT id FROM posts WHERE clip_id=?", (clip["id"],)):
         store.run("UPDATE clips SET status='planned' WHERE id=?", (clip["id"],))
     return made
+
+
+def resort(account_id):
+    """Po zmene kampaní účtu: naplánované klipy jeho kampaní (na iných účtoch tej istej siete) presunie naň."""
+    acc = next((a for a in store.accounts() if a["id"] == account_id), None)
+    if not acc or not acc["camps"] or not acc["active"]:
+        return 0
+    n = 0
+    for p in store.q(f"SELECT p.id FROM posts p {LIVE} AND p.platform=? AND p.account_id!=? AND c.campaign_id IN "
+                     f"({','.join('?' * len(acc['camps']))}) AND p.scheduled_at>? ORDER BY p.scheduled_at",
+                     (acc["platform"], account_id, *acc["camps"], store.now())):
+        store.run("UPDATE posts SET account_id=?, scheduled_at='2099-01-01 00:00:00' WHERE id=?", (account_id, p["id"]))
+        store.run("UPDATE posts SET scheduled_at=? WHERE id=?", (next_slot(account_id, acc["per_day"]), p["id"]))
+        n += 1
+    return n
 
 
 # ---------- zverejnenie ----------
