@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -130,22 +131,29 @@ def callback(code, project_id=None, lang=""):
                    ("tiktok", name, oid, project_id, lang, json.dumps(d)))]
 
 
+_REFRESH = threading.Lock()
+
+
 def access_token(account):
-    t = tokens(account)
-    if t.get("expires_at", 0) > time.time():
+    """Platný token účtu. Obnova len v jednom vlákne naraz a vždy s najnovším uloženým tokenom:
+    TikTok pri obnove vydá nový refresh token a starý zneplatní, takže dve súbežné obnovy by účet odpojili."""
+    with _REFRESH:
+        row = db.one("SELECT * FROM accounts WHERE id=?", (account["id"],)) or account
+        t = tokens(row)
+        if t.get("expires_at", 0) > time.time():
+            return t["access_token"]
+        app_id, sec = creds()
+        with client() as c:
+            try:
+                n = _env(c.post(f"{API}/tt_user/oauth2/refresh_token/", json={
+                    "client_id": app_id, "client_secret": sec, "grant_type": "refresh_token",
+                    "refresh_token": t.get("refresh_token", "")}), "TikTok obnovenie")
+            except PlatformError as e:
+                raise PlatformError(f"TikTok prihlásenie vypršalo, pripoj účet znova. ({e})")
+        n["expires_at"] = time.time() + int(n.get("expires_in") or 82800) - 300
+        t.update(n)
+        save_tokens(account["id"], t)
         return t["access_token"]
-    app_id, sec = creds()
-    with client() as c:
-        try:
-            n = _env(c.post(f"{API}/tt_user/oauth2/refresh_token/", json={
-                "client_id": app_id, "client_secret": sec, "grant_type": "refresh_token",
-                "refresh_token": t.get("refresh_token", "")}), "TikTok obnovenie")
-        except PlatformError:
-            raise PlatformError("TikTok prihlásenie vypršalo, pripoj účet znova.")
-    n["expires_at"] = time.time() + int(n.get("expires_in") or 82800) - 300
-    t.update(n)
-    save_tokens(account["id"], t)
-    return t["access_token"]
 
 
 def upload(account, video, privacy="public"):
