@@ -37,6 +37,12 @@ while true; do
     sleep 3
   else
     fails=0
-    python -m pip install -q -r requirements.txt >/dev/null 2>&1
+    # po aktualizácii: knižnice doinštalovať len keď sa zmenil ich zoznam (inak zbytočne zdrží štart)
+    req="$(cksum requirements.txt 2>/dev/null)"
+    if [ "$req" != "$(cat data/.req_ok 2>/dev/null)" ]; then
+      python -m pip install -q -r requirements.txt >/dev/null 2>&1 && echo "$req" > data/.req_ok
+    fi
+    # novú verziu práve nainštalovala appka sama, pri štarte ju netreba hľadať znova
+    export SM_SKIP_UPDATE=1
   fi
 done
