@@ -1374,15 +1374,107 @@ def _capture(job):
     return cover, over
 
 
+def _render_dir():
+    d = Path(db.DATA_DIR) / "render_jobs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _job_key(job):
+    """Rovnaké video = rovnaký kľúč (bez ciest výstupu), aby appka po reštarte našla rozrobené skladanie."""
+    import hashlib
+    import pickle
+    j = dict(job, cmd=list(job["cmd"][:-1]), thumb=bool(job.get("thumb")))
+    return hashlib.sha1(pickle.dumps(sorted(j.items(), key=lambda kv: kv[0]), protocol=4)).hexdigest()[:20]
+
+
+def _alive(pid):
+    import os
+    try:
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
 def capture_job(job):
     """Skladanie v samostatnom procese s nižšou prioritou: appka (stránky, plánovač) ostane svižná aj pri 4 videách naraz.
+    17.11.: proces beží nezávisle od appky. Keď sa appka reštartuje (aktualizácia), skladanie pokračuje
+    a nová appka si hotové video prevezme (rovnaký kľúč úlohy), nič sa neskladá znova.
     Keď sa samostatný proces nedá spustiť (nečakaná chyba prostredia), poskladá sa to postaru priamo v appke."""
+    import os
+    import pickle
+    import shutil
+    import sys
+    import time as _t
+    if db.get_setting("render_inproc", False):
+        return _capture(job)
+    if job.get("check_only"):
+        return _capture_child(job)
+    d = _render_dir() / _job_key(job)
+    d.mkdir(exist_ok=True)
+    (d / "claimed").write_text(str(os.getpid()))
+    res_path, vid, th = d / "res.pkl", d / "video.mp4", d / "thumb.jpg"
+    out, thumb = job["cmd"][-1], job.get("thumb") or ""
+
+    def take():
+        res = pickle.loads(res_path.read_bytes())
+        if isinstance(res, dict) and "error" in res:
+            raise RuntimeError(res["error"])
+        if not (isinstance(res, dict) and "cover" in res and vid.exists()):
+            return None
+        shutil.move(str(vid), out)
+        if thumb and th.exists():
+            shutil.move(str(th), thumb)
+        shutil.rmtree(d, ignore_errors=True)
+        return res["cover"], res["over"]
+
+    try:
+        pid = int((d / "pid").read_text()) if (d / "pid").exists() else 0
+    except Exception:
+        pid = 0
+    if not res_path.exists() and not (pid and _alive(pid)):
+        for f in (res_path, vid, th):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        job2 = dict(job, cmd=list(job["cmd"][:-1]) + [str(vid)], thumb=str(th) if thumb else "")
+        proc = subprocess.Popen([sys.executable, "-m", "app.render_child", str(res_path)], stdin=subprocess.PIPE,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(db.BASE_DIR), start_new_session=True)
+        (d / "pid").write_text(str(proc.pid))
+        proc.stdin.write(pickle.dumps(job2))
+        proc.stdin.close()
+        pid = proc.pid
+        t0 = _t.time()
+        while proc.poll() is None and _t.time() - t0 < 4 * 3600:
+            _t.sleep(3)
+    else:   # skladanie začala predošlá appka a ešte beží: počkaj naň
+        t0 = _t.time()
+        while not res_path.exists() and pid and _alive(pid) and _t.time() - t0 < 4 * 3600:
+            (d / "claimed").write_text(str(os.getpid()))
+            _t.sleep(5)
+        _t.sleep(1)
+    try:
+        r = take() if res_path.exists() else None
+    except RuntimeError:
+        shutil.rmtree(d, ignore_errors=True)
+        raise
+    except Exception:
+        r = None
+    if r:
+        return r
+    shutil.rmtree(d, ignore_errors=True)
+    print("samostatné skladanie nefungovalo, skladám v appke")
+    return _capture(job)
+
+
+def _capture_child(job):
+    """Kontrola vopred (len pár snímok): krátka, beží ako dieťa appky."""
     import os
     import pickle
     import sys
     import tempfile
-    if db.get_setting("render_inproc", False):
-        return _capture(job)
     fd, res_path = tempfile.mkstemp(suffix=".render")
     os.close(fd)
     try:
@@ -1403,6 +1495,34 @@ def capture_job(job):
         except OSError:
             pass
     return _capture(job)
+
+
+def render_jobs_cleanup(started):
+    """Po štarte appky: rozrobené skladanie, ktoré si nová appka do 20 minút neprevzala (video už nikto nechce),
+    sa zastaví; staré zvyšky sa zmažú."""
+    import os
+    import shutil
+    import signal
+    import time as _t
+    try:
+        base = _render_dir()
+    except Exception:
+        return
+    for d in base.iterdir():
+        try:
+            cl = d / "claimed"
+            claimed_now = cl.exists() and cl.stat().st_mtime >= started
+            pid = int((d / "pid").read_text()) if (d / "pid").exists() else 0
+            if pid and _alive(pid) and not claimed_now:
+                try:
+                    os.killpg(pid, signal.SIGTERM)
+                except Exception:
+                    os.kill(pid, signal.SIGTERM)
+                shutil.rmtree(d, ignore_errors=True)
+            elif not (pid and _alive(pid)) and _t.time() - d.stat().st_mtime > 6 * 3600:
+                shutil.rmtree(d, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def _all_black(path, length):
