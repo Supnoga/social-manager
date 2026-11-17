@@ -1701,7 +1701,7 @@ def _kill_orphans():
     Pri štarte ich ukončí (len tie, ktorým rodič zanikol, ppid 1)."""
     import signal
     import subprocess as sp
-    marks = ("app.render_child", "tts_local.py", "tools/stt.py")
+    marks = ("tts_local.py", "tools/stt.py")   # skladanie videa (render_child) sa nezastavuje: nová appka ho prevezme
     try:
         out = sp.run(["ps", "-Ao", "pid=,ppid=,pgid=,command="], capture_output=True, text=True, timeout=20, stdin=sp.DEVNULL).stdout
     except Exception:
@@ -1712,7 +1712,8 @@ def _kill_orphans():
         if len(parts) < 4 or not parts[0].isdigit():
             continue
         pid, ppid, pgid, cmd = int(parts[0]), parts[1], int(parts[2]), parts[3]
-        if ppid != "1" or pid == me or not any(m in cmd for m in marks):
+        old_render = "app.render_child" in cmd and "render_jobs" not in cmd   # starý spôsob skladania: nová appka ho neprevezme
+        if ppid != "1" or pid == me or not (old_render or any(m in cmd for m in marks)):
             continue
         try:
             if pgid == pid:      # vlastná skupina (start_new_session): zastaví aj prehliadač a ffmpeg pod ním
@@ -2754,9 +2755,11 @@ def _render_status_slow():
 
 
 def _busy():
+    """Čo nesmie prerušiť reštart. 17.11. (1.95.0): mesačná výroba a prerábanie sem nepatria: skladanie videa beží
+    v samostatnom procese, ktorý reštart prežije, a po štarte si ho appka prevezme (výroba aj prerábanie pokračujú samy)."""
     return (any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
-            or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
-            or brand._fix_state["running"] or _RERENDER["running"]
+            or AUTO.get("running") or SCRIPTS["running"] or _remap_state["running"]
+            or brand._fix_state["running"]
             or bool(_clip_worker() and _clip_worker().busy()))
 
 
@@ -2900,6 +2903,13 @@ def main():
     updater.background_checker(_busy, drain=_drain,
                                user_active=lambda: time.time() - LAST_UI["t"] < 180)
     threading.Thread(target=_kill_orphans, daemon=True).start()
+    _started = time.time()
+
+    def _rj_cleanup():
+        time.sleep(20 * 60)
+        from . import explainer
+        explainer.render_jobs_cleanup(_started)
+    threading.Thread(target=_rj_cleanup, daemon=True).start()
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     threading.Thread(target=db.optimize, daemon=True).start()
     try:
