@@ -1297,7 +1297,7 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
               "[v][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]", "-map", "0:v", "-map", "[a]"]
     else:
         af = ["-map", "0:v", "-map", "1:a", "-af", "apad"]
-    cmd += af + ["-t", f"{length:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(fps),
+    cmd += af + ["-t", f"{length:.2f}", *media.h264(20), "-pix_fmt", "yuv420p", "-r", str(fps),
                  "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
     probe = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .7) * fps)): k for k, d in enumerate(sc_data)}
     probe2 = {min(n - 1, int((d["t0"] + (min(d["t1"], total) - d["t0"]) * .32) * fps)): k for k, d in enumerate(sc_data)}
