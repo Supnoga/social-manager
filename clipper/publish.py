@@ -173,6 +173,18 @@ LIVE = ("JOIN clips c ON c.id=p.clip_id JOIN campaigns k ON k.id=c.campaign_id "
         "WHERE p.status='queued' AND k.status='active'")      # pozastavená kampaň drží svoje klipy, nič z nej nejde von
 
 
+def replan():
+    """Po zmene dávok alebo počtu klipov denne: naplánované (ešte nezverejnené) klipy aktívnych kampaní rozloží nanovo."""
+    rows = store.q(f"SELECT p.id, p.account_id FROM posts p {LIVE} AND p.scheduled_at>? ORDER BY c.score DESC, p.scheduled_at",
+                   (store.now(),))
+    for r in rows:
+        store.run("UPDATE posts SET scheduled_at='2099-01-01 00:00:00' WHERE id=?", (r["id"],))
+    per = {a["id"]: a["per_day"] for a in store.accounts()}
+    for r in rows:
+        store.run("UPDATE posts SET scheduled_at=? WHERE id=?", (next_slot(r["account_id"], per.get(r["account_id"], 3)), r["id"]))
+    return len(rows)
+
+
 def batch_now():
     """Zverejní dávku hneď: z každého účtu jeho najbližší naplánovaný klip (ktorý ešte nečaká na zverejnenie). Vráti počet."""
     n, now = 0, store.now()

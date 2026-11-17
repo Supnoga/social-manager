@@ -367,6 +367,8 @@ async def settings_save(request: Request):
         store.put("ai_per_day", int(min(40, max(0, _num(d["ai_per_day"], 6)))))
     if "min_score" in d:
         store.put("min_score", min(10.0, max(1.0, _num(d["min_score"], 6))))
+    if d.get("replan"):
+        publish.replan()
     if d.get("refresh_stats"):
         threading.Thread(target=track.tick, kwargs={"force": True}, daemon=True).start()
     return {"ok": True, "settings": _settings()}
