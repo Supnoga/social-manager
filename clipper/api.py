@@ -298,6 +298,8 @@ async def post_edit(post_id: int, request: Request):
         store.run("UPDATE posts SET paid=?, submit='paid' WHERE id=?", (max(0.0, _num(d["paid"])), post_id))
     if "url" in d and str(d["url"]).startswith("http"):
         store.run("UPDATE posts SET url=? WHERE id=?", (str(d["url"]).strip()[:500], post_id))
+    if d.get("now") and p["status"] == "queued":      # tento jeden klip zverejniť hneď (bez ostatných účtov)
+        store.run("UPDATE posts SET scheduled_at=? WHERE id=?", (store.now(), post_id))
     if d.get("retry") and p["status"] == "failed":
         store.run("UPDATE posts SET status='queued', attempts=0, error='', scheduled_at=? WHERE id=?", (store.now(), post_id))
     return {"ok": True}
