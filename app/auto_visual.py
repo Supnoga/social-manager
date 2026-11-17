@@ -835,7 +835,7 @@ def upgrade(d, scene, spoken, used, lang="en", prev=None, long=False, full="", t
     if not hit or hit[0] not in PRECISE or hit[0] == "actors":   # len stroje s presným modelom; inak účastníci scény nakreslení („kto komu“)
         return actors(d) or d
     m, labels = hit
-    if used.get(m, 0) >= (3 if long else 2) or prev == m:
+    if used.get(m, 0) >= (4 if long else 3) or prev == m:
         return actors(d) or d
     used[m] = used.get(m, 0) + 1
     used["_last"] = (m, "")
