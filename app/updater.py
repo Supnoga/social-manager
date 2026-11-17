@@ -7,6 +7,7 @@ Spôsoby:
 import io
 import os
 import shutil
+import time
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,20 @@ def _backup(names):
             shutil.copy2(src, PREV / name)
 
 
+def _copy_dir(src, dest):
+    """Prepíše priečinok kódu. Keď sa kopírovanie raz nepodarí (súbor práve číta iný proces),
+    skúsi to znova a prepisuje na mieste, aby appka neostala s polovičným kódom (17.11.)."""
+    shutil.rmtree(dest, ignore_errors=True)
+    for i in range(3):
+        try:
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+            return
+        except shutil.Error:
+            if i == 2:
+                raise
+            time.sleep(2)
+
+
 def restore_prev():
     """Vráti kód spred poslednej aktualizácie. Vráti verziu, na ktorú sa vrátil, alebo ''."""
     if not (PREV / "app" / "main.py").exists():
@@ -111,8 +126,7 @@ def apply_zip(data: bytes):
                 continue
             dest = BASE / item.name
             if item.is_dir():
-                shutil.rmtree(dest, ignore_errors=True)
-                shutil.copytree(item, dest)
+                _copy_dir(item, dest)
             else:
                 shutil.copy2(item, dest)
     for f in list(BASE.glob("*.command")) + list(BASE.glob("*.sh")):  # zip nenesie práva na spustenie
