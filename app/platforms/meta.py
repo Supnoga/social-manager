@@ -158,8 +158,11 @@ def upload_instagram(account, video, privacy="public"):
         cont = r.json()
         cid = cont["id"]
         uri = cont.get("uri") or f"https://rupload.facebook.com/ig-api-upload/{ver()}/{cid}"
-        check(c.post(uri, headers=dict(auth, offset="0", file_size=str(size)),
-                     content=file_chunks(video["file_path"])), "IG nahrávanie")
+        # Meta chce buď Content-Length s X-Entity-Length, alebo len Transfer-Encoding: posielame celý súbor naraz
+        with open(video["file_path"], "rb") as fh:
+            body = fh.read()
+        check(c.post(uri, headers=dict(auth, offset="0", file_size=str(size), **{"X-Entity-Length": str(size)}),
+                     content=body), "IG nahrávanie")
         # čakanie na spracovanie
         for _ in range(120):
             s = check(c.get(U(cid), headers=auth, params=dict(q, fields="status_code,status")), "IG stav").json()
