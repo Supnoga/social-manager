@@ -104,10 +104,30 @@ def _publish_one():
     post = publish.due()
     if not post:
         return False
-    _work("Zverejňujem klip")
-    if publish.publish(post):
-        _notify()
+    STATE["publishing"] = True
+    try:
+        if publish.publish(post):
+            _notify()
+    finally:
+        STATE["publishing"] = False
     return True
+
+
+def _pub_loop():
+    """Zverejňovanie beží samo, popri sťahovaní a strihu: dlhé stiahnutie (3-hodinový stream) nesmie zdržať dávku,
+    lebo kampane berú odkaz len 30 minút od zverejnenia."""
+    time.sleep(30)
+    while True:
+        wait = 15
+        try:
+            if not store.get("paused", False):
+                _plan()
+                if _publish_one():
+                    wait = 1
+        except Exception:
+            traceback.print_exc()
+            wait = 60
+        time.sleep(wait)
 
 
 def _notify():
@@ -157,10 +177,8 @@ def tick():
         env.ensure()                         # nástroje sa pripravia až vtedy, keď Clipper niekto naozaj používa
     did = False
     try:
-        did = _publish_one()                 # zverejnenie má prednosť: časy sú naplánované
-        if not did and not STATE["drain"] and env.ready():
+        if not STATE["drain"] and env.ready():    # zverejňovanie má vlastné vlákno (_pub_loop)
             did = _fetch_one() or _render_one() or _pick_one()
-        _plan()
         track.tick()
         _cleanup()
     finally:
@@ -194,3 +212,4 @@ def start():
         return
     STATE["started"] = True
     threading.Thread(target=_loop, daemon=True, name="clipper").start()
+    threading.Thread(target=_pub_loop, daemon=True, name="clipper-publish").start()
