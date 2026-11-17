@@ -1685,7 +1685,11 @@ def _mp_start(data):
     """Spustí mesačnú výrobu a zapíše si ju, aby po reštarte appky (aktualizácia, pád, reštart Macu) pokračovala sama."""
     if MPROD["running"]:
         return
-    job = {"workers": int(data.get("workers") or 3), "until": data.get("until") or "", "publish": bool(data.get("publish"))}
+    try:   # 17.11.: počet videí naraz riadi nastavenie render_parallel (rovnaké pre skladanie aj výrobu)
+        par = max(1, min(6, int(db.get_setting("render_parallel", 4) or 4)))
+    except Exception:
+        par = 4
+    job = {"workers": max(int(data.get("workers") or 3), par), "until": data.get("until") or "", "publish": bool(data.get("publish"))}
     db.set_setting("month_plan_job", job)
     MPROD.update(running=True, log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=job["publish"])
     threading.Thread(target=_mp_run, args=(job["workers"], job["until"]), daemon=True).start()
