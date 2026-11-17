@@ -480,6 +480,8 @@ def rerender(data: dict = Body(...)):
             _RERENDER["running"] = True
             try:
                 for _, vid, sid in todo:
+                    if _RERENDER.get("drain"):
+                        break
                     _RERENDER["current"] = vid
                     try:
                         v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
@@ -1732,6 +1734,17 @@ def _kill_orphans():
                 pass
 
 
+def _rerender_resume():
+    try:
+        left = db.get_setting("rerender_todo", []) or []
+        if left and not _RERENDER["running"]:
+            sids = sorted({r["script_id"] for r in db.q("SELECT script_id FROM videos WHERE id IN (%s)" % ",".join("?" * len(left)), tuple(left)) if r["script_id"]})
+            if sids:
+                rerender({"script_ids": sids})
+    except Exception:
+        pass
+
+
 def _mp_autoresume():
     """Po štarte appky: rozbehnutá mesačná výroba pokračuje (čo už je vyrobené, si pamätá month_plan_made)."""
     import time as _t
@@ -1745,20 +1758,12 @@ def _mp_autoresume():
     if job and not MPROD["running"]:
         _mp_start(job)
         MPROD["log"].append(f"{dt_now()} pokračujem po reštarte appky")
-    # 17.11.: rozrobené prerábanie videí pokračuje samo (predtým ho reštart po aktualizácii zastavil)
-    try:
-        left = db.get_setting("rerender_todo", []) or []
-        if left and not _RERENDER["running"]:
-            sids = sorted({r["script_id"] for r in db.q("SELECT script_id FROM videos WHERE id IN (%s)" % ",".join("?" * len(left)), tuple(left)) if r["script_id"]})
-            if sids:
-                rerender({"script_ids": sids})
-    except Exception:
-        pass
+    _rerender_resume()   # 17.11.: rozrobené prerábanie videí pokračuje samo
 
 
 def _drain(on):
     """Pred aktualizáciou: výroba dokončí rozrobené a nové nezačne. Keď sa aktualizácia nekoná, pustí ju ďalej."""
-    for st in (MPROD, PROD, SCRIPTS):
+    for st in (MPROD, PROD, SCRIPTS, _RERENDER):
         st["drain"] = bool(on)
     if _clip_worker():
         _clip_worker().STATE["drain"] = bool(on)
@@ -1766,6 +1771,7 @@ def _drain(on):
         job = db.get_setting("month_plan_job")
         if job and not MPROD["running"]:
             _mp_start(job)
+        _rerender_resume()
 
 
 @app.get("/api/month-plan/produce")
@@ -2743,12 +2749,51 @@ def _render_status_slow():
     return out
 
 
+def _busy():
+    return (any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
+            or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
+            or brand._fix_state["running"] or _RERENDER["running"]
+            or bool(_clip_worker() and _clip_worker().busy()))
+
+
+_UPD_WAIT = {"on": False}
+
+
 @app.post("/api/update/github")
-def update_github():
-    r = updater.check_github(apply=True)
-    if r.get("updated"):
-        updater.restart()
-    return r
+def update_github(data: dict = Body(default={})):
+    """17.11.: aktualizácia na požiadanie už nepreruší rozrobené videá. Keď appka niečo skladá, výroba dokončí
+    rozrobené (nové nezačne), potom sa appka aktualizuje a reštartuje a výroba aj prerábanie pokračujú samy.
+    {"now": true} = reštart hneď (len v núdzi)."""
+    if data.get("now") or not _busy():
+        r = updater.check_github(apply=True)
+        if r.get("updated"):
+            updater.restart()
+        return r
+    if _UPD_WAIT["on"]:
+        return {"waiting": True, "note": "aktualizácia už čaká na dokončenie rozrobených videí"}
+    _UPD_WAIT["on"] = True
+
+    def wait_then_update():
+        updated = False
+        _drain(True)
+        try:
+            for _ in range(180 * 4):      # najviac 3 hodiny
+                if not _busy():
+                    break
+                time.sleep(15)
+            if not _busy():
+                r = updater.check_github(apply=True)
+                if r.get("updated"):
+                    updated = True
+                    updater.restart()
+        except Exception as e:
+            print("aktualizácia po dokončení:", e)
+        finally:
+            _UPD_WAIT["on"] = False
+            if not updated:
+                _drain(False)
+    threading.Thread(target=wait_then_update, daemon=True).start()
+    return {"waiting": True, "note": "aktualizácia sa nainštaluje hneď, ako sa dokončia rozrobené videá"}
 
 
 @app.post("/api/update/zip")
@@ -2848,10 +2893,7 @@ def main():
         radar.start()  # trendy, konkurencia, čísla našich videí (na pozadí, bez AI)
     except Exception:
         pass
-    updater.background_checker(lambda: any(not j.get("done") for j in list(JOBS.values())) or PROD["running"] or bool(scheduler.state.get("current"))
-                               or AUTO.get("running") or MPROD["running"] or SCRIPTS["running"] or _remap_state["running"]
-                               or brand._fix_state["running"] or _RERENDER["running"]
-                               or bool(_clip_worker() and _clip_worker().busy()), drain=_drain,
+    updater.background_checker(_busy, drain=_drain,
                                user_active=lambda: time.time() - LAST_UI["t"] < 180)
     threading.Thread(target=_kill_orphans, daemon=True).start()
     threading.Thread(target=_mp_autoresume, daemon=True).start()
