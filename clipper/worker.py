@@ -124,6 +124,9 @@ def _pub_loop():
                 _plan()
                 if _publish_one():
                     wait = 1
+                elif time.time() - STATE.get("links_at", 0) > 60:
+                    STATE["links_at"] = time.time()
+                    publish.fill_links()
         except Exception:
             traceback.print_exc()
             wait = 60
