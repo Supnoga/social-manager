@@ -182,7 +182,8 @@ def _thumb_field(ideas):
     if not any(i.get("format") == "long" for i in ideas):
         return ""
     return (',\n"thumb":{{"text":"LONG VIDEOS ONLY: 2-4 words for the thumbnail, max 24 chars, does NOT repeat the title, adds tension or curiosity '
-            '(a surprising number, a verdict, a question), e.g. \'IT\'S FREE HEAT?\' or \'$1 = 30 YEARS\'","scene":"index (0-based) of the most striking, '
+            '(a surprising number, a verdict, a question) AND names the main object so a stranger knows the topic at a glance '
+            '(e.g. \'HEAT PUMP AT -20°C?\', \'SINKHOLE: ONE LEAK\', \'NOKIA SOLD BOOTS\'; never vague like \'THE SPOON LIES\' or a bare sum)","scene":"index (0-based) of the most striking, '
             'most visual scene that shows the main object, not a number chart"}}').replace("{{", "{").replace("}}", "}")
 
 

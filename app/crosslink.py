@@ -64,7 +64,33 @@ def pick(account, video, before, seed=0):
     return None
 
 
+FULL = {"en": "Full video", "de": "Ganzes Video", "fr": "Vidéo complète", "es": "Video completo", "it": "Video completo",
+        "pl": "Cały film", "cs": "Celé video", "sk": "Celé video", "hu": "Teljes videó", "nl": "Volledige video", "pt": "Vídeo completo"}
+
+
+def long_for_short(account, video, before):
+    """Short: dlhé video z toho istého kanála, z ktorého Short vznikol, inak najnovšie verejné dlhé. Vráti (názov, yt_id) alebo None.
+    Diváci Shorts takmer nikdy neprejdú na dlhé video sami (dáta 18.11.: 0 pozretí dlhých zo Shorts)."""
+    if not account or account.get("platform") != "youtube" or is_long(video):
+        return None
+    base = """SELECT v.title, p.external_id FROM posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
+              JOIN ideas i ON i.id=s.idea_id WHERE p.account_id=? AND p.status='done' AND COALESCE(p.external_id,'')!=''
+              AND i.format='long' AND p.scheduled_at<=? """
+    r = None
+    par = db.one("SELECT i.parent_id FROM scripts s JOIN ideas i ON i.id=s.idea_id WHERE s.id=?", (video.get("script_id") or 0,))
+    if par and (par["parent_id"] or 0) > 0:
+        r = db.one(base + "AND i.id=? ORDER BY p.scheduled_at DESC LIMIT 1", (account["id"], before, par["parent_id"]))
+    r = r or db.one(base + "ORDER BY p.scheduled_at DESC LIMIT 1", (account["id"], before))
+    return ((r["title"] or "").strip(), r["external_id"]) if r else None
+
+
 def line(account, video, before, seed=0):
+    if account and account.get("platform") == "youtube" and not is_long(video):
+        r = long_for_short(account, video, before)
+        if not r:
+            return ""
+        lab = FULL.get((video.get("lang") or "en")[:2], FULL["en"])
+        return f"{lab}: {r[0]} https://youtu.be/{r[1]}" if r[0] else f"{lab}: https://youtu.be/{r[1]}"
     r = pick(account, video, before, seed)
     if not r:
         return ""

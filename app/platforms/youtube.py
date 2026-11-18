@@ -429,9 +429,14 @@ def upload(account, video, privacy="public", publish_at=None):
         if os.path.exists(thumb):  # dlhé video: vlastný náhľad (ak ho kanál má povolený; inak YouTube vyberie sám)
             try:
                 with open(thumb, "rb") as f:
-                    c.post("https://www.googleapis.com/upload/youtube/v3/thumbnails/set", params={"videoId": vid},
-                           headers={"Authorization": f"Bearer {tok}", "Content-Type": "image/jpeg"}, content=f.read())
+                    tr = c.post("https://www.googleapis.com/upload/youtube/v3/thumbnails/set", params={"videoId": vid},
+                                headers={"Authorization": f"Bearer {tok}", "Content-Type": "image/jpeg"}, content=f.read())
                 count_units(account, U_THUMB)
+                if tr.status_code >= 300:  # predtým sa chyba stratila; kanál bez overenia telefónom vlastný náhľad nedostane
+                    fails = db.get_setting("yt_thumb_fail") or {}
+                    fails[account.get("name") or str(account.get("id"))] = f"{tr.status_code} {tr.text[:160]}"
+                    db.set_setting("yt_thumb_fail", fails)
+                    print("YouTube náhľad:", tr.status_code, tr.text[:200])
             except Exception as e:
                 print("YouTube náhľad:", e)
     count_upload(account)
@@ -606,15 +611,22 @@ def add_related(account, video_id, text):
             return
         sn = items[0]["snippet"]
         desc = sn.get("description") or ""
-        if text not in desc:
-            sn["description"] = (desc.rstrip() + "\n\n" + text)[:4900]
-            body = {"id": video_id, "snippet": {k: sn[k] for k in ("title", "description", "tags", "categoryId",
-                                                                   "defaultLanguage", "defaultAudioLanguage") if k in sn}}
-            check(c.put("https://www.googleapis.com/youtube/v3/videos", params={"part": "snippet"}, headers=h, json=body),
-                  "YouTube popis")
-            count_units(account, U_UPDATE + U_COMMENT)
+        link = text.split()[-1].replace("https://youtu.be/", "")
+        if text in desc:
+            return
+        if link and link in desc:  # Short už má odkaz na celé video v popise: pridá len komentár
+            count_units(account, U_COMMENT)
             c.post("https://www.googleapis.com/youtube/v3/commentThreads", params={"part": "snippet"}, headers=h,
                    json={"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text}}}})
+            return
+        sn["description"] = (desc.rstrip() + "\n\n" + text)[:4900]
+        body = {"id": video_id, "snippet": {k: sn[k] for k in ("title", "description", "tags", "categoryId",
+                                                               "defaultLanguage", "defaultAudioLanguage") if k in sn}}
+        check(c.put("https://www.googleapis.com/youtube/v3/videos", params={"part": "snippet"}, headers=h, json=body),
+              "YouTube popis")
+        count_units(account, U_UPDATE + U_COMMENT)
+        c.post("https://www.googleapis.com/youtube/v3/commentThreads", params={"part": "snippet"}, headers=h,
+               json={"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text}}}})
 
 
 def delete_video(account, video_id):

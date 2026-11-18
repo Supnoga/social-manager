@@ -1008,13 +1008,24 @@ window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s
 CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;if(GD)GD.x.canvas.style.display='none';
 const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';s.vz.querySelectorAll('.phud').forEach(e=>e.style.display='none');
 GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';
-const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?820:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
+const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?720:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
 T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length-1?'var(--acc)':'#fff'}">${esc(w)}</span>`).join(' ');s.w.append(T);
-fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?820:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}
+fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?720:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}
 // obraz dostane miesto, ktoré ostalo vedľa textu (na šírku) alebo pod ním (na výšku), a zmenší sa tak, aby sa doň zmestil celý
 const Z=s.pro&&window.KIT?KIT.ZN:{l:0,t:0,w:864,h:560},rg=document.createRange();rg.selectNodeContents(T);const tr=rg.getBoundingClientRect(),wr=s.w.getBoundingClientRect(),kx=wr.width/PW;
-const x0=WIDE?(tr.right-wr.left)/kx+44:60,x1=WIDE?1880:1020,y0=WIDE?70:(tr.bottom-wr.top)/kx+40,y1=WIDE?1010:1790,sc=Math.min(WIDE?1.42:1.25,(x1-x0)/Z.w,(y1-y0)/Z.h);
-s.vz.style.opacity=1;s.vz.style.transform=`scale(${sc})`;s.vz.style.left=((x0+x1)/2-432-(Z.l+Z.w/2-432)*sc)+'px';s.vz.style.top=((y0+y1)/2-280-(Z.t+Z.h/2-280)*sc)+'px'};
+const x0=WIDE?(tr.right-wr.left)/kx+44:60,x1=WIDE?1860:1020,y0=WIDE?90:(tr.bottom-wr.top)/kx+40,y1=WIDE?990:1790;
+// náhľad sa pozerá v malom: obraz sa zväčší podľa toho, čo v ňom naozaj je (nie podľa celej zóny), aby nebol malý v prázdnej tme
+let C=Z;try{s.vz.style.transform='none';const vr=s.vz.getBoundingClientRect();let a=1e9,b=1e9,c=-1e9,d=-1e9;
+s.vz.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,line,text,image,use,img,canvas').forEach(e=>{if(e.closest('.phud,defs,clipPath,mask,pattern'))return;const r=e.getBoundingClientRect();if(r.width<2&&r.height<2)return;const cs=getComputedStyle(e);if(cs.visibility=='hidden'||cs.display=='none')return;
+let L=(r.left-vr.left)/kx,T2=(r.top-vr.top)/kx,W=r.width/kx,H=r.height/kx;
+if(e.tagName=='CANVAS'&&e.width>8&&e.height>8){try{const g=e.getContext('2d'),q=g&&g.getImageData(0,0,e.width,e.height).data;if(q){let p=1e9,o=1e9,u=-1,n=-1;const st=3;
+for(let y=0;y<e.height;y+=st)for(let x=0;x<e.width;x+=st){const k=(y*e.width+x)*4;if(q[k+3]>40&&q[k]+q[k+1]+q[k+2]>90){if(x<p)p=x;if(x>u)u=x;if(y<o)o=y;if(y>n)n=y}}
+if(u<0)return;const fx=W/e.width,fy=H/e.height;L+=p*fx;T2+=o*fy;W=(u-p+st)*fx;H=(n-o+st)*fy}}catch(_){}}
+if(W>1500||H>1000)return;a=Math.min(a,L);b=Math.min(b,T2);c=Math.max(c,L+W);d=Math.max(d,T2+H)});
+if(c-a>40&&d-b>40){const m=16;C={l:a-m,t:b-m,w:c-a+2*m,h:d-b+2*m}}}catch(e){C=Z}
+const sc=Math.min(C===Z?(WIDE?1.42:1.25):(WIDE?2.6:2.2),(x1-x0)/C.w,(y1-y0)/C.h);
+s.vz.style.opacity=1;s.vz.style.transform=`scale(${sc})`;s.vz.style.left=((x0+x1)/2-432-(C.l+C.w/2-432)*sc)+'px';s.vz.style.top=((y0+y1)/2-280-(C.t+C.h/2-280)*sc)+'px';
+GLOW.style.opacity=.55};
 // kontrola prekrývania (bez AI) pre práve vykreslenú snímku: čo leží cez čo, hoci nemá. Vráti aj miesta textov, aby sa dalo overiť, že pod nimi nie je obraz.
 window.ovl=function(){const s=SC[window._cur||0],bad=new Set(),B=e=>{const b=e.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom]},U=q=>q.length?[Math.min(...q.map(b=>b.left)),Math.min(...q.map(b=>b.top)),Math.max(...q.map(b=>b.right)),Math.max(...q.map(b=>b.bottom))]:null,
 TX=e=>{const r=document.createRange();r.selectNodeContents(e);return U([...r.getClientRects()].filter(b=>b.width>1&&b.height>1))},
