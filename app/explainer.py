@@ -668,7 +668,7 @@ html,body{width:1080px;height:1920px;background:#000;overflow:hidden;font-family
 svg{position:absolute;left:0;top:0;overflow:visible}
 svg .d{fill:none;stroke-linecap:round;stroke-linejoin:round}
 #cap{position:absolute;left:72px;width:864px;top:1480px;text-align:center;font-family:var(--ft);font-size:60px;font-weight:700;line-height:1.2;color:#fff;text-shadow:0 4px 24px #000;text-wrap:balance}
-#cap span{color:rgba(255,255,255,.42)}#cap span.on{color:#fff}#cap span.k{color:var(--acc)}
+#cap span{color:rgba(255,255,255,.6)}#cap span.on{color:#fff}#cap span.k{color:var(--acc)}
 #lg{position:absolute;left:72px;top:196px;max-width:340px;max-height:88px;display:none}
 #end{position:absolute;inset:0;display:none;background:#000}
 #end .gl{position:absolute;left:-110px;top:310px;width:1300px;height:1300px;border-radius:50%;background:radial-gradient(circle,var(--acc) 0%,transparent 60%)}
@@ -990,7 +990,7 @@ s.fr.style.opacity=zo;if(i!=cur&&!home)return;
 const l2=i==0?lt:lt-.12;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
 const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>s.fast?1:E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=s.pro?`scale(${WIDE?1.28:1.1})`:`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${(WIDE?1.16:1.1)*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=s.pro?`scale(${WIDE?1.28:1.1})`:`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${1.16*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
 SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
@@ -1002,7 +1002,7 @@ let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e)
 if(GD)drawGuide(t,cur,ci>=0,ending);
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
-const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,24,58,GD?1160:1400);else fit(CAP,GD?54:60,30,150,GD?644:864);lastCap=ci}}
+const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,48,24,58,GD?1160:1400);else fit(CAP,GD?62:66,30,150,GD?644:864);lastCap=ci}}
 // náhľadový obrázok dlhého videa: veľký text vľavo, hlavný obraz vpravo, bez titulkov a lišty
 window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(window.THT!=null?Math.min(s.t1-.2,s.t0+window.THT*(s.t1-s.t0)):Math.max(s.t0+.1,s.t1-.2));
 CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;
