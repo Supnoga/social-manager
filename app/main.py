@@ -513,12 +513,24 @@ def rerender(data: dict = Body(...)):
     return {"started": len(todo), "videos": [vid for _, vid, _ in todo], "skipped_public": skipped}
 
 
+_swap_lock = threading.Lock()
+
+
 def _swap_old_shorts():
+    if not _swap_lock.acquire(blocking=False):   # beží už (slučka aj ručné spustenie naraz by robili všetko dvakrát)
+        return 0
+    try:
+        return _swap_old_shorts_run()
+    finally:
+        _swap_lock.release()
+
+
+def _swap_old_shorts_run():
     """18.11. (Oliver): hotové Shorts v starom štýle (~45 s, ešte nezverejnené) postupne vymeniť za nové (25-30 s).
     Denne najviac swap_per_day kusov (najbližšie dni prvé; náhrady sa nahrajú namiesto starých, denný limit 95 stačí na deň výroby). Scenár skráti lacný model,
     video sa zloží znova (rerender: staré súkromné ostane na YouTube skryté, nič sa nemaže), náhrada sa nahrá sama."""
     per_day = int(db.get_setting("swap_per_day", 70) or 0)
-    if per_day <= 0 or _RERENDER.get("running"):
+    if per_day <= 0 or _RERENDER.get("running") or db.get_setting("rerender_todo", []):
         return 0
     today = datetime.now().strftime("%Y-%m-%d")
     log = db.get_setting("swap_log", {}) or {}
