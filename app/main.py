@@ -1504,6 +1504,13 @@ def _mp_fix(iid, why):
     return ok, why2
 
 
+_MP_TL = threading.local()
+
+
+def _noai():
+    return bool(getattr(_MP_TL, "noai", False))
+
+
 def _mp_long(slot, tried):
     from . import monthplan
     pid, iid = slot["pid"], slot["idea"]
@@ -1518,9 +1525,13 @@ def _mp_long(slot, tried):
             return iid
         if iid in tried or have:   # téma už išla (náhrada inde / neprešla kontrolou)
             iid = 0
+        if iid and _noai() and not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
+            iid = 0   # bez scenára: za oknom zásoby sa AI nepoužíva, vezmi tému s hotovým scenárom
         if not iid:
             cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and r["has_script"]   # len hotové scenáre (bez AI)
                     and monthplan._cover(r["title"] or "")[0] != "gap"]
+            if not cand and _noai():
+                return None
             if not cand:   # 16.11.: kanál bez hotového scenára (napr. Borders, Flags) by ostal na 0: vezmi tému bez scenára (1 lacné AI volanie)
                 cand = [r for r in monthplan._longs(pid) if r["id"] not in tried and monthplan._cover(r["title"] or "")[0] != "gap"][:3]
             cand.sort(key=lambda r: (monthplan._cover(r["title"] or "")[0] != "model", not r["has_script"], -r["score"]))
@@ -1532,7 +1543,7 @@ def _mp_long(slot, tried):
             if not db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)):
                 content.run_task("scripts", {"idea_ids": [iid]})
             ok, why = _mp_precheck(iid)
-            if not ok:
+            if not ok and not _noai():
                 ok, why = _mp_fix(iid, why)
             if not ok:   # obraz by neprešiel: nevyrába sa, ide ďalšia téma
                 bad = db.get_setting("month_plan_bad", []) or []
@@ -1559,6 +1570,10 @@ def _mp_short(pid, lid):
         if MPROD["stop"]:
             return False
         kids = monthplan._children(lid)
+        if _noai():
+            kids = [k for k in kids if k["has_script"]]
+            if not kids:
+                return False
         if not kids:
             if attempt == 2:
                 return False
@@ -1573,7 +1588,7 @@ def _mp_short(pid, lid):
             if not k["has_script"]:
                 content.run_task("scripts", {"idea_ids": [k["id"]]})
             ok, why = _mp_precheck(k["id"])
-            if not ok:
+            if not ok and not _noai():
                 ok, why = _mp_fix(k["id"], why)
             if not ok:   # slabý obraz sa nevyrába (ušetrí hodinu skladania), ďalšie krátke z toho istého dlhého
                 db.run("UPDATE ideas SET status='rejected' WHERE id=?", (k["id"],))
@@ -1605,15 +1620,17 @@ def _mp_run(workers, until):
     plan = monthplan.get()
     made = db.get_setting("month_plan_made", {}) or {}   # čo už je vyrobené (prežije reštart appky)
     tasks = []   # (dátum, 0=dlhé/1=krátke, poradie, slot)
+    beyond = bool((db.get_setting("month_plan_job") or {}).get("scripted_beyond"))
     for p in plan["projects"]:
         slot = None
         for d in p["days"]:
-            if until and d["date"] > until:
+            noai = bool(until and d["date"] > until)
+            if noai and not beyond:
                 break
             if d.get("long"):
                 m = made.get(f"{p['id']}:{d['date']}") or {}
                 slot = {"pid": p["id"], "idea": d["long"]["idea_id"], "state": "wait", "final": 0, "date": d["date"],
-                        "skip": int(m.get("shorts") or 0)}
+                        "skip": int(m.get("shorts") or 0), "noai": noai}
                 if m.get("long"):
                     slot.update(state="ok", final=m["long"])
                 else:
@@ -1646,6 +1663,7 @@ def _mp_run(workers, until):
                 continue
             date, kind, pid, slot = t
             MPROD["step"].append(f"{date} kanál {pid} {'dlhé' if kind == 0 else 'krátke'}")
+            _MP_TL.noai = bool(slot.get("noai"))   # 18.11.: za oknom zásoby len hotové scenáre, bez AI
             try:
                 if kind == 0:
                     fin = _mp_long(slot, tried.setdefault(pid, set()))
@@ -1718,6 +1736,8 @@ def _mp_start(data):
         import datetime as _dt
         job["ahead"] = max(1, min(30, int(data["ahead"])))
         job["until"] = (_dt.date.today() + _dt.timedelta(days=job["ahead"])).isoformat()
+    if data.get("scripted_beyond"):   # za oknom ahead sa skladajú aj ďalšie videá, ale len z hotových scenárov (bez AI)
+        job["scripted_beyond"] = True
     db.set_setting("month_plan_job", job)
     MPROD.update(running=True, log=[], done={"long": 0, "short": 0}, failed={}, first={}, step=[], publish=job["publish"])
     threading.Thread(target=_mp_run, args=(job["workers"], job["until"]), daemon=True).start()
