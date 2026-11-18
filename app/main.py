@@ -1587,6 +1587,10 @@ def _mp_short(pid, lid):
         try:
             if not k["has_script"]:
                 content.run_task("scripts", {"idea_ids": [k["id"]]})
+            try:   # 18.11.: starý dlhší scenár Shorts skráti na 25-30 s (lacný model, pár desiatok slov)
+                content.shorten_short(k["id"])
+            except Exception as e:
+                MPROD["log"].append(f"kanál {pid}: skrátenie krátkeho {k['id']}: {str(e)[:100]}")
             ok, why = _mp_precheck(k["id"])
             if not ok and not _noai():
                 ok, why = _mp_fix(k["id"], why)

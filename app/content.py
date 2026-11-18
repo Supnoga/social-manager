@@ -626,3 +626,31 @@ Return JSON with the same shape: {{"<lang>":{{"<field>":"fixed text"}}}}"""
             for f, v in fields.items():
                 if f in ("title", "voiceover", "description", "caption") and isinstance(v, str) and v.strip():
                     db.run(f"UPDATE scripts SET {f}=?, qa='' WHERE idea_id=? AND lang=?", (v, src["idea_id"], lang))
+
+
+def shorten_short(idea_id):
+    """18.11. (Oliver): staré scenáre Shorts (~45 s) skráti na nové pravidlá (25-30 s, 1 veta na scénu, krátky koniec).
+    Lacný model, AI len vyberie scény a vety (obraz scén ostáva rovnaký, nič sa nekreslí nanovo). Vráti True, keď skrátil."""
+    sc = db.one("SELECT id, voiceover, scenes FROM scripts WHERE idea_id=? AND is_source=1", (idea_id,))
+    if not sc or len((sc["voiceover"] or "").split()) <= 95:
+        return False
+    scenes = json.loads(sc["scenes"] or "[]")
+    if len(scenes) < 3:
+        return False
+    items = {str(i): (x.get("visual") or x.get("onscreen") or "")[:120] for i, x in enumerate(scenes)}
+    data = ai.ask(f"""Shorten this YouTube Short voiceover to 65-80 words (25-30 s). Keep the hook as the first sentence and the main fact.
+Pick 5-8 of the existing scenes (by number, in order) and write exactly ONE spoken sentence for each picked scene that matches what that scene shows.
+The last sentence is max 8 words and says the full video is linked (e.g. "One case breaks this rule. Full video linked."). No greeting, no goodbye.
+Voiceover: {sc["voiceover"]}
+Scenes: {json.dumps(items, ensure_ascii=False)}
+Return JSON: {{"scenes":[<scene numbers>],"say":["sentence for each picked scene"]}}""", "shorten_short", "cheap")
+    keep, say = (data or {}).get("scenes") or [], (data or {}).get("say") or []
+    keep = [int(k) for k in keep if str(k).isdigit() and int(k) < len(scenes)]
+    if len(keep) < 3 or len(keep) != len(say) or not (50 <= len(" ".join(say).split()) <= 95):
+        return False
+    new = [scenes[k] for k in keep]
+    new[-1] = dict(new[-1], onscreen="Full video")
+    db.run("UPDATE scripts SET voiceover=?, scenes=? WHERE id=?",
+           (" ".join(str(x).strip() for x in say), json.dumps(new, ensure_ascii=False), sc["id"]))
+    return True
+
