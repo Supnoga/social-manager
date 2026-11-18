@@ -513,6 +513,45 @@ def rerender(data: dict = Body(...)):
     return {"started": len(todo), "videos": [vid for _, vid, _ in todo], "skipped_public": skipped}
 
 
+def _swap_old_shorts():
+    """18.11. (Oliver): hotové Shorts v starom štýle (~45 s, ešte nezverejnené) postupne vymeniť za nové (25-30 s).
+    Denne najviac swap_per_day kusov (najbližšie dni prvé; náhrady sa nahrajú namiesto starých, denný limit 95 stačí na deň výroby). Scenár skráti lacný model,
+    video sa zloží znova (rerender: staré súkromné ostane na YouTube skryté, nič sa nemaže), náhrada sa nahrá sama."""
+    per_day = int(db.get_setting("swap_per_day", 70) or 0)
+    if per_day <= 0 or _RERENDER.get("running"):
+        return 0
+    today = datetime.now().strftime("%Y-%m-%d")
+    log = db.get_setting("swap_log", {}) or {}
+    left = per_day - int(log.get(today) or 0)
+    if left <= 0:
+        return 0
+    soon = (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = db.q("""SELECT s.id sid, s.idea_id, MIN(p.scheduled_at) t FROM posts p JOIN videos v ON v.id=p.video_id
+                   JOIN scripts s ON s.id=v.script_id JOIN ideas i ON i.id=s.idea_id
+                   WHERE COALESCE(i.format,'short')='short' AND p.status IN ('queued','review') AND p.scheduled_at>=?
+                   AND NOT EXISTS (SELECT 1 FROM posts q WHERE q.video_id=v.id AND (q.status IN ('done','uploading')))
+                   GROUP BY s.id ORDER BY t LIMIT 200""", (soon,))
+    sids = []
+    for r in rows:
+        if len(sids) >= left:
+            break
+        try:
+            if content.shorten_short(r["idea_id"]):
+                sids.append(r["sid"])
+        except Exception as e:
+            print("výmena krátkeho:", e)
+    if sids:
+        rerender({"script_ids": sids})
+        log[today] = int(log.get(today) or 0) + len(sids)
+        db.set_setting("swap_log", {k: v for k, v in log.items() if k >= (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")})
+    return len(sids)
+
+
+@app.post("/api/swap-shorts")
+def swap_shorts_now():
+    return {"swapped": _swap_old_shorts()}
+
+
 @app.get("/api/rerender")
 def rerender_status():
     return dict(_RERENDER, todo=len(db.get_setting("rerender_todo", []) or []))
@@ -2977,6 +3016,16 @@ def main():
                 print("prestavanie plánu:", e)
             time.sleep(3 * 3600)
     threading.Thread(target=_plan_refresh, daemon=True).start()
+
+    def _swap_loop():
+        time.sleep(300)
+        while True:
+            try:
+                _swap_old_shorts()
+            except Exception as e:
+                print("výmena krátkych:", e)
+            time.sleep(20 * 60)
+    threading.Thread(target=_swap_loop, daemon=True).start()
     threading.Thread(target=_mp_autoresume, daemon=True).start()
     threading.Thread(target=db.optimize, daemon=True).start()
     try:
