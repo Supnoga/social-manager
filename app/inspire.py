@@ -446,7 +446,7 @@ def check_script(s, p=None, fmt="short"):
 
     add(first and fw <= 14, 3, f"Háčik je krátky ({fw} slov).", f"Prvá veta má {fw} slov. Skráť ju pod 14, ľudia sa rozhodnú za 2 sekundy.")
     add(first and not GREET.search(first), 2, "Nezačína pozdravom.", "Nezačínaj pozdravom ani predstavovaním, hneď prvou vetou povedz to najzaujímavejšie.")
-    lo, hi = (70, 170) if fmt == "short" else (600, 1300)
+    lo, hi = (55, 100) if fmt == "short" else (600, 1300)
     add(lo <= words <= hi, 2, f"Dĺžka sedí (~{round(words / 2.6)} s).",
         f"Text má {words} slov (~{round(words / 2.6)} s). Pre {'krátke video' if fmt == 'short' else 'dlhé video'} je ideál {lo}–{hi} slov.")
     avg = words / max(1, len(sents))
@@ -455,7 +455,7 @@ def check_script(s, p=None, fmt="short"):
     tail = " ".join(sents[-2:]) + " " + (s.get("caption") or "")
     add(CTA.search(tail), 2, "Na konci je výzva (sleduj, ulož, napíš…).", "Na konci chýba výzva. Pridaj napr. „Ulož si to“ alebo „Napíš do komentára…“.")
     add(not EMOJI.search(vo), 1, "Bez emoji v texte pre hlas.", "V texte pre hlas sú emoji, hlas ich nevie prečítať. Daj ich len do textu príspevku.")
-    add(4 <= len(scenes) <= 9, 1, f"{len(scenes)} scén, video bude mať tempo.", f"Scén je {len(scenes)}. Ideál je 4–8, aby sa obraz často menil.")
+    add(4 <= len(scenes) <= 9, 1, f"{len(scenes)} scén, video bude mať tempo.", f"Scén je {len(scenes)}. Ideál je 6–8, aby sa obraz často menil.")
     s1 = (scenes[0].get("onscreen") if scenes else "") or ""
     add(s1 and len(s1.split()) <= 7, 2, "Prvý text na obrazovke je krátky a výrazný.",
         "Prvý text na obrazovke chýba alebo je dlhý. Daj max. 7 slov, veľa ľudí pozerá bez zvuku.")
@@ -547,7 +547,7 @@ def api_improve(sid: int):
     from . import content
     try:
         data = ai.ask(f"""{content._ctx(content._project(p["id"]))}
-Improve this {"short (110-150 spoken words)" if fmt == "short" else "long"} video script. Fix exactly these problems found by our checker (in Slovak):
+Improve this {"short (65-80 spoken words)" if fmt == "short" else "long"} video script. Fix exactly these problems found by our checker (in Slovak):
 {chr(10).join("- " + t for t in tips)}
 Keep the topic, meaning, facts and numbers (never invent facts), the language ({languages.english(s["lang"])}) and exactly {len(scenes)} on-screen texts
 (one per scene, same order, max 7 words each). Voiceover: no greeting, first sentence max 14 words, short sentences, natural for text-to-speech.

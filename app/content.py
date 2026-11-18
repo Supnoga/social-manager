@@ -159,16 +159,20 @@ def scripts_prompt(params):
 Write production-ready video scripts for these ideas:
 {items}
 
-Rules: short = 110-150 spoken words (~45s). long = 1900-2200 words for a horizontal YouTube video (it MUST run longer than 8 minutes, so never fewer than 1900 words).
+Rules: short = 65-80 spoken words (25-30 s; shorter Shorts are watched to the end far more often). long = 1900-2200 words for a horizontal YouTube video (it MUST run longer than 8 minutes, so never fewer than 1900 words).
 STYLE (most important): tell it like a great popular-science storyteller, not like a datasheet. Talk to one curious person with no technical background. Describe what actually happens, step by step, in plain everyday words, so the viewer can picture it. Use comparisons from daily life (a fridge, a bicycle pump, a bathtub, a sponge). Explain every technical word the moment you first use it, or do not use it. Keep curiosity alive: open small questions and answer them a few sentences later ("So where does the heat come from? Here is the surprising part."). Prefer one memorable number over five; never list specs. Sound warm, calm and a little amazed by how things work.
 {_long_rules(p, ideas)}Long videos: open with the question and promise the answer, then tell a story in 4-5 chapters that flow into each other (what people believe, what really happens inside, what it means in real life, the mistakes, what to do), end with a one-sentence recap and a question for comments; take your time, never rush, never pad.
 {_cta_rule(p)}
 Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
-at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts, end with a natural CTA (save/comment, and the channel call to action as stated above). Spoken text must sound natural for voice-over (TTS),
+at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts.
+SHORTS (follow strictly): 0-1 s = the most surprising fact or question together with the strongest moving visual (never a title card, logo or empty scene);
+every scene changes the picture, never keep one picture longer than 4 s; the ending is ONE short sentence (max 8 words, e.g. "Subscribe for more." or "Full video linked."),
+never a long goodbye; the last sentence should flow naturally back into the first sentence so the Short loops.
+Long videos: end with a natural CTA (save/comment, and the channel call to action as stated above). Spoken text must sound natural for voice-over (TTS),
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 4-7 scenes, long: 32-42 scenes; scene 1 = hook; onscreen headlines in plain words, not jargon; SHOW, do not just tell: every scene shows the exact thing being described (animated mechanism or own "svg" cutaway, map or diagram, see PRIORITY; "svg" at most 3 scenes in a short, 6 in a long video);
+"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 6-8 scenes of 1 sentence each, long: 32-42 scenes; scene 1 = hook with the strongest visual; onscreen headlines in plain words, not jargon; SHOW, do not just tell: every scene shows the exact thing being described (animated mechanism or own "svg" cutaway, map or diagram, see PRIORITY; "svg" at most 3 scenes in a short, 6 in a long video);
 scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.spec(p)}),
 "description":"YouTube description: first sentence = what viewer learns incl. main search keyword, 2-4 sentences total",
 "caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
@@ -204,9 +208,10 @@ def _long_rules(p, ideas):
             + (f" Title styles that win in this niche: {pat}." if pat else "") + "\n"
             "- The first spoken sentence confirms the title promise within 5 seconds (viewer must feel: I clicked the right video).\n"
             "- 0-30 s: no intro, no channel name, no 'in this video'. 0-5 s: the most surprising fact or question with the strongest visual. "
-            "5-20 s: why it matters to the viewer (money, safety, daily life) + one concrete number. 20-30 s: promise what they will understand by the end "
-            "and plant one open question answered only near the end.\n"
-            "- Re-hook at the start of every chapter (every 60-90 s) with a new small question; never summarise what was already said.\n"
+            "5-20 s: why it matters to the viewer (money, safety, daily life) + one concrete number. 20-30 s: plant one open question answered only near the end, "
+            "then go straight into the story. Never say or show 'what you will understand', 'in the next minutes', 'let us start' or any agenda/overview. "
+            "The first 6 scenes (first minute) must each show a DIFFERENT picture (never the same machine or chart twice in a row).\n"
+            "- Every 45-60 s a new small question, surprise or twist (\"But here is the strange part.\"); never summarise what was already said.\n"
             "- Every long video must be different in structure and story from the previous ones: own example, own characters, own numbers.\n"
             "- Last 20 s: one-sentence recap, a question for comments, then name the next episode of this series as a concrete teaser "
             "(e.g. 'Next in this series: why Switzerland never goes to war').\n"
@@ -255,14 +260,14 @@ def teasers_prompt(params):
     return f"""{_ctx(p)}
 Below is the script of our long YouTube video "{src['title']}". Write {n} Shorts that make people want to watch that full video.
 Each Short takes ONE different small part of the long video (one surprising fact, one mistake, one "how it works" moment) and tells it on its own.
-Rules for each Short: 100-140 spoken words (~40s). First sentence = scroll-stopping hook, max 12 words, no greeting, different opening style in each Short.
-The Short must fully pay off its own small question, so the viewer feels they learned something real. Then the last 1-2 sentences open a bigger question
-that only the long video answers (a natural open ending, for example "But there is one case where this goes wrong. The full video shows it."), and say the long video's exact title aloud and that it is linked (e.g. "Watch: Why Japan Can't Raise Interest Rates, linked below").
-{_cta_rule(p)}
+Rules for each Short: 65-80 spoken words (25-30 s; shorter Shorts are watched to the end far more often). First sentence = scroll-stopping hook, max 12 words, no greeting, different opening style in each Short; the first scene shows the strongest moving visual right away (never a title card).
+The Short must fully pay off its own small question, so the viewer feels they learned something real. Then ONE last short sentence (max 10 words) opens a bigger question
+that only the long video answers and says it is linked (for example "One case breaks this rule. Full video linked."). Do not read the long video's title aloud
+and do not add a separate goodbye or subscribe sentence (the link is already in the description). If possible, make that last sentence flow back into the first sentence so the Short loops.
 Never stop mid-sentence, never promise something the long video does not contain, never repeat the same closing words in two Shorts.
 Same style as the long video: simple everyday words, warm storyteller, short sentences, numbers as digits, no emojis or symbols in voiceover.
 Return JSON: {{"scripts":[{{"title":"Shorts title max 60 chars, main search keyword first","hook":"first sentence","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","anim":{{}}}}] (4-6 scenes in voiceover order; last scene onscreen says to watch the full video; EVERY scene gets {explainer.spec(p)}),
+"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","anim":{{}}}}] (6-8 scenes of 1 sentence each in voiceover order, never one picture longer than 4 s; last scene is short and its onscreen says 'Full video'; EVERY scene gets {explainer.spec(p)}),
 "description":"1-2 sentences incl. main search keyword","caption":"hook line max 90 chars, no hashtags",
 "post":{{"body":"1 sentence of value","question":"one easy question for comments","save":"reason to save, max 60 chars","keywords":["2-4 search phrases"]}},
 "hashtags":"#a #b #c"}}]}}
