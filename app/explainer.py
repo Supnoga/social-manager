@@ -1004,13 +1004,13 @@ if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
 const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,44,24,58,GD?1160:1400);else fit(CAP,GD?54:60,30,150,GD?644:864);lastCap=ci}}
 // náhľadový obrázok dlhého videa: veľký text vľavo, hlavný obraz vpravo, bez titulkov a lišty
-window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(Math.max(s.t0+.1,s.t1-.2));
-CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;if(GD)GD.x.canvas.style.display='none';
+window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(window.THT!=null?Math.min(s.t1-.2,s.t0+window.THT*(s.t1-s.t0)):Math.max(s.t0+.1,s.t1-.2));
+CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;
 const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';s.vz.querySelectorAll('.phud').forEach(e=>e.style.display='none');
-GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';
-const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?720:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000,0 0 3px #000;overflow-wrap:break-word`);
+GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';document.getElementById('bg').style.opacity=.35;
+const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?720:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000;-webkit-text-stroke:12px #000;paint-order:stroke fill;overflow-wrap:normal;word-break:keep-all;hyphens:none`);
 T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length-1?'var(--acc)':'#fff'}">${esc(w)}</span>`).join(' ');s.w.append(T);
-fit(T,WIDE?190:200,70,WIDE?780:620,WIDE?720:936);if(WIDE){T.style.top=Math.max(90,(1080-T.offsetHeight)/2-10)+'px'}
+fit(T,WIDE?190:200,70,WIDE?(GD?640:780):620,WIDE?720:936);if(WIDE){T.style.top=Math.max(70,((GD?900:1080)-T.offsetHeight)/2-10)+'px'}
 // obraz dostane miesto, ktoré ostalo vedľa textu (na šírku) alebo pod ním (na výšku), a zmenší sa tak, aby sa doň zmestil celý
 const Z=s.pro&&window.KIT?KIT.ZN:{l:0,t:0,w:864,h:560},rg=document.createRange();rg.selectNodeContents(T);const tr=rg.getBoundingClientRect(),wr=s.w.getBoundingClientRect(),kx=wr.width/PW;
 const x0=WIDE?(tr.right-wr.left)/kx+44:60,x1=WIDE?1860:1020,y0=WIDE?90:(tr.bottom-wr.top)/kx+40,y1=WIDE?990:1790;
@@ -1025,7 +1025,10 @@ if(W>1500||H>1000)return;a=Math.min(a,L);b=Math.min(b,T2);c=Math.max(c,L+W);d=Ma
 if(c-a>40&&d-b>40){const m=16;C={l:a-m,t:b-m,w:c-a+2*m,h:d-b+2*m}}}catch(e){C=Z}
 const sc=Math.min(C===Z?(WIDE?1.42:1.25):(WIDE?2.6:2.2),(x1-x0)/C.w,(y1-y0)/C.h);
 s.vz.style.opacity=1;s.vz.style.transform=`scale(${sc})`;s.vz.style.left=((x0+x1)/2-432-(C.l+C.w/2-432)*sc)+'px';s.vz.style.top=((y0+y1)/2-280-(C.t+C.h/2-280)*sc)+'px';
-GLOW.style.opacity=.55};
+// pozadie nie čisto čierne (v tmavom režime YouTube by splynulo): farba kanála za predmetom, k okrajom tmavne
+GLOW.style.opacity=0;document.getElementById('bg').style.opacity=.25;document.body.style.background=`radial-gradient(ellipse ${WIDE?'62% 80% at 66% 50%':'90% 55% at 50% 66%'},color-mix(in srgb,var(--acc) 62%,#000) 0%,color-mix(in srgb,var(--acc) 26%,#000) 48%,#050505 100%)`;
+// líška (maskot kanála) dole vľavo pod textom: tvár upúta oko a kanál je na prvý pohľad rozpoznateľný
+if(GD&&WIDE){const c=GD.x.canvas;drawGuide(s.t0+.6,i,false,false);c.style.display='block';c.style.left='70px';c.style.top='720px';c.style.transform='scale(1.25)';c.style.zIndex=5}};
 // kontrola prekrývania (bez AI) pre práve vykreslenú snímku: čo leží cez čo, hoci nemá. Vráti aj miesta textov, aby sa dalo overiť, že pod nimi nie je obraz.
 window.ovl=function(){const s=SC[window._cur||0],bad=new Set(),B=e=>{const b=e.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom]},U=q=>q.length?[Math.min(...q.map(b=>b.left)),Math.min(...q.map(b=>b.top)),Math.max(...q.map(b=>b.right)),Math.max(...q.map(b=>b.bottom))]:null,
 TX=e=>{const r=document.createRange();r.selectNodeContents(e);return U([...r.getClientRects()].filter(b=>b.width>1&&b.height>1))},
@@ -1142,20 +1145,30 @@ def with_product(h, v, products, cache):
 VISUAL_KINDS = ("scene", "draw", "product", "hero", "house", "cycle", "flow", "icons", "compare")
 
 
+THUMB_SCORE = {"map": 80, "product": 70, "house": 45, "cycle": 40, "scene": 40, "draw": 30, "flow": 20, "compare": 15, "icons": 8, "hero": 4}
+
+
 def thumb_index(scenes, sc_data, want=None):
-    """Scéna pre náhľad: tú, ktorú vybral scenár, inak prvú výraznú obrázkovú (nie poslednú, tá je oddialená)."""
+    """Scéna pre náhľad (stratégia náhľadov 18.11.): jeden veľký konkrétny predmet. Najprv presný model stroja,
+    potom mapa či produkt, schémy až potom; samotná ikona (hero), čísla a zoznamy len keď nič iné nie je.
+    Scéna, ktorú vybral scenár, dostane prednosť medzi rovnako dobrými. Nie posledná scéna (tá je oddialená)."""
+    from . import auto_visual
     last = max(0, len(sc_data) - 2)
     try:
-        i = int(want)
-        if 0 <= i <= last:
-            return i
+        want = int(want)
     except (TypeError, ValueError):
-        pass
-    for k in VISUAL_KINDS:
-        for i, d in enumerate(sc_data[:last + 1]):
-            if (d.get("v") or {}).get("k") == k:
-                return i
-    return 0
+        want = -1
+    best, bi = -1, 0
+    for i, d in enumerate(sc_data[:last + 1]):
+        v = d.get("v") or {}
+        k = v.get("k")
+        sc = 100 if k == "mech" and v.get("m") in auto_visual.PRECISE else 25 if k == "mech" else THUMB_SCORE.get(k, 0)
+        if sc and i == want:
+            sc += 12
+        sc -= i * 4 / max(1, last)   # pri zhode skôr scéna zo začiatku (hlavný predmet videa)
+        if sc > best:
+            best, bi = sc, i
+    return bi
 
 
 EVENTS = {}   # cesta videa -> [(druh zvuku, čas)] z posledného skladania
@@ -1234,7 +1247,7 @@ def check(sc_data, cover, over=None, badic=None):
 
 
 def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", music=None, font=None, fps=30,
-         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title="", guide=False, detail=1, check_only=False):
+         font_text=None, logo=None, logo_end=None, products=None, wide=False, thumb=None, thumb_text="", thumb_scene=None, loop=True, title="", guide=False, detail=1, check_only=False, thumb_only=False):
     """Vyrenderuje celé video: animované scény + titulky + hlas (+ hudba potichu).
 
     logo / logo_end = obrázky (data URI) do rohu a na záverečnú kartu; s logom sa video predĺži o TAIL sekúnd.
@@ -1242,6 +1255,8 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     from . import anim, media
     if not anim.available():
         raise RuntimeError("Animácie sa ešte pripravujú (Chromium sa sťahuje)")
+    if thumb_only:   # len náhľadový obrázok (napr. nový vzhľad pre už nahraté video): bez hlasu, bez skladania videa
+        check_only = True
     if check_only and not voice:   # rýchla kontrola scenára bez hlasu a bez skladania videa: len kontrolné snímky, vráti výsledok kontroly
         ws = (text or "").split() or ["."]
         total = max(10.0, len(ws) / 2.7)
@@ -1316,11 +1331,17 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
     ld = sc_data[-1]["t1"] - sc_data[-1]["t0"] if sc_data else 0
     zo0 = total - min(3.2, max(1.8, ld * .5)) if len(sc_data) > 2 and not loop else 1e9
     job = {"html": html, "vw": vw, "vh": vh, "cmd": cmd, "n": n, "fps": fps, "check_only": bool(check_only), "wide": bool(wide),
-           "probe": probe, "probe2": probe2, "zo0": zo0, "thumb": str(thumb) if thumb and not check_only else "",
+           "probe": probe, "probe2": probe2, "zo0": zo0, "thumb": str(thumb) if thumb and (thumb_only or not check_only) else "", "thumb_only": bool(thumb_only),
            "thumb_text": (thumb_text or "").strip(), "thumb_i": thumb_index(scenes, sc_data, thumb_scene) if (thumb_text or "").strip() and sc_data else None,
            "thumb_t": min(2.6, max(0.5, sc_data[0]["t1"] - 0.3) if sc_data else 2.6)}
+    if job["thumb"] and job["thumb_i"] is not None:   # náhľad: stroj celý, bez jazdy kamery po detailoch (scéna inak končí na detaile)
+        ti = job["thumb_i"]
+        sd2 = [dict(d, v={k: x for k, x in (d.get("v") or {}).items() if k not in ("fs", "_in", "c")}) if n == ti else d for n, d in enumerate(sc_data)]
+        job["thumb_html"] = page(dict(data, scenes=sd2), font, font_text)
     with _lock:
         cover, over = capture_job(job)
+    if thumb_only:
+        return str(thumb) if thumb and Path(str(thumb)).exists() else None
     if check_only:
         return check(sc_data, cover, over, badic)
     EVENTS[str(out)] = auto_visual.sound_events(sc_data)   # zvuky k obrazu (domieša audio.finish)
@@ -1347,7 +1368,7 @@ def _capture(job):
             if thumb:  # náhľadový obrázok: veľký krátky text + najsilnejší obraz (bez neho úvodná scéna s názvom)
                 tp = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)  # vlastná stránka, video ostane čisté
                 try:
-                    tp.set_content(html)
+                    tp.set_content(job.get("thumb_html") or html)
                     tp.wait_for_function("window.READY===true", timeout=20000)
                     if job["thumb_i"] is not None:
                         tp.evaluate("([i,t])=>thumbMode(i,t)", [job["thumb_i"], job["thumb_text"]])
@@ -1359,6 +1380,8 @@ def _capture(job):
                     print("náhľad:", e)
                 finally:
                     tp.close()
+            if job.get("thumb_only"):
+                return cover, over
             pg = b.new_page(viewport={"width": vw, "height": vh}, device_scale_factor=1)
             pg.set_content(html)
             pg.wait_for_function("window.READY===true", timeout=20000)

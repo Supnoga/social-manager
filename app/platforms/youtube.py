@@ -427,18 +427,7 @@ def upload(account, video, privacy="public", publish_at=None):
         vid = r.json()["id"]
         thumb = os.path.splitext(video["file_path"])[0] + ".jpg"
         if os.path.exists(thumb):  # dlhé video: vlastný náhľad (ak ho kanál má povolený; inak YouTube vyberie sám)
-            try:
-                with open(thumb, "rb") as f:
-                    tr = c.post("https://www.googleapis.com/upload/youtube/v3/thumbnails/set", params={"videoId": vid},
-                                headers={"Authorization": f"Bearer {tok}", "Content-Type": "image/jpeg"}, content=f.read())
-                count_units(account, U_THUMB)
-                if tr.status_code >= 300:  # predtým sa chyba stratila; kanál bez overenia telefónom vlastný náhľad nedostane
-                    fails = db.get_setting("yt_thumb_fail") or {}
-                    fails[account.get("name") or str(account.get("id"))] = f"{tr.status_code} {tr.text[:160]}"
-                    db.set_setting("yt_thumb_fail", fails)
-                    print("YouTube náhľad:", tr.status_code, tr.text[:200])
-            except Exception as e:
-                print("YouTube náhľad:", e)
+            set_thumb(account, vid, thumb, tok)
     count_upload(account)
     try:
         save_srt(video, vid)
@@ -594,6 +583,27 @@ def unschedule(account, video_id):
                     json={"id": video_id, "status": {"privacyStatus": "private", "selfDeclaredMadeForKids": False}}),
               "YouTube zrušenie plánu")
     count_units(account, U_UPDATE)
+
+
+def set_thumb(account, video_id, path, tok=None):
+    """Nastaví vlastný náhľad videa (50 jednotiek). Vráti True, ak ho YouTube prijal; chybu zapíše do nastavenia yt_thumb_fail
+    (kanál bez overenia telefónom vlastný náhľad nedostane)."""
+    try:
+        tok = tok or access_token(account)
+        with open(path, "rb") as f, client(timeout=60) as c:
+            tr = c.post("https://www.googleapis.com/upload/youtube/v3/thumbnails/set", params={"videoId": video_id},
+                        headers={"Authorization": f"Bearer {tok}", "Content-Type": "image/jpeg"}, content=f.read())
+        count_units(account, U_THUMB)
+    except Exception as e:
+        print("YouTube náhľad:", e)
+        return False
+    if tr.status_code >= 300:
+        fails = db.get_setting("yt_thumb_fail") or {}
+        fails[account.get("name") or str(account.get("id"))] = f"{tr.status_code} {tr.text[:160]}"
+        db.set_setting("yt_thumb_fail", fails)
+        print("YouTube náhľad:", tr.status_code, tr.text[:200])
+        return False
+    return True
 
 
 def add_related(account, video_id, text):
