@@ -185,9 +185,11 @@ Write in {languages.english(p['source_lang'])}."""
 def _thumb_field(ideas):
     if not any(i.get("format") == "long" for i in ideas):
         return ""
-    return (',\n"thumb":{{"text":"LONG VIDEOS ONLY: 2-4 words for the thumbnail, max 24 chars, does NOT repeat the title, adds tension or curiosity '
-            '(a surprising number, a verdict, a question) AND names the main object so a stranger knows the topic at a glance '
-            '(e.g. \'HEAT PUMP AT -20°C?\', \'SINKHOLE: ONE LEAK\', \'NOKIA SOLD BOOTS\'; never vague like \'THE SPOON LIES\' or a bare sum)","scene":"index (0-based) of the most striking, '
+    return (',\n"thumb":{{"text":"LONG VIDEOS ONLY: thumbnail hook, 2-5 words, max 28 chars, never repeats the title. '
+            'The picture already shows the object, so the text is the emotional hook a viewer reacts to: a short dramatic claim, '
+            'a reaction or a question (styles that won 3-100x on top explainer channels: \'THEY REMOVED THE HILL\', \'THEY\'RE BACK??\', '
+            '\'IT\'S HAPPENING!\', \'DOES ANYONE WIN?\', \'HE ACTUALLY HAS A PLAN\', \'THIS CAN\'T MOVE!\', \'NO ONE SAW THIS\'). '
+            'Clickbait is fine, lies are not: it must be true in the video","scene":"index (0-based) of the most striking, '
             'most visual scene that shows the main object, not a number chart"}}').replace("{{", "{").replace("}}", "}")
 
 
@@ -202,9 +204,11 @@ def _long_rules(p, ideas):
     except Exception:
         pat = ""
     return ("LONG VIDEO PACKAGING (decides clicks and watch time, follow strictly):\n"
-            "- Title 40-60 chars, concrete and curious: one clear promise or open question a normal person would click "
-            "(e.g. 'Why Japan Can't Raise Interest Rates', 'What Happens to Your Money in a Bank Run'); the plain topic word people search "
-            "(interest rates, dishwasher, bank run) MUST be in the title, early; no ALL CAPS, no lies."
+            "- Title 40-60 chars, clickbait but true: a strong promise, stakes or an extreme a normal person can't scroll past "
+            "(winners on top explainer channels: 'The 1,000 km Road Australia Can't Keep Open', 'How North Korea Made It Impossible to Escape', "
+            "'Why Japan Can't Raise Interest Rates', 'The Only Bridge That Moves 5 Meters a Day'). Use mechanism words (How, Why, What) and stakes or "
+            "extremes (can't, only, biggest, impossible, never, nobody); no year, no first person (I/my/we), no series names or episode numbers. "
+            "The plain topic word people search (interest rates, dishwasher, bank run) MUST be in the title; no ALL CAPS, no lies."
             + (f" Title styles that win in this niche: {pat}." if pat else "") + "\n"
             "- The first spoken sentence confirms the title promise within 5 seconds (viewer must feel: I clicked the right video).\n"
             "- 0-30 s: no intro, no channel name, no 'in this video'. 0-5 s: the most surprising fact or question with the strongest visual. "
