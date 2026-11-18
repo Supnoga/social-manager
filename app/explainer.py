@@ -1009,7 +1009,8 @@ CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='no
 const words=String(txt||'').trim().split(/\s+/).filter(Boolean);if(!words.length)return;s.tt.style.display='none';s.vz.querySelectorAll('.phud').forEach(e=>e.style.display='none');
 GLOW.style.opacity=.36;GLOW.style.transform=WIDE?'translate(520px,240px)':'translate(0,0)';document.getElementById('bg').style.opacity=.35;
 const T=el('div','',`position:absolute;left:${WIDE?96:72}px;top:${WIDE?150:300}px;width:${WIDE?720:936}px;font-weight:800;text-transform:uppercase;line-height:.98;letter-spacing:-2px;text-shadow:0 6px 30px #000;-webkit-text-stroke:12px #000;paint-order:stroke fill;overflow-wrap:normal;word-break:keep-all;hyphens:none`);
-T.lang=D.lang;T.innerHTML=words.map((w,j)=>`<span style="color:${j==words.length-1?'var(--acc)':'#fff'}">${esc(w)}</span>`).join(' ');s.w.append(T);
+// posledné slovo na plnom pruhu vo farbe kanála (tak to robia najúspešnejšie náhľady konkurencie, analýza 18.11.)
+T.lang=D.lang;T.innerHTML=words.map((w,j)=>j==words.length-1?`<span style="display:inline-block;background:var(--acc);color:#fff;-webkit-text-stroke:0;text-shadow:none;padding:0 .14em .04em;margin-top:.06em;border-radius:.06em;box-shadow:0 8px 30px rgba(0,0,0,.5)">${esc(w)}</span>`:`<span style="color:#fff">${esc(w)}</span>`).join(' ');s.w.append(T);
 fit(T,WIDE?190:200,70,WIDE?(GD?640:780):620,WIDE?720:936);if(WIDE){T.style.top=Math.max(70,((GD?900:1080)-T.offsetHeight)/2-10)+'px'}
 // obraz dostane miesto, ktoré ostalo vedľa textu (na šírku) alebo pod ním (na výšku), a zmenší sa tak, aby sa doň zmestil celý
 const Z=s.pro&&window.KIT?KIT.ZN:{l:0,t:0,w:864,h:560},rg=document.createRange();rg.selectNodeContents(T);const tr=rg.getBoundingClientRect(),wr=s.w.getBoundingClientRect(),kx=wr.width/PW;
@@ -1028,6 +1029,12 @@ s.vz.style.opacity=1;s.vz.style.transform=`scale(${sc})`;s.vz.style.left=((x0+x1
 // pozadie nie čisto čierne (v tmavom režime YouTube by splynulo): farba kanála za predmetom, k okrajom tmavne
 GLOW.style.opacity=0;document.getElementById('bg').style.opacity=.25;document.body.style.background=`radial-gradient(ellipse ${WIDE?'62% 80% at 66% 50%':'90% 55% at 50% 66%'},color-mix(in srgb,var(--acc) 62%,#000) 0%,color-mix(in srgb,var(--acc) 26%,#000) 48%,#050505 100%)`;
 // líška (maskot kanála) dole vľavo pod textom: tvár upúta oko a kanál je na prvý pohľad rozpoznateľný
+// šípka od textu k predmetu (asi pätina víťazných náhľadov ukazuje šípkou na to podstatné)
+if(WIDE&&words.length){try{const tb=T.getBoundingClientRect(),sx=(tb.right-wr.left)/kx+18,sy=(tb.top-wr.top)/kx+tb.height/kx*.62,ex=x0+(x1-x0)*.2,ey=(y0+y1)/2+40;
+if(ex-sx>60){const A=document.createElementNS('http://www.w3.org/2000/svg','svg');A.setAttribute('width',1920);A.setAttribute('height',1080);A.style.cssText='position:absolute;left:0;top:0;z-index:6;overflow:visible';
+const mx=(sx+ex)/2,my=Math.max(sy,ey)+90,d=`M${sx},${sy} Q${mx},${my} ${ex},${ey}`,ang=Math.atan2(ey-my,ex-mx),hl=46,h=(a)=>`${ex-hl*Math.cos(ang+a)},${ey-hl*Math.sin(ang+a)}`;
+A.innerHTML=`<path d="${d}" fill="none" stroke="#000" stroke-width="26" stroke-linecap="round"/><path d="M${h(.5)} L${ex},${ey} L${h(-.5)}" fill="none" stroke="#000" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="${d}" fill="none" stroke="var(--acc)" stroke-width="14" stroke-linecap="round"/><path d="M${h(.5)} L${ex},${ey} L${h(-.5)}" fill="none" stroke="var(--acc)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>`;s.w.append(A)}}catch(e){}}
 if(GD&&WIDE){const c=GD.x.canvas;drawGuide(s.t0+.6,i,false,false);c.style.display='block';c.style.left='70px';c.style.top='720px';c.style.transform='scale(1.25)';c.style.zIndex=5}};
 // kontrola prekrývania (bez AI) pre práve vykreslenú snímku: čo leží cez čo, hoci nemá. Vráti aj miesta textov, aby sa dalo overiť, že pod nimi nie je obraz.
 window.ovl=function(){const s=SC[window._cur||0],bad=new Set(),B=e=>{const b=e.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom]},U=q=>q.length?[Math.min(...q.map(b=>b.left)),Math.min(...q.map(b=>b.top)),Math.max(...q.map(b=>b.right)),Math.max(...q.map(b=>b.bottom))]:null,

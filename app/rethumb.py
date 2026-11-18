@@ -45,11 +45,11 @@ def new_texts(rows):
     items = {str(r["sid"]): {"title": r["title"], "old": _old_text(r)} for r in rows}
     if not items:
         return {}
-    prompt = ("Write YouTube thumbnail text for these animated explainer videos. Rules: 2-4 words, max 24 characters, UPPERCASE; "
-              "it must name the main object or topic so a stranger knows at a glance what the video is about, plus tension "
-              "(a surprising number, a verdict or a question); it complements the title and never repeats it word for word; no emoji, no lies. "
-              "Good: 'HEAT PUMP AT -20°C?', 'SINKHOLE: ONE LEAK', 'NOKIA SOLD BOOTS'. Bad (too vague): 'THE SPOON LIES', '6 + 8 + 6 = 20'. "
-              "Keep the old text if it already follows the rules. Write in the language of the title.\n"
+    prompt = ("Write YouTube thumbnail hook text for these animated explainer videos (the picture shows the main object). Rules: 2-5 words, "
+              "max 28 characters, UPPERCASE, never repeats the title; a short dramatic claim, reaction or question the viewer reacts to. "
+              "Styles that won 3-100x on top explainer channels: 'THEY REMOVED THE HILL', 'THEY'RE BACK??', 'IT'S HAPPENING!', "
+              "'DOES ANYONE WIN?', 'HE ACTUALLY HAS A PLAN', 'THIS CAN'T MOVE!'. Clickbait is fine, lies are not; no emoji. "
+              "Write in the language of the title.\n"
               f"Videos (id: title, old text): {json.dumps(items, ensure_ascii=False)}\n"
               'Return JSON: {"<id>": "TEXT"}')
     try:
