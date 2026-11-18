@@ -965,6 +965,21 @@ def _thumb_opts(s):
     return {"thumb_text": str(t.get("text") or ""), "thumb_scene": t.get("scene")}
 
 
+def render_thumb(s, out, thumb_text=None):
+    """Len náhľadový obrázok dlhého videa (bez hlasu a skladania), rovnaký vzhľad ako pri výrobe. Pre už hotové videá."""
+    proj = db.one("SELECT color, design_colors FROM projects WHERE id=?", (s["project_id"],)) or {}
+    colors = json.loads(proj.get("design_colors") or "[]") or [proj.get("color") or "#FF6B00"]
+    sc2 = explainer.localized_scenes(s)
+    opts = _thumb_opts(s)
+    if thumb_text:
+        opts["thumb_text"] = thumb_text
+    brand.use_font(s["project_id"], (s["voiceover"] or "") + " " + " ".join(x.get("onscreen", "") for x in sc2), letters_only=True)
+    return explainer.make(sc2, None, Path(out).with_suffix(".mp4"), brand.accent(colors, proj.get("color")), s["lang"], s["voiceover"], "",
+                          None, brand.current_font(), font_text=brand.current_text_font(), products=brand.product_images(s["project_id"]),
+                          wide=True, thumb=Path(out), title=s.get("title") or "", guide=bool(db.get_setting("guide", True)),
+                          detail=_detail(), thumb_only=True, **opts)
+
+
 def _broll_ready():
     st = footage.status()
     return st["pexels"] or st["pixabay"] or st["own"] > 0 or st["ai"]

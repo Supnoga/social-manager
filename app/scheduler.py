@@ -272,6 +272,8 @@ def tick():
                                  AND ((p.status='review' AND COALESCE(p.stash_id,'')='') OR p.status='uploading') LIMIT 1"""):
         try:
             youtube.localize_one() or youtube.caption_one()  # najprv preklady názvov (lacné), potom titulky
+            from . import rethumb
+            rethumb.kick()  # nové náhľady a odkazy pre staršie videá (na pozadí, len z voľnej kvóty)
         except Exception:
             traceback.print_exc()
     try:
