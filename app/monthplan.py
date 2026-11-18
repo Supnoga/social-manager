@@ -43,7 +43,9 @@ def _cover(title):
     m = auto_visual.topic(title, title)
     if m:
         return "model", m
-    return ("gap", auto_visual.find(title)[0]) if auto_visual.find(title) else ("verify", "")
+    # 18.11.: názov spomína stroj, ale sám nestačí na istotu: model rozhodne celý scenár pri skladaní
+    # (všetky stroje z _RX už majú model, takže nejde o chýbajúci model, len o tému na overenie)
+    return ("verify", "")
 
 
 def build_project(pid, start, days=30, offset=0):
