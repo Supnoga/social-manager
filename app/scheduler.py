@@ -28,11 +28,30 @@ def now_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def old_blocked(acc, vid):
+    """19.11. (Oliver): na YouTube sa už nenahráva žiadne video v starom štýle (súbor pred new_style_since).
+    Dobehnú len tie, čo už na YouTube sú. Staré sa najprv prerobí (výmena v main), potom sa nahrá.
+    Výnimka: video, ktoré po prerobení neprešlo kontrolou (swap_skip), aby termín neostal prázdny."""
+    try:
+        if not acc or acc["platform"] != "youtube" or not db.get_setting("block_old_uploads", True):
+            return False
+        cut = datetime.fromisoformat(db.get_setting("new_style_since", "2026-11-19 02:20:00")).timestamp()
+        if os.path.getmtime(vid["file_path"]) >= cut:
+            return False
+        return vid["id"] not in set(db.get_setting("swap_skip", []) or [])
+    except Exception:
+        return False
+
+
 def process_one(post):
     acc = db.one("SELECT * FROM accounts WHERE id=?", (post["account_id"],))
     vid = db.one("SELECT * FROM videos WHERE id=?", (post["video_id"],))
     if not acc or not vid:
         db.run("UPDATE posts SET status='failed', error='Účet alebo video už neexistuje' WHERE id=?", (post["id"],))
+        return
+    if old_blocked(acc, vid):   # čaká na prerobenie do nového štýlu; o 20 minút sa skúsi znova (rad sa nezasekne)
+        nxt = (datetime.now() + timedelta(minutes=20)).strftime("%Y-%m-%d %H:%M:%S")
+        db.run("UPDATE posts SET scheduled_at=?, error=? WHERE id=?", (nxt, "Čaká na prerobenie do nového štýlu", post["id"]))
         return
     from . import brand
     if brand.unlogo_blocked(vid["id"]) and not brand.unlogo_now(vid["id"]):   # ešte so starým logom: opraví sa hneď
@@ -128,7 +147,7 @@ def stash_one(post):
     if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or not youtube.quota_ok(acc, reserve=youtube.RELEASE_RESERVE):
         return False
     from . import brand
-    if brand.unlogo_blocked(vid["id"]):
+    if brand.unlogo_blocked(vid["id"]) or old_blocked(acc, vid):
         return False
     state["current"] = f"YouTube (súkromne): {vid['title'] or vid['original_name']}"
     retry = (post.get("error") or "").startswith("Súkromné nahratie:")
@@ -186,7 +205,7 @@ def ahead_one():
         acc = db.one("SELECT * FROM accounts WHERE id=?", (p["account_id"],))
         vid = db.one("SELECT * FROM videos WHERE id=?", (p["video_id"],))
         from . import brand
-        if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or (brand.unlogo_blocked(vid["id"]) and not brand.unlogo_now(vid["id"])):
+        if not acc or not vid or not vid["file_path"] or not os.path.exists(vid["file_path"]) or (brand.unlogo_blocked(vid["id"]) and not brand.unlogo_now(vid["id"])) or old_blocked(acc, vid):
             continue
         k = youtube._client_idx(acc)
         need = 0
