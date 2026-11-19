@@ -1156,6 +1156,9 @@ for _m in BOARD_META.values():
         _st = _v.get("steps") or [2]
         STEPS.setdefault(_k, lambda d, _st=_st: float(_st[0]) + (float(_st[1]) * len(d.get(_st[2]) or []) if len(_st) > 2 else 0))
 
+PRIO = threading.local()
+
+
 class _Slots:
     """Koľko videí sa smie skladať naraz (nastavenie render_parallel, 1–8, predvolene 4). Každé má vlastný prehliadač.
     Nastavenie sa číta pri každom skladaní, takže sa dá meniť bez reštartu appky."""
@@ -1163,6 +1166,7 @@ class _Slots:
     def __init__(self):
         self._c = threading.Condition()
         self.active = 0
+        self.prio_wait = 0   # 19.11.: výmena starých videí (PRIO.on) dostane voľné miesto skôr ako výroba do zásoby
 
     @staticmethod
     def limit():
@@ -1172,9 +1176,18 @@ class _Slots:
             return 4
 
     def __enter__(self):
+        prio = bool(getattr(PRIO, "on", False))
         with self._c:
-            while self.active >= self.limit():
-                self._c.wait(timeout=15)
+            if prio:
+                self.prio_wait += 1
+                try:
+                    while self.active >= self.limit():
+                        self._c.wait(timeout=15)
+                finally:
+                    self.prio_wait -= 1
+            else:
+                while self.active >= self.limit() or self.prio_wait > 0:
+                    self._c.wait(timeout=15)
             self.active += 1
         return self
 
