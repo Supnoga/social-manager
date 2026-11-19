@@ -574,6 +574,11 @@ _FX_WOR = re.compile(r"\b(danger\w*|explo\w+|crash\w*|fire|burn\w*|die[sd]?|deat
 _FX_NUM = re.compile(r"\d")
 
 
+def _precise():
+    from . import auto_visual
+    return auto_visual.PRECISE
+
+
 def fox_moods(scenes, sc_data, words):
     """Emócie líšky po scénach (pravidlá z rozboru úspešných kanálov, 19.11.): 1–3 s reakcia, 4–6 za krátke video, nikdy dve rovnaké po sebe.
     AI môže dať do scény pole "fox"; inak sa emócia odhadne z textu bez ďalšieho volania AI."""
@@ -583,6 +588,9 @@ def fox_moods(scenes, sc_data, words):
     for i, (sc, d) in enumerate(zip(scenes, sc_data)):
         spoken = " ".join(w["w"] for w in words if d["t0"] - .05 <= w["s"] < d["t1"])
         k = (d.get("v") or {}).get("k")
+        if k == "mech" and (d.get("v") or {}).get("m") in _precise():
+            prev = ""   # presný model stroja má pri sebe čísla až dole k titulkom: líška tam nevyskočí (19.11.)
+            continue
         m = str(sc.get("fox") or "").strip().lower()
         if m not in FOX_MOODS:
             m = ""
@@ -599,7 +607,7 @@ def fox_moods(scenes, sc_data, words):
             elif _FX_NUM.search(spoken) and k in ("count", "bars", "calc", "compare", "pie", "hero", "waterfall", "dots"):
                 m = "surprised"
             elif k == "mech" and i % 2 == 0:
-                m = "point"
+                m = "point"   # len hrubá schéma bez čísel
         if m and (m == prev or (used >= cap and i not in (0, n - 1))):
             m = ""
         if m:
@@ -993,7 +1001,7 @@ function drawGuide(t,cur,talk,ending,force){const {x,R,w,h}=GD,A=D.acc,T2=Math.P
 const F=foxState(t,cur,force),M=F.m,ml=F.l,on=k=>M==k?1:0,pk=E((ml-.1)/.35)*(1-E((ml-2.6)/.4)),
 pt=Math.max(v.k=='mech'?E((lt-.45)/.4):0,on('point')*pk),sur=on('surprised')*pk,thk=on('thinking')*pk,wor=on('worried')*pk,hap=on('happy')*pk,no=on('no')*pk;
 let ex=0,ek=0;if(v.c&&v.c.t!=null){ek=lt-v.c.t;if(ek>=0&&ek<1.3)ex=Math.exp(-ek*3.2)}ex=Math.max(ex,sur*Math.exp(-Math.max(0,ml-.1)*1.6));
-const a=F.vis*(ending?0:1);if(a<=.01)return;talk=talk&&!sur&&!hap;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,
+const a=F.vis*(ending?0:1);x.canvas.style.opacity=a>.01?1:0;if(a<=.01)return;talk=talk&&!sur&&!hap;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,
 hop=(sur+hap)*Math.abs(Math.sin(ml*9))*Math.exp(-ml*1.3)*30,bob=Math.sin(t*2.1)*5-ex*24*Math.abs(Math.sin(ek*12))-hop,shk=wor*Math.sin(t*41)*2.2,blink=((t+.7)%3.3)<.11&&ex<.2&&!hap;
 x.globalAlpha=a;x.lineJoin='round';x.lineCap='round';x.fillStyle='rgba(0,0,0,.55)';x.beginPath();x.ellipse(92,240,44+bob*.4,6,0,0,T2);x.fill();
 x.save();x.translate(shk,(1-a)*90+bob);const box=(X,Y,W,H,r,f,st,lw)=>{x.beginPath();x.roundRect(X,Y,W,H,r);x.fillStyle=f;x.fill();if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}};
