@@ -479,9 +479,11 @@ def rerender(data: dict = Body(...)):
         with _rerender_lock:
             _RERENDER["running"] = True
             try:
-                for _, vid, sid in todo:
+                def one(item):
+                    _, vid, sid = item
                     if _RERENDER.get("drain"):
-                        break
+                        return
+                    explainer.PRIO.on = True   # 19.11. (Oliver): nové videá von čo najskôr, výmena má prednosť pred zásobou
                     _RERENDER["current"] = vid
                     try:
                         v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
@@ -496,15 +498,21 @@ def rerender(data: dict = Body(...)):
                         for f in (old, old.with_suffix(".jpg")):
                             if f != Path(new["file_path"]) and f.exists():
                                 f.unlink(missing_ok=True)
-                        for k in ("unlogo_done", "remap_done"):
-                            db.set_setting(k, (db.get_setting(k, []) or []) + [vid])
-                        db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != vid])
+                        with _rr_set_lock:
+                            for k in ("unlogo_done", "remap_done"):
+                                db.set_setting(k, (db.get_setting(k, []) or []) + [vid])
+                            db.set_setting("unlogo_todo", [i for i in (db.get_setting("unlogo_todo", []) or []) if i != vid])
                         _RERENDER["done"].append(vid)
                     except Exception as e:
                         _RERENDER["errors"].append([vid, str(e)[:300]])
                         traceback.print_exc()
                     finally:
-                        db.set_setting("rerender_todo", [i for i in (db.get_setting("rerender_todo", []) or []) if i != vid])
+                        with _rr_set_lock:
+                            db.set_setting("rerender_todo", [i for i in (db.get_setting("rerender_todo", []) or []) if i != vid])
+                from concurrent.futures import ThreadPoolExecutor
+                par = max(1, min(6, int(db.get_setting("rerender_parallel", 3) or 3)))
+                with ThreadPoolExecutor(max_workers=par) as ex:
+                    list(ex.map(one, todo))
             finally:
                 _RERENDER["running"] = False
                 _RERENDER["current"] = None
@@ -514,6 +522,7 @@ def rerender(data: dict = Body(...)):
 
 
 _swap_lock = threading.Lock()
+_rr_set_lock = threading.Lock()
 
 
 def _swap_old_shorts():
