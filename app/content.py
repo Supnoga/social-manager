@@ -147,6 +147,28 @@ def _post_json(post):
     return json.dumps(keep, ensure_ascii=False) if keep else ""
 
 
+WRITING = (
+    "WRITING (rules taken from 21 Shorts and 8 long videos of the top explainer channels, follow strictly):\n"
+    "- First sentence = a finished fact, picture or event, never a setup ('We're running out of water.', 'Ten tonnes rest on a spot the size of a coin.').\n"
+    "- Give the answer fast: in a Short within the first 2-3 sentences, in a long video within 60 s. Never postpone it and never announce that you will "
+    "answer later ('we will answer it at the end', 'keep that in your pocket', 'hold that thought' are banned).\n"
+    "- Flowing natural sentences of 12-20 words on average; a very short sentence only as a punch, at most 1 in 6 sentences. Never chains of fragments "
+    "('Same hours. Same sweat. Very different dinners.').\n"
+    "- Speak like a person: always use contractions (it's, that's, don't, can't, here's, let's), never 'it is', 'let us', 'do not'.\n"
+    "- Few questions: a Short has at most 1, a long video about 1 every 4-5 minutes. Twists come with a plain 'But...' sentence that states the surprising fact.\n"
+    "- Comparisons sit inside the sentence, never announced: '78 tons. That's as much as a Boeing 737 on takeoff.' 4-5 numbers per minute, each turned into "
+    "a human scale (per person, per day, as big as...).\n"
+    "- Real people, real places, real dates, or the viewer as the character ('Your phone...'). Never invent named characters (no 'Meet Lena').\n"
+    "- A little personality: one dry, translatable joke or personal remark per minute is welcome (no puns, no wordplay).\n"
+    "- Banned template phrases: 'Here is', 'Here's the thing', 'Imagine', 'Most of us picture', 'But that is not what happens', 'Let us do the math', "
+    "'So, in one sentence', 'Tell us in the comments', 'Next in this series', 'Now here is a small question'. Every script must sound different from the last.\n"
+    "- Long videos: 3-5 parts announced with a count ('It comes down to three things... That's number one.'), each part ends on a new fact, not a summary.\n"
+    "- News-like topics (aviation, military, energy, money, countries): start with the concrete event, date or number, more numbers, almost no questions. "
+    "Machines, digital, inventions: start with 'This is X' or a real everyday situation. Physics and nature: start with the myth or the puzzle everyone gets wrong.\n"
+    "- Titles: one plain sentence that is a paradox, stakes or a promise, about 7 words in a Short, no colon pattern 'Keyword: explanation' "
+    "(good: 'The Tires That Won't Crush You', 'Airbnb Almost Died Until Cereal Paid the Rent').\n")
+
+
 # ---------- 3. SCENÁRE (dávkovo viac nápadov naraz) ----------
 def scripts_prompt(params):
     ideas = [db.one("SELECT * FROM ideas WHERE id=?", (i,)) for i in params["idea_ids"]]
@@ -160,20 +182,19 @@ Write production-ready video scripts for these ideas:
 {items}
 
 Rules: short = 65-80 spoken words (25-30 s; shorter Shorts are watched to the end far more often). long = 1900-2200 words for a horizontal YouTube video (it MUST run longer than 8 minutes, so never fewer than 1900 words).
-STYLE (most important): tell it like a great popular-science storyteller, not like a datasheet. Talk to one curious person with no technical background. Describe what actually happens, step by step, in plain everyday words, so the viewer can picture it. Use comparisons from daily life (a fridge, a bicycle pump, a bathtub, a sponge). Explain every technical word the moment you first use it, or do not use it. Keep curiosity alive: open small questions and answer them a few sentences later ("So where does the heat come from? Here is the surprising part."). Prefer one memorable number over five; never list specs. Sound warm, calm and a little amazed by how things work.
-{_long_rules(p, ideas)}Long videos: open with the question and promise the answer, then tell a story in 4-5 chapters that flow into each other (what people believe, what really happens inside, what it means in real life, the mistakes, what to do), end with a one-sentence recap and a question for comments; take your time, never rush, never pad.
+STYLE (most important): tell it like a great popular-science storyteller, not like a datasheet. Talk to one curious person with no technical background. Describe what actually happens, step by step, in plain everyday words, so the viewer can picture it. Use comparisons from daily life (a fridge, a bicycle pump, a bathtub, a sponge). Explain every technical word the moment you first use it, or do not use it. Never list specs. Sound warm, calm and a little amazed by how things work.
+{WRITING}{_long_rules(p, ideas)}Long videos: open with the strongest fact, answer the main question within 60 s, then go deeper in 3-5 counted parts that flow into each other (what really happens inside, what it means in real life, the surprising cases); end on the strongest final fact or consequence, not a recap; take your time, never rush, never pad.
 {_cta_rule(p)}
 Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
-at least one concrete number, and make the key number visual with an everyday comparison ("as heavy as 3 cars", "a mirror the size of a football pitch"), short sentences, a new visual every 2-4 s, pattern interrupts.
+at least one concrete number, and make the key number visual with an everyday comparison ("as heavy as 3 cars", "a mirror the size of a football pitch"), a new visual every 2-4 s.
 SHORTS (follow strictly): 0-1 s = the most surprising fact or question together with the strongest moving visual (never a title card, logo or empty scene);
-every scene changes the picture, never keep one picture longer than 4 s; the ending is ONE short sentence (max 8 words, e.g. "Subscribe for more." or "Full video linked."),
-never a long goodbye; the last sentence should flow naturally back into the first sentence so the Short loops.
-Long videos: end with a natural CTA (save/comment, and the channel call to action as stated above). Spoken text must sound natural for voice-over (TTS),
-no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
+every scene changes the picture, never keep one picture longer than 4 s; end on the payoff, a loop back to the first sentence, or a dry joke; no goodbye, no subscribe and no "full video" line (the link is in the description).
+Long videos: at most one short natural line asking to subscribe, placed after the final fact (follow the channel call to action rule above). Spoken text must sound natural for voice-over (TTS),
+no emojis or symbols in voiceover. It will be machine-translated to many languages: clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
-Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","fox":"mascot reaction in this scene, one of surprised|thinking|worried|happy|no|point or empty (4-6 scenes per Short, first scene always has one)","anim":{{}}}}] (short: 6-8 scenes of 1 sentence each, long: 32-42 scenes; scene 1 = hook with the strongest visual; onscreen headlines in plain words, not jargon; SHOW, do not just tell: every scene shows the exact thing being described (animated mechanism or own "svg" cutaway, map or diagram, see PRIORITY; "svg" at most 3 scenes in a short, 6 in a long video);
-scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.spec(p)}),
+Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: one plain sentence with the main search keyword, paradox, stakes or promise, no colon","voiceover":"full spoken text",
+"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","fox":"mascot reaction in this scene, one of surprised|thinking|worried|happy|no|point or empty (4-6 scenes per Short, first scene always has one)","anim":{{}}}}] (short: 6-8 scenes, long: 32-42 scenes; scene 1 = hook with the strongest visual; onscreen headlines in plain words, not jargon; SHOW, do not just tell: every scene shows the exact thing being described (animated mechanism or own "svg" cutaway, map or diagram, see PRIORITY; "svg" at most 3 scenes in a short, 6 in a long video);
+scenes follow the voiceover in order, each covers about 10 spoken words (one sentence or half of a long one); EVERY scene gets {explainer.spec(p)}),
 "description":"YouTube description: first sentence = what viewer learns incl. main search keyword, 2-4 sentences total",
 "caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
 "post":{{"body":"1-2 short sentences of concrete value, use the words people type into search","question":"one easy question that makes viewers comment (opinion or own experience)",
@@ -211,14 +232,12 @@ def _long_rules(p, ideas):
             "The plain topic word people search (interest rates, dishwasher, bank run) MUST be in the title; no ALL CAPS, no lies."
             + (f" Title styles that win in this niche: {pat}." if pat else "") + "\n"
             "- The first spoken sentence confirms the title promise within 5 seconds (viewer must feel: I clicked the right video).\n"
-            "- 0-30 s: no intro, no channel name, no 'in this video'. 0-5 s: the most surprising fact or question with the strongest visual. "
-            "5-20 s: why it matters to the viewer (money, safety, daily life) + one concrete number. 20-30 s: plant one open question answered only near the end, "
-            "then go straight into the story. Never say or show 'what you will understand', 'in the next minutes', 'let us start' or any agenda/overview. "
+            "- 0-30 s: no intro, no channel name, no 'in this video'. 0-5 s: the most surprising fact with the strongest visual. "
+            "5-20 s: why it matters to the viewer (money, safety, daily life) + one concrete number. By 60 s: the core answer, then go deeper. Never say or show 'what you will understand', 'in the next minutes', 'let us start' or any agenda/overview. "
             "The first 6 scenes (first minute) must each show a DIFFERENT picture (never the same machine or chart twice in a row).\n"
-            "- Every 45-60 s a new small question, surprise or twist (\"But here is the strange part.\"); never summarise what was already said.\n"
-            "- Every long video must be different in structure and story from the previous ones: own example, own characters, own numbers.\n"
-            "- Last 20 s: one-sentence recap, a question for comments, then name the next episode of this series as a concrete teaser "
-            "(e.g. 'Next in this series: why Switzerland never goes to war').\n"
+            "- Every 45-60 s a new surprising fact introduced with a plain 'But...' sentence; never summarise what was already said.\n"
+            "- Every long video must be different in structure and story from the previous ones: own example, real people, own numbers.\n"
+            "- Ending: the strongest final fact or consequence, no recap, no 'tell us in the comments', no 'next in this series'.\n"
             + _finance_rule(p))
 
 
@@ -265,13 +284,14 @@ def teasers_prompt(params):
 Below is the script of our long YouTube video "{src['title']}". Write {n} Shorts that make people want to watch that full video.
 Each Short takes ONE different small part of the long video (one surprising fact, one mistake, one "how it works" moment) and tells it on its own.
 Rules for each Short: 65-80 spoken words (25-30 s; shorter Shorts are watched to the end far more often). First sentence = scroll-stopping hook, max 12 words, no greeting, different opening style in each Short; the first scene shows the strongest moving visual right away (never a title card).
-The Short must fully pay off its own small question, so the viewer feels they learned something real. Then ONE last short sentence (max 10 words) opens a bigger question
-that only the long video answers and says it is linked (for example "One case breaks this rule. Full video linked."). Do not read the long video's title aloud
-and do not add a separate goodbye or subscribe sentence (the link is already in the description). If possible, make that last sentence flow back into the first sentence so the Short loops.
+The Short must fully pay off its own small question, so the viewer feels they learned something real. End on that payoff, a loop back to the first sentence or a dry joke.
+Only the LAST of the {n} Shorts may end with one short line pointing to the full video ("Full video linked."); the others never mention it (the link is in the description).
+No goodbye, no subscribe line, never read the long video's title aloud.
 Never stop mid-sentence, never promise something the long video does not contain, never repeat the same closing words in two Shorts.
-Same style as the long video: simple everyday words, warm storyteller, short sentences, numbers as digits, no emojis or symbols in voiceover.
-Return JSON: {{"scripts":[{{"title":"Shorts title max 60 chars, main search keyword first","hook":"first sentence","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","fox":"mascot reaction in this scene, one of surprised|thinking|worried|happy|no|point or empty (4-6 scenes per Short, first scene always has one)","anim":{{}}}}] (6-8 scenes of 1 sentence each in voiceover order, never one picture longer than 4 s; last scene is short and its onscreen says 'Full video'; EVERY scene gets {explainer.spec(p)}),
+Same style as the long video: simple everyday words, warm storyteller, numbers as digits, no emojis or symbols in voiceover.
+{WRITING}
+Return JSON: {{"scripts":[{{"title":"Shorts title, one plain sentence of about 7 words with the main search keyword, paradox or promise, no colon","hook":"first sentence","voiceover":"full spoken text",
+"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","fox":"mascot reaction in this scene, one of surprised|thinking|worried|happy|no|point or empty (4-6 scenes per Short, first scene always has one)","anim":{{}}}}] (6-8 scenes of about 10 spoken words each in voiceover order, never one picture longer than 4 s; EVERY scene gets {explainer.spec(p)}),
 "description":"1-2 sentences incl. main search keyword","caption":"hook line max 90 chars, no hashtags",
 "post":{{"body":"1 sentence of value","question":"one easy question for comments","save":"reason to save, max 60 chars","keywords":["2-4 search phrases"]}},
 "hashtags":"#a #b #c"}}]}}
@@ -640,7 +660,7 @@ def shorten_short(idea_id):
     items = {str(i): (x.get("visual") or x.get("onscreen") or "")[:120] for i, x in enumerate(scenes)}
     data = ai.ask(f"""Shorten this YouTube Short voiceover to 65-80 words (25-30 s). Keep the hook as the first sentence and the main fact.
 Pick 5-8 of the existing scenes (by number, in order) and write exactly ONE spoken sentence for each picked scene that matches what that scene shows.
-The last sentence is max 8 words and says the full video is linked (e.g. "One case breaks this rule. Full video linked."). No greeting, no goodbye.
+End on the payoff or loop back to the first sentence; no "full video" line, no greeting, no goodbye. Natural sentences with contractions (it's, that's, don't), no chains of fragments, at most 1 question.
 Voiceover: {sc["voiceover"]}
 Scenes: {json.dumps(items, ensure_ascii=False)}
 Return JSON: {{"scenes":[<scene numbers>],"say":["sentence for each picked scene"]}}""", "shorten_short", "cheap")
@@ -649,7 +669,6 @@ Return JSON: {{"scenes":[<scene numbers>],"say":["sentence for each picked scene
     if len(keep) < 3 or len(keep) != len(say) or not (50 <= len(" ".join(say).split()) <= 95):
         return False
     new = [scenes[k] for k in keep]
-    new[-1] = dict(new[-1], onscreen="Full video")
     db.run("UPDATE scripts SET voiceover=?, scenes=? WHERE id=?",
            (" ".join(str(x).strip() for x in say), json.dumps(new, ensure_ascii=False), sc["id"]))
     return True

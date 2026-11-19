@@ -450,10 +450,11 @@ def check_script(s, p=None, fmt="short"):
     add(lo <= words <= hi, 2, f"Dĺžka sedí (~{round(words / 2.6)} s).",
         f"Text má {words} slov (~{round(words / 2.6)} s). Pre {'krátke video' if fmt == 'short' else 'dlhé video'} je ideál {lo}–{hi} slov.")
     avg = words / max(1, len(sents))
-    add(avg <= 16, 1, "Vety sú krátke, dobre sa počúvajú.", f"Vety majú v priemere {round(avg)} slov. Krátke vety sa lepšie počúvajú aj prekladajú.")
+    add(10 <= avg <= 22, 1, "Vety plynú prirodzene.", f"Vety majú v priemere {round(avg)} slov. Úspešné kanály majú 12–20 slov, nie sekané ani pridlhé vety.")
     add(re.search(r"\d", vo), 2, "Obsahuje konkrétne číslo.", "Pridaj konkrétne číslo (cena, úspora, percento). Čísla zvyšujú dôveru aj pozretia.")
     tail = " ".join(sents[-2:]) + " " + (s.get("caption") or "")
-    add(CTA.search(tail), 2, "Na konci je výzva (sleduj, ulož, napíš…).", "Na konci chýba výzva. Pridaj napr. „Ulož si to“ alebo „Napíš do komentára…“.")
+    add(not re.search(r"tell us in the comments|next in this series|full video|watch the full", tail, re.I), 2, "Koniec je pointa, nie reklama.",
+        "Koniec je výzva alebo reklama. Úspešné kanály končia pointou, slučkou na začiatok alebo vtipom.")
     add(not EMOJI.search(vo), 1, "Bez emoji v texte pre hlas.", "V texte pre hlas sú emoji, hlas ich nevie prečítať. Daj ich len do textu príspevku.")
     add(4 <= len(scenes) <= 9, 1, f"{len(scenes)} scén, video bude mať tempo.", f"Scén je {len(scenes)}. Ideál je 6–8, aby sa obraz často menil.")
     s1 = (scenes[0].get("onscreen") if scenes else "") or ""
@@ -550,7 +551,7 @@ def api_improve(sid: int):
 Improve this {"short (65-80 spoken words)" if fmt == "short" else "long"} video script. Fix exactly these problems found by our checker (in Slovak):
 {chr(10).join("- " + t for t in tips)}
 Keep the topic, meaning, facts and numbers (never invent facts), the language ({languages.english(s["lang"])}) and exactly {len(scenes)} on-screen texts
-(one per scene, same order, max 7 words each). Voiceover: no greeting, first sentence max 14 words, short sentences, natural for text-to-speech.
+(one per scene, same order, max 7 words each). Voiceover: no greeting, first sentence max 14 words, natural flowing sentences with contractions (it's, don't), no chains of fragments, natural for text-to-speech.
 Script: {json.dumps(payload, ensure_ascii=False)}
 Return JSON with the same shape: {{"voiceover":"","onscreen":[""],"caption":"","hashtags":""}}""", "improve", "creative", use_cache=False)
     except ai.NeedManual:
