@@ -490,6 +490,14 @@ def rerender(data: dict = Body(...)):
                         r = script_to_video(int(sid), {})
                         new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
                         old = Path(v["file_path"])
+                        if (new.get("status") or "") == "hold" and old.exists() and (v.get("status") or "ready") != "hold":
+                            # 19.11.: nové video neprešlo kontrolou: ostáva staré (už schválené), termín sa nestratí
+                            Path(new["file_path"]).unlink(missing_ok=True)
+                            db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                            _RERENDER["errors"].append([vid, "nové neprešlo kontrolou, ostáva staré"])
+                            with _rr_set_lock:
+                                db.set_setting("swap_skip", sorted(set(db.get_setting("swap_skip", []) or []) | {vid}))
+                            return
                         db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0, qa=?, status=? WHERE id=?",
                                (new["file_path"], new["size"], new["duration"], new.get("qa") or "", new.get("status") or "ready", vid))
                         db.run("DELETE FROM videos WHERE id=?", (new["id"],))
@@ -538,34 +546,59 @@ def _swap_old_shorts_run():
     """18.11. (Oliver): hotové Shorts v starom štýle (~45 s, ešte nezverejnené) postupne vymeniť za nové (25-30 s).
     Denne najviac swap_per_day kusov (najbližšie dni prvé; náhrady sa nahrajú namiesto starých, denný limit 95 stačí na deň výroby). Scenár skráti lacný model,
     video sa zloží znova (rerender: staré súkromné ostane na YouTube skryté, nič sa nemaže), náhrada sa nahrá sama."""
-    per_day = int(db.get_setting("swap_per_day", 70) or 0)
+    per_day = int(db.get_setting("swap_per_day", 600) or 0)
     if per_day <= 0 or _RERENDER.get("running") or db.get_setting("rerender_todo", []):
         return 0
     today = datetime.now().strftime("%Y-%m-%d")
     log = db.get_setting("swap_log", {}) or {}
-    left = per_day - int(log.get(today) or 0)
+    left = min(per_day - int(log.get(today) or 0), int(db.get_setting("swap_batch", 60) or 60))
     if left <= 0:
         return 0
+    # 19.11. (Oliver): prerobiť VŠETKY staré videá do nového štýlu (krátke aj dlhé). Len tie, čo ešte nie sú na YouTube,
+    # takže výmena nestojí nahratie navyše; staré nahraté si termín vymení s novým (_pull_forward). Dlhé bez AI (len nový obraz),
+    # krátke skráti lacný model. Nový štýl = súbor videa po new_style_since, takže sa nič nerobí dvakrát.
+    cut_ts = datetime.fromisoformat(db.get_setting("new_style_since", "2026-11-19 02:20:00")).timestamp()
     soon = (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
-    rows = db.q("""SELECT s.id sid, s.idea_id, MIN(p.scheduled_at) t FROM posts p JOIN videos v ON v.id=p.video_id
+    skip = set(db.get_setting("swap_skip", []) or [])
+    rows = db.q("""SELECT s.id sid, s.idea_id, v.id vid, COALESCE(i.format,'short') fmt, v.file_path, MIN(p.scheduled_at) t FROM posts p JOIN videos v ON v.id=p.video_id
                    JOIN scripts s ON s.id=v.script_id JOIN ideas i ON i.id=s.idea_id
-                   WHERE COALESCE(i.format,'short')='short' AND p.status IN ('queued','review') AND p.scheduled_at>=?
-                   AND NOT EXISTS (SELECT 1 FROM posts q WHERE q.video_id=v.id AND (q.status IN ('done','uploading')))
-                   GROUP BY s.id ORDER BY t LIMIT 200""", (soon,))
+                   WHERE p.status IN ('queued','review') AND p.scheduled_at>=? AND COALESCE(p.stash_id,'')=''
+                   AND NOT EXISTS (SELECT 1 FROM posts q WHERE q.video_id=v.id AND (q.status IN ('done','uploading') OR COALESCE(q.stash_id,'')!=''))
+                   GROUP BY s.id ORDER BY t LIMIT 400""", (soon,))
     sids = []
     for r in rows:
         if len(sids) >= left:
             break
+        if r["vid"] in skip or _new_style(r, cut_ts):
+            continue
         try:
-            if content.shorten_short(r["idea_id"]):
-                sids.append(r["sid"])
+            if r["fmt"] == "short":
+                content.shorten_short(r["idea_id"])   # už krátky scenár sa nemení (bez AI)
+            sids.append(r["sid"])
         except Exception as e:
-            print("výmena krátkeho:", e)
+            print("výmena:", e)
     if sids:
         rerender({"script_ids": sids})
         log[today] = int(log.get(today) or 0) + len(sids)
         db.set_setting("swap_log", {k: v for k, v in log.items() if k >= (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")})
     return len(sids)
+
+
+@app.get("/api/swap-left")
+def swap_left():
+    """Koľko videí v starom štýle ešte čaká na výmenu (krátke / dlhé)."""
+    cut_ts = datetime.fromisoformat(db.get_setting("new_style_since", "2026-11-19 02:20:00")).timestamp()
+    out = {"short": 0, "long": 0, "on_youtube": 0}
+    for r in db.q("""SELECT v.file_path, COALESCE(i.format,'short') fmt, MAX(CASE WHEN p.status IN ('done','uploading') OR COALESCE(p.stash_id,'')!='' THEN 1 ELSE 0 END) up
+                     FROM posts p JOIN videos v ON v.id=p.video_id LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
+                     WHERE p.status IN ('queued','review','done') AND p.scheduled_at>=? GROUP BY v.id""", (scheduler.now_str(),)):
+        if _new_style(r, cut_ts):
+            continue
+        if r["up"]:
+            out["on_youtube"] += 1
+        else:
+            out[r["fmt"] if r["fmt"] in out else "short"] += 1
+    return out
 
 
 def _new_style(vid_row, cut_ts):
