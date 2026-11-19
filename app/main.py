@@ -568,6 +568,12 @@ def _swap_old_shorts_run():
     return len(sids)
 
 
+@app.post("/api/rerender/resume")
+def rerender_resume_now():
+    _rerender_resume()
+    return {"running": bool(_RERENDER.get("running")), "todo": len(db.get_setting("rerender_todo", []) or [])}
+
+
 @app.post("/api/swap-shorts")
 def swap_shorts_now():
     return {"swapped": _swap_old_shorts()}
@@ -3042,6 +3048,8 @@ def main():
         time.sleep(300)
         while True:
             try:
+                if not _RERENDER.get("running") and not _RERENDER.get("drain"):
+                    _rerender_resume()   # 19.11.: rozrobené prerábanie pokračuje, aj keď sa po reštarte samo nerozbehlo
                 _swap_old_shorts()
             except Exception as e:
                 print("výmena krátkych:", e)
