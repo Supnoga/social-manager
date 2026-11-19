@@ -164,7 +164,7 @@ STYLE (most important): tell it like a great popular-science storyteller, not li
 {_long_rules(p, ideas)}Long videos: open with the question and promise the answer, then tell a story in 4-5 chapters that flow into each other (what people believe, what really happens inside, what it means in real life, the mistakes, what to do), end with a one-sentence recap and a question for comments; take your time, never rush, never pad.
 {_cta_rule(p)}
 Start with the hook verbatim (max 14 words, no greeting), deliver value fast,
-at least one concrete number, short sentences, a new visual every 2-4 s, pattern interrupts.
+at least one concrete number, and make the key number visual with an everyday comparison ("as heavy as 3 cars", "a mirror the size of a football pitch"), short sentences, a new visual every 2-4 s, pattern interrupts.
 SHORTS (follow strictly): 0-1 s = the most surprising fact or question together with the strongest moving visual (never a title card, logo or empty scene);
 every scene changes the picture, never keep one picture longer than 4 s; the ending is ONE short sentence (max 8 words, e.g. "Subscribe for more." or "Full video linked."),
 never a long goodbye; the last sentence should flow naturally back into the first sentence so the Short loops.
@@ -172,7 +172,7 @@ Long videos: end with a natural CTA (save/comment, and the channel call to actio
 no emojis or symbols in voiceover. It will be machine-translated to many languages: short clear sentences, no puns or rhymes
 tied to one language, numbers as digits, brand/product names exact. Post texts: no emojis, no clickbait lies, never banned claims.
 Return JSON: {{"scripts":[{{"idea_id":0,"title":"YouTube title max 60 chars: main search keyword in first 3 words + curiosity","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","anim":{{}}}}] (short: 6-8 scenes of 1 sentence each, long: 32-42 scenes; scene 1 = hook with the strongest visual; onscreen headlines in plain words, not jargon; SHOW, do not just tell: every scene shows the exact thing being described (animated mechanism or own "svg" cutaway, map or diagram, see PRIORITY; "svg" at most 3 scenes in a short, 6 in a long video);
+"scenes":[{{"visual":"what to show","onscreen":"short headline for the scene (max 6 words)","q":"2-5 English words to search stock footage","fox":"mascot reaction in this scene, one of surprised|thinking|worried|happy|no|point or empty (4-6 scenes per Short, first scene always has one)","anim":{{}}}}] (short: 6-8 scenes of 1 sentence each, long: 32-42 scenes; scene 1 = hook with the strongest visual; onscreen headlines in plain words, not jargon; SHOW, do not just tell: every scene shows the exact thing being described (animated mechanism or own "svg" cutaway, map or diagram, see PRIORITY; "svg" at most 3 scenes in a short, 6 in a long video);
 scenes follow the voiceover in order, each covers 1-2 sentences; EVERY scene gets {explainer.spec(p)}),
 "description":"YouTube description: first sentence = what viewer learns incl. main search keyword, 2-4 sentences total",
 "caption":"first line of the post = scroll-stopping hook, max 90 chars, contains the main search keyword, no hashtags",
@@ -271,7 +271,7 @@ and do not add a separate goodbye or subscribe sentence (the link is already in 
 Never stop mid-sentence, never promise something the long video does not contain, never repeat the same closing words in two Shorts.
 Same style as the long video: simple everyday words, warm storyteller, short sentences, numbers as digits, no emojis or symbols in voiceover.
 Return JSON: {{"scripts":[{{"title":"Shorts title max 60 chars, main search keyword first","hook":"first sentence","voiceover":"full spoken text",
-"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","anim":{{}}}}] (6-8 scenes of 1 sentence each in voiceover order, never one picture longer than 4 s; last scene is short and its onscreen says 'Full video'; EVERY scene gets {explainer.spec(p)}),
+"scenes":[{{"visual":"what to show","onscreen":"short headline (max 6 words)","q":"2-5 English words","fox":"mascot reaction in this scene, one of surprised|thinking|worried|happy|no|point or empty (4-6 scenes per Short, first scene always has one)","anim":{{}}}}] (6-8 scenes of 1 sentence each in voiceover order, never one picture longer than 4 s; last scene is short and its onscreen says 'Full video'; EVERY scene gets {explainer.spec(p)}),
 "description":"1-2 sentences incl. main search keyword","caption":"hook line max 90 chars, no hashtags",
 "post":{{"body":"1 sentence of value","question":"one easy question for comments","save":"reason to save, max 60 chars","keywords":["2-4 search phrases"]}},
 "hashtags":"#a #b #c"}}]}}

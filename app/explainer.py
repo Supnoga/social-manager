@@ -568,6 +568,46 @@ def localized_scenes(s):
 
 
 # ---------- časovanie scén podľa viet ----------
+FOX_MOODS = ("surprised", "thinking", "worried", "happy", "no", "point")
+_FX_NO = re.compile(r"\b(myth|wrong|not|never|mistake|lie|lies|false|actually|isn't|doesn't|don't|can't|fails?)\b", re.I)
+_FX_WOR = re.compile(r"\b(danger\w*|explo\w+|crash\w*|fire|burn\w*|die[sd]?|death|deadly|risk\w*|collaps\w*|toxic|poison\w*|disaster|fail\w*|broke|breaks?|melt\w*|war|attack\w*|kill\w*)\b", re.I)
+_FX_NUM = re.compile(r"\d")
+
+
+def fox_moods(scenes, sc_data, words):
+    """Emócie líšky po scénach (pravidlá z rozboru úspešných kanálov, 19.11.): 1–3 s reakcia, 4–6 za krátke video, nikdy dve rovnaké po sebe.
+    AI môže dať do scény pole "fox"; inak sa emócia odhadne z textu bez ďalšieho volania AI."""
+    n, prev = len(sc_data), ""
+    cap = 6 if n <= 12 else max(6, n // 2)
+    used = 0
+    for i, (sc, d) in enumerate(zip(scenes, sc_data)):
+        spoken = " ".join(w["w"] for w in words if d["t0"] - .05 <= w["s"] < d["t1"])
+        k = (d.get("v") or {}).get("k")
+        m = str(sc.get("fox") or "").strip().lower()
+        if m not in FOX_MOODS:
+            m = ""
+            if i == 0:
+                m = "thinking" if "?" in spoken else "surprised"
+            elif i == n - 1 and n > 2:
+                m = "happy"
+            elif _FX_WOR.search(spoken):
+                m = "worried"
+            elif _FX_NO.search(spoken):
+                m = "no"
+            elif "?" in spoken:
+                m = "thinking"
+            elif _FX_NUM.search(spoken) and k in ("count", "bars", "calc", "compare", "pie", "hero", "waterfall", "dots"):
+                m = "surprised"
+            elif k == "mech" and i % 2 == 0:
+                m = "point"
+        if m and (m == prev or (used >= cap and i not in (0, n - 1))):
+            m = ""
+        if m:
+            d["fx"] = m
+            used += 1
+        prev = m
+
+
 def timeline(scenes, words, total):
     try:  # scény podľa toho, o čom hlas práve hovorí (audio.scene_times); inak rovnomerne po vetách
         from . import audio
@@ -592,12 +632,14 @@ def timeline(scenes, words, total):
 
 
 def caption_chunks(words, lang, wide=False):
-    maxc = 26 if lang in ("de", "fi", "hu", "nl", "et", "is") else 32
+    # úspešné kanály: 1–3 slová naraz, menia sa každých 0,5–1 s (rozbor 19.11.); na šírku najviac 4 slová
+    maxc = 16 if lang in ("de", "fi", "hu", "nl", "et", "is") else 18
+    maxw = 3
     if wide:
-        maxc += 22
+        maxc, maxw = maxc + 12, 4
     out, cur = [], []
     for w in words:
-        if cur and (len(" ".join(x["w"] for x in cur + [w])) > maxc or cur[-1]["w"][-1:] in ".!?…,;:"):
+        if cur and (len(cur) >= maxw or len(" ".join(x["w"] for x in cur + [w])) > maxc or cur[-1]["w"][-1:] in ".!?…,;:"):
             out.append(cur)
             cur = []
         cur.append(w)
@@ -940,30 +982,52 @@ const pro=sc.v.k=='mech'&&!!(window.MECHPRO&&MECHPRO[sc.v.m]);return {w,k,tt,vz,
 const CAP=document.getElementById('cap'),BAR=document.getElementById('bar'),GLOW=document.getElementById('glow'),LG=document.getElementById('lg'),END=document.getElementById('end');let lastCap=-1;
 const EIMG=END.querySelector('img'),ELN=END.querySelector('.ln'),EGL=END.querySelector('.gl');const TAIL=D.tail||0;
 // sprievodca: líška (maskot) pri titulkoch – „hovorí“ ich, ukazuje hore na stroj a reaguje na čísla (keď je D.guide; na výšku vľavo od titulkov, na šírku v ľavom dolnom rohu pod číslami)
-const GD=(()=>{if(!D.guide)return null;const R=2,w=210,h=250,c=el('canvas','',WIDE?'position:absolute;left:150px;top:846px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(.85)':'position:absolute;left:36px;top:1474px;width:210px;height:250px;z-index:4;transform-origin:0 0;transform:scale(1.2)');c.id='gdc';c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
-if(WIDE){CAP.style.left='380px';CAP.style.width='1160px'}else{CAP.style.left='300px';CAP.style.width='644px';CAP.style.textAlign='left'}return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
-function drawGuide(t,cur,talk,ending){const {x,R,w,h}=GD,A=D.acc,T2=Math.PI*2;x.setTransform(R,0,0,R,0,0);x.clearRect(0,0,w,h);const sc=D.scenes[cur]||{},v=sc.v||{},lt=t-(sc.t0||0),pt=v.k=='mech'?E((lt-.45)/.4):0;
-let ex=0,ek=0;if(v.c&&v.c.t!=null){ek=lt-v.c.t;if(ek>=0&&ek<1.3)ex=Math.exp(-ek*3.2)}
-const a=E((t-.15)/.45)*(ending?0:1);if(a<=0)return;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,bob=Math.sin(t*2.1)*5-ex*24*Math.abs(Math.sin(ek*12)),blink=((t+.7)%3.3)<.11&&ex<.2;
+const GD=(()=>{if(!D.guide)return null;const R=2,w=210,h=290,c=el('canvas','',WIDE?'position:absolute;left:150px;top:812px;width:210px;height:290px;z-index:4;transform-origin:0 0;transform:scale(.85)':'position:absolute;left:30px;top:1367px;width:210px;height:290px;z-index:4;transform-origin:0 0;transform:scale(1.42)');c.id='gdc';c.width=w*R;c.height=h*R;document.getElementById('stage').append(c);
+if(WIDE){CAP.style.left='380px';CAP.style.width='1160px'}else{CAP.style.left='350px';CAP.style.width='600px'}return {x:c.getContext('2d',{willReadFrequently:true}),R,w,h}})();
+// líška žije: v scéne s emóciou (sc.fx) vyskočí, 1–3 s reaguje (prekvapenie, zamyslenie, strach, radosť, nesúhlas, ukazovanie) a zase odíde; na začiatku je hneď v akcii, na konci sa vráti do úvodnej pózy (slučka)
+function foxState(t,cur,force){const sc=D.scenes[cur]||{},lt=t-(sc.t0||0),WIN=WIDE?4.2:2.8,LST=D.scenes.length-1;let m=sc.fx||'',l=lt,vis=0;
+if(D.loop&&t>D.total-.9){m=(D.scenes[0]||{}).fx||'surprised';l=t-(D.total-.9);vis=E(l/.3)}
+else if(m){vis=E((lt-.05)/.3)*(1-E((lt-WIN+.35)/.35))}
+if(force){vis=1;l=Math.max(l,.9);if(!m)m='happy'}return {m,l,vis}}
+function drawGuide(t,cur,talk,ending,force){const {x,R,w,h}=GD,A=D.acc,T2=Math.PI*2;x.setTransform(R,0,0,R,0,0);x.clearRect(0,0,w,h);x.translate(0,40);const sc=D.scenes[cur]||{},v=sc.v||{},lt=t-(sc.t0||0);
+const F=foxState(t,cur,force),M=F.m,ml=F.l,on=k=>M==k?1:0,pk=E((ml-.1)/.35)*(1-E((ml-2.6)/.4)),
+pt=Math.max(v.k=='mech'?E((lt-.45)/.4):0,on('point')*pk),sur=on('surprised')*pk,thk=on('thinking')*pk,wor=on('worried')*pk,hap=on('happy')*pk,no=on('no')*pk;
+let ex=0,ek=0;if(v.c&&v.c.t!=null){ek=lt-v.c.t;if(ek>=0&&ek<1.3)ex=Math.exp(-ek*3.2)}ex=Math.max(ex,sur*Math.exp(-Math.max(0,ml-.1)*1.6));
+const a=F.vis*(ending?0:1);if(a<=.01)return;talk=talk&&!sur&&!hap;const amp=talk?.5+.5*Math.sin(t*23)*Math.sin(t*7.7+1):0,
+hop=(sur+hap)*Math.abs(Math.sin(ml*9))*Math.exp(-ml*1.3)*30,bob=Math.sin(t*2.1)*5-ex*24*Math.abs(Math.sin(ek*12))-hop,shk=wor*Math.sin(t*41)*2.2,blink=((t+.7)%3.3)<.11&&ex<.2&&!hap;
 x.globalAlpha=a;x.lineJoin='round';x.lineCap='round';x.fillStyle='rgba(0,0,0,.55)';x.beginPath();x.ellipse(92,240,44+bob*.4,6,0,0,T2);x.fill();
-x.save();x.translate(0,(1-a)*46+bob);const box=(X,Y,W,H,r,f,st,lw)=>{x.beginPath();x.roundRect(X,Y,W,H,r);x.fillStyle=f;x.fill();if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}};
-// líška (maskot kanálov): srsť má farbu kanála, papuľa je krémová; chvost sa kýve, ústa idú s hlasom, pri stroji ukáže hore naň
+x.save();x.translate(shk,(1-a)*90+bob);const box=(X,Y,W,H,r,f,st,lw)=>{x.beginPath();x.roundRect(X,Y,W,H,r);x.fillStyle=f;x.fill();if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}};
 const DK='#16181b',WH='#fff',CR='#e9e3d8',pth=(P,f,st,lw)=>{x.beginPath();P.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]));x.closePath();if(f){x.fillStyle=f;x.fill()}if(st){x.strokeStyle=st;x.lineWidth=lw||5;x.stroke()}},
-ell=(X,Y,rx,ry,f)=>{x.beginPath();x.ellipse(X,Y,rx,ry,0,0,T2);x.fillStyle=f;x.fill()};
-x.save();x.translate(66,204);x.rotate(.7+Math.sin(t*2.4)*.12);x.beginPath();x.moveTo(0,0);x.bezierCurveTo(-29.6,-18,-59.2,-30,-74,-8);x.bezierCurveTo(-59.2,10,-29.6,14,0,12);x.closePath();x.fillStyle=A;x.fill();x.strokeStyle=WH;x.lineWidth=4;x.stroke();
+ell=(X,Y,rx,ry,f)=>{x.beginPath();x.ellipse(X,Y,rx,ry,0,0,T2);x.fillStyle=f;x.fill()},arm=(P,col)=>{x.strokeStyle=WH;x.lineWidth=7;x.beginPath();P.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]));x.stroke();const Q=P[P.length-1];x.fillStyle=col||WH;x.beginPath();x.arc(Q[0],Q[1],col?8:5.6,0,T2);x.fill();if(col){x.strokeStyle=WH;x.lineWidth=2;x.stroke()}};
+// chvost (pri radosti sa kýve rýchlejšie)
+x.save();x.translate(66,204);x.rotate(.7+Math.sin(t*(2.4+hap*8))*(.12+hap*.15));x.beginPath();x.moveTo(0,0);x.bezierCurveTo(-29.6,-18,-59.2,-30,-74,-8);x.bezierCurveTo(-59.2,10,-29.6,14,0,12);x.closePath();x.fillStyle=A;x.fill();x.strokeStyle=WH;x.lineWidth=4;x.stroke();
 x.beginPath();x.moveTo(-57.7,-24);x.bezierCurveTo(-66.6,-20,-74,-12,-74,-8);x.bezierCurveTo(-66.6,4,-60.7,6,-54.8,6);x.closePath();x.fillStyle=CR;x.fill();x.restore();
-// ľavá ruka, telo s bruškom
-{const EX=54+Math.sin(t*2.1)*3;x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(66,162);x.lineTo(EX,188);x.stroke();x.fillStyle=WH;x.beginPath();x.arc(EX,188,5.6,0,T2);x.fill()}
+// ľavá ruka: v pokoji dole, pri zamyslení pri brade, pri radosti hore
+const lArm=()=>{const EX=54+Math.sin(t*2.1)*3,up=Math.max(hap,sur*.6),ch=thk;const hx=EX*(1-up-ch)+40*up+76*ch,hy=188*(1-up-ch)+118*up+140*ch;arm([[66,162],[hx,hy]],ch>.3?A:null)};if(thk<.3)lArm();
 box(62,146,60,70,24,A,WH);ell(92,186,20,26,CR);
-// hlava: uši, tvár s maskou, oči (pri stroji sa pozrú hore), ňufák, pod ním ústa
-pth([[52,80],[58,36],[84,64]],A,WH);pth([[132,80],[126,36],[100,64]],A,WH);pth([[59,72],[62,46],[76,64]],DK);pth([[125,72],[122,46],[108,64]],DK);
+// hlava: pri nesúhlase krúti, pri zamyslení nakloní
+x.save();x.translate(92,140);x.rotate(no*Math.sin(ml*13)*.2+thk*.12);x.translate(-92,-140);
+{const eu=sur*8;pth([[52,80],[58-eu*.3,36-eu],[84,64]],A,WH);pth([[132,80],[126+eu*.3,36-eu],[100,64]],A,WH);pth([[59,72],[62-eu*.3,46-eu],[76,64]],DK);pth([[125,72],[122+eu*.3,46-eu],[108,64]],DK)}
 pth([[44,72],[140,72],[136,102],[92,138],[48,102]],A,WH);pth([[48,98],[86,110],[92,138],[98,110],[136,98],[92,138]],CR);
-{const dx=4*pt,dy=-3*pt-2*ex;[72,112].forEach(X=>{if(blink){x.strokeStyle=DK;x.lineWidth=4;x.beginPath();x.moveTo(X-8,86);x.lineTo(X+8,86);x.stroke()}else{x.fillStyle=DK;x.beginPath();x.arc(X+dx,86+dy,8*(1+.25*ex),0,T2);x.fill();x.fillStyle='rgba(255,255,255,.9)';x.beginPath();x.arc(X+dx+2.8,86+dy-2.8,2.24,0,T2);x.fill()}})}
-ell(92,115,7,5,DK);{const ry=1.6+4.4*Math.min(1,amp+.6*ex);ell(92,127,5.5,ry,DK)}
-// pravá ruka: v pokoji dole, pri stroji ukazuje hore naň (šípka, nie prst)
-{const an=1.2-2.32*pt+Math.sin(t*4.6)*.07*pt,S0=[122,160],EL=[S0[0]+Math.cos(an+.4*pt)*30,S0[1]+Math.sin(an+.4*pt)*30],HD=[EL[0]+Math.cos(an-.25*pt)*34,EL[1]+Math.sin(an-.25*pt)*34];
-x.strokeStyle=WH;x.lineWidth=7;x.beginPath();x.moveTo(S0[0],S0[1]);x.lineTo(EL[0],EL[1]);x.lineTo(HD[0],HD[1]);x.stroke();x.fillStyle=A;x.beginPath();x.arc(HD[0],HD[1],8,0,T2);x.fill();x.strokeStyle=WH;x.lineWidth=2;x.stroke();
+{const dx=4*pt+6*thk,dy=-3*pt-2*ex-6*thk;[72,112].forEach((X,j)=>{if(hap>.4){x.strokeStyle=DK;x.lineWidth=4.5;x.beginPath();x.arc(X,90,8,Math.PI*1.15,Math.PI*1.85);x.stroke()}
+else if(blink){x.strokeStyle=DK;x.lineWidth=4;x.beginPath();x.moveTo(X-8,86);x.lineTo(X+8,86);x.stroke()}else{x.fillStyle=DK;x.beginPath();x.arc(X+dx,86+dy,8*(1+.25*ex),0,T2);x.fill();x.fillStyle='rgba(255,255,255,.9)';x.beginPath();x.arc(X+dx+2.8,86+dy-2.8,2.24,0,T2);x.fill()}
+const bw=Math.max(wor,no);if(bw>.05){x.strokeStyle=DK;x.lineWidth=4;x.globalAlpha=a*bw;x.beginPath();const s=j?-1:1;if(wor>no){x.moveTo(X-9*s,74);x.lineTo(X+7*s,70)}else{x.moveTo(X-9*s,70);x.lineTo(X+7*s,76)}x.stroke();x.globalAlpha=a}})}
+ell(92,115,7,5,DK);
+if(hap>.3){x.strokeStyle=DK;x.lineWidth=4;x.beginPath();x.arc(92,121,9,Math.PI*.15,Math.PI*.85);x.stroke()}
+else if(wor>.3){x.strokeStyle=DK;x.lineWidth=3.5;x.beginPath();x.moveTo(82,129);x.quadraticCurveTo(87,124,92,129);x.quadraticCurveTo(97,134,102,129);x.stroke()}
+else{const ry=1.6+4.4*Math.min(1,amp+.6*ex+.8*sur);ell(92,127,5.5,ry,DK)}
+x.restore();if(thk>=.3)lArm();
+// pravá ruka: ukazuje hore na to, o čom sa hovorí (šípka), pri radosti hore
+{const an=1.2-2.32*pt+Math.sin(t*4.6)*.07*pt-2.0*hap*(1-pt),S0=[122,160],EL=[S0[0]+Math.cos(an+.4*pt)*30,S0[1]+Math.sin(an+.4*pt)*30],HD=[EL[0]+Math.cos(an-.25*pt)*34,EL[1]+Math.sin(an-.25*pt)*34];
+arm([S0,EL,HD],A);
 if(pt>.5){const b=an-.25,k=E((pt-.5)/.4),w=3*Math.sin(t*5),TX=HD[0]+Math.cos(b)*(27+w),TY=HD[1]+Math.sin(b)*(27+w);x.globalAlpha=a*k;x.strokeStyle=A;x.lineWidth=6;x.beginPath();x.moveTo(TX-Math.cos(b-.75)*14,TY-Math.sin(b-.75)*14);x.lineTo(TX,TY);x.lineTo(TX-Math.cos(b+.75)*14,TY-Math.sin(b+.75)*14);x.stroke();x.globalAlpha=a}}
+// znak nad hlavou: ! prekvapenie, ? zamyslenie, kvapka strach, hviezdičky radosť, X nesúhlas
+{const sy=E((ml-.15)/.3),k=Math.max(sur,thk,wor,hap,no);if(k>.1&&sy>0){x.globalAlpha=a*Math.min(1,k*1.4)*sy;x.save();x.translate(170,34-6*sy);x.lineWidth=5;x.strokeStyle=WH;x.fillStyle=A;
+if(sur>.1||thk>.1){x.font='900 44px Helvetica,Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';x.strokeText(sur>.1?'!':'?',0,0);x.fillText(sur>.1?'!':'?',0,0)}
+else if(wor>.1){x.beginPath();x.moveTo(0,-16);x.quadraticCurveTo(12,4,0,10);x.quadraticCurveTo(-12,4,0,-16);x.fillStyle='#8fd3ff';x.fill();x.stroke()}
+else if(hap>.1){[[-14,-6,9],[10,-14,7],[12,10,6]].forEach(([X,Y,r])=>{x.beginPath();for(let i=0;i<8;i++){const q=i*Math.PI/4+t*2,rr=i%2?r*.4:r;x.lineTo(X+Math.cos(q)*rr,Y+Math.sin(q)*rr)}x.closePath();x.fill()})}
+else{x.lineWidth=7;x.strokeStyle=A;x.beginPath();x.moveTo(-11,-11);x.lineTo(11,11);x.moveTo(11,-11);x.lineTo(-11,11);x.stroke()}
+x.restore();x.globalAlpha=a}}
 x.restore();x.globalAlpha=1}
 
 if(D.logo){LG.src=D.logo;LG.style.display='block'}if(D.logoEnd||D.logo)EIMG.src=D.logoEnd||D.logo;
@@ -990,7 +1054,7 @@ s.fr.style.opacity=zo;if(i!=cur&&!home)return;
 const l2=i==0?lt:lt-.12;s.k.style.opacity=E(l2/.4);
 s.tt.querySelectorAll('.w>span').forEach((e,j)=>{const p=E((l2-.05-j*.07)/.5);e.style.transform=`translateY(${(1-p)*105}%)`});
 const span=Math.max(.6,Math.min(1.35,(dur*.72-.6)/Math.max(1,s.steps)));const st=(a,b)=>s.fast?1:E((lt-.6-a*span)/(b*Math.max(.7,span)));
-s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=s.pro?`scale(${WIDE?1.28:1.1})`:`translateY(${(1-E((l2-.15)/.6))*34}px) scale(${1.16*(1+.04*cl(lt/Math.max(1,dur)))})`;try{s.upd(lt,st)}catch(e){}});
+s.vz.style.opacity=s.fast?1:E((l2-.2)/.4);s.vz.style.transform=s.pro?`scale(${WIDE?1.28:1.1})`:`translate(${Math.sin(lt*.55)*14}px,${(1-E((l2-.15)/.6))*34+Math.cos(lt*.4)*8}px) scale(${1.16*(1+.05*cl(lt/Math.max(1,dur)))*(1+.04*((Math.floor(lt/2.6)%2)?E((lt%2.6)/.6):1-E((lt%2.6)/.6)))})`;try{s.upd(lt,st)}catch(e){}});
 SPIN.forEach(g=>g.setAttribute('transform',`rotate(${(t*70)%360} 50 40)`));drawBg(t,ending);
 GLOW.style.opacity=ending?0:(cur==0?.24*E(t/1.5):.10);GLOW.style.transform=`translate(${Math.sin(t*.3)*40}px,${Math.cos(t*.25)*40}px)`;
 BAR.style.width=((WIDE?1920:1080)*cl(t/D.total))+'px';
@@ -1002,7 +1066,7 @@ let ci=-1;for(let i=0;i<D.caps.length;i++){if(t>=D.caps[i].s-.05&&t<D.caps[i].e)
 if(GD)drawGuide(t,cur,ci>=0,ending);
 if(ci<0){CAP.innerHTML='';lastCap=-1;return}const c=D.caps[ci];
 CAP.innerHTML=c.w.map(w=>`<span class="${t>=w.s?'on':''}">${esc(w.t)}</span>`).join(' ');
-const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,48,24,58,GD?1160:1400);else fit(CAP,GD?62:66,30,150,GD?644:864);lastCap=ci}}
+const on=[...CAP.children].filter(x=>x.classList.contains('on'));if(on.length)on[on.length-1].className='on k';if(ci!==lastCap){if(WIDE)fit(CAP,48,24,58,GD?1160:1400);else fit(CAP,GD?72:76,30,150,GD?600:864);lastCap=ci}}
 // náhľadový obrázok dlhého videa: veľký text vľavo, hlavný obraz vpravo, bez titulkov a lišty
 window.thumbMode=function(i,txt){i=Math.max(0,Math.min(SC.length-1,i|0));const s=SC[i];renderAt(window.THT!=null?Math.min(s.t1-.2,s.t0+window.THT*(s.t1-s.t0)):Math.max(s.t0+.1,s.t1-.2));
 CAP.innerHTML='';BAR.style.width=0;LG.style.display='none';s.k.style.display='none';s.fr.style.opacity=0;
@@ -1035,7 +1099,7 @@ if(ex-sx>60){const A=document.createElementNS('http://www.w3.org/2000/svg','svg'
 const mx=(sx+ex)/2,my=Math.max(sy,ey)+90,d=`M${sx},${sy} Q${mx},${my} ${ex},${ey}`,ang=Math.atan2(ey-my,ex-mx),hl=46,h=(a)=>`${ex-hl*Math.cos(ang+a)},${ey-hl*Math.sin(ang+a)}`;
 A.innerHTML=`<path d="${d}" fill="none" stroke="#000" stroke-width="26" stroke-linecap="round"/><path d="M${h(.5)} L${ex},${ey} L${h(-.5)}" fill="none" stroke="#000" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="${d}" fill="none" stroke="var(--acc)" stroke-width="14" stroke-linecap="round"/><path d="M${h(.5)} L${ex},${ey} L${h(-.5)}" fill="none" stroke="var(--acc)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>`;s.w.append(A)}}catch(e){}}
-if(GD&&WIDE){const c=GD.x.canvas;drawGuide(s.t0+.6,i,false,false);c.style.display='block';c.style.left='70px';c.style.top='720px';c.style.transform='scale(1.25)';c.style.zIndex=5}};
+if(GD&&WIDE){const c=GD.x.canvas;drawGuide(s.t0+.6,i,false,false,true);c.style.display='block';c.style.left='70px';c.style.top='720px';c.style.transform='scale(1.25)';c.style.zIndex=5}};
 // kontrola prekrývania (bez AI) pre práve vykreslenú snímku: čo leží cez čo, hoci nemá. Vráti aj miesta textov, aby sa dalo overiť, že pod nimi nie je obraz.
 window.ovl=function(){const s=SC[window._cur||0],bad=new Set(),B=e=>{const b=e.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom]},U=q=>q.length?[Math.min(...q.map(b=>b.left)),Math.min(...q.map(b=>b.top)),Math.max(...q.map(b=>b.right)),Math.max(...q.map(b=>b.bottom))]:null,
 TX=e=>{const r=document.createRange();r.selectNodeContents(e);return U([...r.getClientRects()].filter(b=>b.width>1&&b.height>1))},
@@ -1311,6 +1375,8 @@ def make(scenes, voice, out, accent="#FF6B00", lang="sk", text="", kicker="", mu
                         "steps": STEPS.get(v.get("k"), lambda d: 2)(v)})
         if lang == "en" and auto_visual.bad_icons(v, f"{sc.get('onscreen') or ''} . {sc.get('visual') or ''} . {spoken}"):
             badic.append(i + 1)   # poistka: ikona, ktorá nesedí k scéne, sa nesmie dostať von (kontrola video nepustí)
+    if guide:
+        fox_moods(scenes, sc_data, words)
     loop = bool(loop and not wide and len(sc_data) > 2)   # krátke video: koniec nadviaže na začiatok (bez záverečnej karty, logo ostáva v rohu)
     tail = 0 if loop else TAIL if (logo_end or logo) else 0
     data = {"acc": accent, "lang": lang, "kicker": kicker, "total": total, "scenes": sc_data, "caps": caption_chunks(words, lang, wide),
