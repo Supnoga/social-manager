@@ -558,7 +558,7 @@ def _swap_old_shorts_run():
     # takže výmena nestojí nahratie navyše; staré nahraté si termín vymení s novým (_pull_forward). Dlhé bez AI (len nový obraz),
     # krátke skráti lacný model. Nový štýl = súbor videa po new_style_since, takže sa nič nerobí dvakrát.
     cut_ts = datetime.fromisoformat(db.get_setting("new_style_since", "2026-11-19 02:20:00")).timestamp()
-    soon = (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+    soon = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")   # aj tie, čo už čakajú na nahratie
     skip = set(db.get_setting("swap_skip", []) or [])
     rows = db.q("""SELECT s.id sid, s.idea_id, v.id vid, COALESCE(i.format,'short') fmt, v.file_path, MIN(p.scheduled_at) t FROM posts p JOIN videos v ON v.id=p.video_id
                    JOIN scripts s ON s.id=v.script_id JOIN ideas i ON i.id=s.idea_id
@@ -616,6 +616,8 @@ def _pull_forward():
     vymení termín so starším videom v starom štýle, ktoré je naplánované skôr (rovnaký typ: dlhé za dlhé, krátke za krátke).
     Staré už nahraté video sa na YouTube len preplánuje (ostane súkromné a vyjde v neskoršom termíne), nič sa nemaže
     a nenahráva navyše. Nové video sa nahrá do skoršieho termínu (rovnaké jedno nahratie, ktoré by aj tak potrebovalo)."""
+    if not db.get_setting("pull_forward_on", False):   # 19.11. Oliver: nahraté staré nech dobehnú, nič sa nepreplánuje
+        return 0
     if not _pull_lock.acquire(blocking=False):
         return 0
     try:
