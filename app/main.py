@@ -568,6 +568,74 @@ def _swap_old_shorts_run():
     return len(sids)
 
 
+def _new_style(vid_row, cut_ts):
+    try:
+        return os.path.getmtime(vid_row["file_path"]) >= cut_ts
+    except Exception:
+        return False
+
+
+_pull_lock = threading.Lock()
+
+
+def _pull_forward():
+    """19.11. (Oliver): videá v novom štýle majú ísť von čo najskôr. Na každom YouTube kanáli si nové video (ešte nenahraté)
+    vymení termín so starším videom v starom štýle, ktoré je naplánované skôr (rovnaký typ: dlhé za dlhé, krátke za krátke).
+    Staré už nahraté video sa na YouTube len preplánuje (ostane súkromné a vyjde v neskoršom termíne), nič sa nemaže
+    a nenahráva navyše. Nové video sa nahrá do skoršieho termínu (rovnaké jedno nahratie, ktoré by aj tak potrebovalo)."""
+    if not _pull_lock.acquire(blocking=False):
+        return 0
+    try:
+        cut = db.get_setting("new_style_since", "2026-11-19 02:20:00")
+        cut_ts = datetime.fromisoformat(cut).timestamp()
+        soon = (datetime.now() + timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+        rows = db.q("""SELECT p.id, p.account_id, p.video_id, p.status, p.scheduled_at t, COALESCE(p.stash_id,'') stash,
+                       COALESCE(p.external_id,'') ext, COALESCE(i.format,'short') fmt, v.file_path
+                       FROM posts p JOIN accounts a ON a.id=p.account_id JOIN videos v ON v.id=p.video_id
+                       LEFT JOIN scripts s ON s.id=v.script_id LEFT JOIN ideas i ON i.id=s.idea_id
+                       WHERE a.platform='youtube' AND p.status IN ('queued','done') AND p.scheduled_at>=?
+                       ORDER BY p.scheduled_at""", (soon,))
+        groups = {}
+        for r in rows:
+            groups.setdefault((r["account_id"], r["fmt"]), []).append(r)
+        n = 0
+        for (acc_id, fmt), lst in groups.items():
+            new = [r for r in lst if r["status"] == "queued" and not r["stash"] and _new_style(r, cut_ts)]
+            old = [r for r in lst if not _new_style(r, cut_ts)]
+            acc = None
+            for o, nw in zip(old, new):
+                if o["t"] >= nw["t"]:
+                    break
+                try:
+                    if o["status"] == "done":
+                        yid = o["ext"] or o["stash"]
+                        if not yid:
+                            continue
+                        acc = acc or db.one("SELECT * FROM accounts WHERE id=?", (acc_id,))
+                        youtube.unschedule(acc, yid)   # ostane súkromné; neskorší termín mu nastaví plánovač (publishAt)
+                        db.run("UPDATE posts SET status='queued', stash_id=?, external_id='', url='', error='', scheduled_at=?, updated_at=? WHERE id=?",
+                               (yid, nw["t"], scheduler.now_str(), o["id"]))
+                    else:
+                        db.run("UPDATE posts SET scheduled_at=?, updated_at=? WHERE id=?", (nw["t"], scheduler.now_str(), o["id"]))
+                    db.run("UPDATE posts SET scheduled_at=?, updated_at=? WHERE id=?", (o["t"], scheduler.now_str(), nw["id"]))
+                    n += 1
+                except Exception as e:
+                    print("nové video skôr:", str(e)[:200])
+                    if "quota" in str(e).lower():
+                        return n
+        if n:
+            lg = db.get_setting("pull_log", []) or []
+            db.set_setting("pull_log", (lg + [[scheduler.now_str(), n]])[-50:])
+        return n
+    finally:
+        _pull_lock.release()
+
+
+@app.post("/api/pull-forward")
+def pull_forward_now():
+    return {"moved": _pull_forward()}
+
+
 @app.post("/api/rerender/resume")
 def rerender_resume_now():
     _rerender_resume()
@@ -3051,6 +3119,7 @@ def main():
                 if not _RERENDER.get("running") and not _RERENDER.get("drain"):
                     _rerender_resume()   # 19.11.: rozrobené prerábanie pokračuje, aj keď sa po reštarte samo nerozbehlo
                 _swap_old_shorts()
+                _pull_forward()
             except Exception as e:
                 print("výmena krátkych:", e)
             time.sleep(20 * 60)
