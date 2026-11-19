@@ -490,14 +490,34 @@ def rerender(data: dict = Body(...)):
                         r = script_to_video(int(sid), {})
                         new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
                         old = Path(v["file_path"])
-                        if (new.get("status") or "") == "hold" and old.exists() and (v.get("status") or "ready") != "hold":
-                            # 19.11.: nové video neprešlo kontrolou: ostáva staré (už schválené), termín sa nestratí
+                        if (new.get("status") or "") == "hold":
+                            # 19.11. (Oliver): staré sa nevydá. Neprešlo kontrolou: scény dostanú silnejší obraz (1 lacné AI volanie)
+                            # a video sa zloží ešte raz. Keď ani potom neprejde, termín sa pozdrží (hold), staré ostane nevydané.
                             Path(new["file_path"]).unlink(missing_ok=True)
                             db.run("DELETE FROM videos WHERE id=?", (new["id"],))
-                            _RERENDER["errors"].append([vid, "nové neprešlo kontrolou, ostáva staré"])
-                            with _rr_set_lock:
-                                db.set_setting("swap_skip", sorted(set(db.get_setting("swap_skip", []) or []) | {vid}))
-                            return
+                            iid = (db.one("SELECT idea_id FROM scripts WHERE id=?", (int(sid),)) or {}).get("idea_id")
+                            fixed = False
+                            if iid:
+                                try:
+                                    ok, why = _mp_precheck(iid)
+                                    if not ok:
+                                        ok, why = _mp_fix(iid, why)
+                                    fixed = ok
+                                except Exception as e:
+                                    print("oprava pri výmene:", e)
+                            if fixed:
+                                r = script_to_video(int(sid), {})
+                                new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
+                            if not fixed or (new.get("status") or "") == "hold":
+                                if fixed:
+                                    Path(new["file_path"]).unlink(missing_ok=True)
+                                    db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                                db.run("UPDATE posts SET status='hold', error=?, updated_at=? WHERE video_id=? AND status='queued'",
+                                       ("Nové video neprešlo kontrolou, staré sa nevydá", scheduler.now_str(), vid))
+                                _RERENDER["errors"].append([vid, "nové neprešlo kontrolou ani po oprave, pozdržané"])
+                                with _rr_set_lock:
+                                    db.set_setting("swap_skip", sorted(set(db.get_setting("swap_skip", []) or []) | {vid}))
+                                return
                         db.run("UPDATE videos SET file_path=?, size=?, duration=?, preview_path='', removed=0, qa=?, status=? WHERE id=?",
                                (new["file_path"], new["size"], new["duration"], new.get("qa") or "", new.get("status") or "ready", vid))
                         db.run("DELETE FROM videos WHERE id=?", (new["id"],))
@@ -675,6 +695,20 @@ def pull_forward_now():
 def rerender_resume_now():
     _rerender_resume()
     return {"running": bool(_RERENDER.get("running")), "todo": len(db.get_setting("rerender_todo", []) or [])}
+
+
+@app.post("/api/swap-retry")
+def swap_retry():
+    """Videá, ktoré po výmene neprešli kontrolou (swap_skip): skúsi ich znova, teraz s opravou obrazu."""
+    skip = db.get_setting("swap_skip", []) or []
+    if not skip or _RERENDER.get("running"):
+        return {"retry": 0, "running": bool(_RERENDER.get("running"))}
+    db.set_setting("swap_skip", [])
+    q = ",".join("?" * len(skip))
+    db.run(f"UPDATE posts SET status='queued', error='' WHERE status='hold' AND video_id IN ({q})", tuple(skip))
+    sids = sorted({r["script_id"] for r in db.q(f"SELECT script_id FROM videos WHERE id IN ({q})", tuple(skip)) if r["script_id"]})
+    # rerender: už nahraté a ešte nezverejnené staré verzie na YouTube zruší z plánu (ostanú súkromné) a nahrá nové
+    return {"retry": len(skip), "started": rerender({"script_ids": sids}).get("started")}
 
 
 @app.post("/api/swap-shorts")

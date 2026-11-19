@@ -36,9 +36,7 @@ def old_blocked(acc, vid):
         if not acc or acc["platform"] != "youtube" or not db.get_setting("block_old_uploads", True):
             return False
         cut = datetime.fromisoformat(db.get_setting("new_style_since", "2026-11-19 02:20:00")).timestamp()
-        if os.path.getmtime(vid["file_path"]) >= cut:
-            return False
-        return vid["id"] not in set(db.get_setting("swap_skip", []) or [])
+        return os.path.getmtime(vid["file_path"]) < cut   # 19.11. Oliver: staré sa nevydá nikdy (ani keď nové neprešlo kontrolou)
     except Exception:
         return False
 
