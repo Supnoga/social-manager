@@ -497,24 +497,39 @@ def rerender(data: dict = Body(...)):
                             db.run("DELETE FROM videos WHERE id=?", (new["id"],))
                             iid = (db.one("SELECT idea_id FROM scripts WHERE id=?", (int(sid),)) or {}).get("idea_id")
                             fixed = False
-                            if iid:
-                                try:
-                                    ok, why = _mp_precheck(iid)
-                                    if not ok:
-                                        ok, why = _mp_fix(iid, why)
-                                    fixed = ok
-                                except Exception as e:
-                                    print("oprava pri výmene:", e)
-                            if fixed:
+                            # 20.11.: kontrola po zložení (so skutočným hlasom) môže nájsť iné chyby ako rýchla kontrola bez hlasu.
+                            # Opraví sa podľa skutočného dôvodu z hotového videa, najviac 2 pokusy.
+                            why = "; ".join(((r or {}).get("qa") or {}).get("why") or [])
+                            src = db.one("SELECT id FROM scripts WHERE idea_id=? AND is_source=1", (iid,)) if iid else None
+                            for _try in range(2):
+                                n = 0
+                                if src:
+                                    try:
+                                        n = explainer.strengthen(src["id"], why)
+                                    except Exception as e:
+                                        print("oprava pri výmene:", e)
+                                if not n and iid and _try == 0:
+                                    try:
+                                        ok, w2 = _mp_precheck(iid)
+                                        if not ok:
+                                            ok, w2 = _mp_fix(iid, w2)
+                                        n = 1 if ok else 0
+                                    except Exception as e:
+                                        print("oprava pri výmene:", e)
+                                if not n:
+                                    break
                                 r = script_to_video(int(sid), {})
                                 new = db.one("SELECT * FROM videos WHERE id=?", (r["video_id"],))
-                            if not fixed or (new.get("status") or "") == "hold":
-                                if fixed:
-                                    Path(new["file_path"]).unlink(missing_ok=True)
-                                    db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                                if (new.get("status") or "") != "hold":
+                                    fixed = True
+                                    break
+                                why = "; ".join(((r or {}).get("qa") or {}).get("why") or [])
+                                Path(new["file_path"]).unlink(missing_ok=True)
+                                db.run("DELETE FROM videos WHERE id=?", (new["id"],))
+                            if not fixed:
                                 db.run("UPDATE posts SET status='hold', error=?, updated_at=? WHERE video_id=? AND status='queued'",
                                        ("Nové video neprešlo kontrolou, staré sa nevydá", scheduler.now_str(), vid))
-                                _RERENDER["errors"].append([vid, "nové neprešlo kontrolou ani po oprave, pozdržané"])
+                                _RERENDER["errors"].append([vid, "nové neprešlo kontrolou ani po oprave, pozdržané: " + why[:200]])
                                 with _rr_set_lock:
                                     db.set_setting("swap_skip", sorted(set(db.get_setting("swap_skip", []) or []) | {vid}))
                                 return
