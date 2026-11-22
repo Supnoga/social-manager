@@ -279,11 +279,14 @@ def tick():
         for p in rows:
             if done < 2 and stash_one(p):
                 done += 1
-        if rows or (datetime.now().minute % 30 == 0 and datetime.now().second < 30):
-            try:
-                nightly.clean()
-            except Exception:
-                traceback.print_exc()
+    # 22.11.: upratovanie beží vždy (predtým len so súkromným odkladaním, a disk sa zaplnil):
+    # z Macu zmaže len súbory videí, ktoré sú už celé na YouTube; na YouTube sa nič nemení
+    if time.time() - state.get("last_clean_ts", 0) > 1800:
+        state["last_clean_ts"] = time.time()
+        try:
+            nightly.clean()
+        except Exception:
+            traceback.print_exc()
     # titulky dlhých videí: len z kvóty, ktorú práve nepotrebujú videá (stoja ako 4 nahratia)
     if not due and not db.one("""SELECT 1 FROM posts p JOIN accounts a ON a.id=p.account_id WHERE a.platform='youtube'
                                  AND ((p.status='review' AND COALESCE(p.stash_id,'')='') OR p.status='uploading') LIMIT 1"""):
