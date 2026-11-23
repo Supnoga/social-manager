@@ -22,9 +22,9 @@ if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||"",4,ts-.35,A);
 meter(S,"1400 RPM","FAN",A,a,fi>=0);callout(S,d,t,A);x.globalAlpha=1}};
 
 PRO.wind=(v,d)=>{const S=STG(v),x=S.x,A=D.acc,LN=LBL(d),DUR=N(d._dur)||9;
-const zf=Math.min(S.w/900,S.h/600)*.98,FULL=[450,300,zf],FV={windward:[300,300,zf*2.0],roof:[450,150,zf*2.0],leeward:[640,330,zf*2.0]};
+const zf=Math.min(S.w/900,S.h/600)*.98,FULL=[450,300,zf],FV={windward:[430,300,zf*1.3],roof:[430,250,zf*1.3],leeward:[450,310,zf*1.3]};
 const ORD=['windward','roof','leeward'],KF=cams(d,FULL,FV,ORD,DUR);
-return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=ez((cm[2]/zf-1)/.25);
+return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=0;
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);x.lineJoin="round";x.lineCap="round";
 x.fillStyle="#7b848d";x.fillRect(-100,470,1100,130);
 x.fillStyle="#e8ecef";x.fillRect(300,270,260,200);
