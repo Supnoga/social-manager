@@ -512,15 +512,22 @@ def strengthen(script_id, why="", fresh=False):
     sprites = "user, people, phone, tv, laptop, wifi, house, city, store, bank, factory, server, cloud, document, mail, calendar, wallet, coins, " \
               "banknote, piggybank, pricetag, lock, shield, key, chart, growth, package, truck, warehouse, container, plane, ship, globe, clock, idea, " \
               "chip, check, cross, drop, bolt, flame, snow, leaf, car, battery, card, robot, satellite, gear, sun, flag, plug, tool"
-    lines = [x for x in SPEC.split("\n") if any(f'"k":"{k}"' in x for k in ("bars", "compare", "temp", "split", "scene", "map", "timeline"))]
+    # 23.11.: opakovaná oprava (fresh) bez „scene“: pri chýbajúcich kresbách ostávala slabá a video neprešlo ani na tretí pokus
+    kinds = ("bars", "compare", "temp", "split", "map", "timeline") + (() if fresh else ("scene",))
+    lines = [x for x in SPEC.split("\n") if any(f'"k":"{k}"' in x for k in kinds)]
+    if fresh:
+        allowed.discard("scene")
+    rule_scene = ("a process or cause and effect -> \"calc\" with real steps or \"compare\" before/after." if fresh else
+                  f'people, companies or things giving something to each other -> "scene" with 2-4 things ONLY from this list: {sprites} (every thing labelled, every arrow says what moves).')
+    no_scene = ' or "scene"' if fresh else ""
     try:
         data = ai.ask(f"""Video "{s['title']}". These scenes now show only icons or text, or their picture is empty or crowded.
 Give each scene a NEW diagram that SHOWS what the scene says. Allowed diagrams ONLY:
 {chr(10).join(lines)}
 {chr(10).join(PACK[k] for k in packs)}
 Rules: a place, country, city or route -> "map"; years or history -> "timeline"; a number -> "bars", "count", "compare", "line" or "calc" with real numbers;
-people, companies or things giving something to each other -> "scene" with 2-4 things ONLY from this list: {sprites} (every thing labelled, every arrow says what moves).
-Never "hero", "text", "list", "icons", "draw", "svg" or "mech". Labels max 3 words. Write labels in {languages.english(s['lang'])}.
+{rule_scene}
+Never "hero", "text", "list", "icons", "draw", "svg" or "mech"{no_scene}. Labels max 3 words. Write labels in {languages.english(s['lang'])}.
 Scenes: {json.dumps(items, ensure_ascii=False)}
 Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "strengthen", "cheap", use_cache=not fresh)
     except Exception as e:
