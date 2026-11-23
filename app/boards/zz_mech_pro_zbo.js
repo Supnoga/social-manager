@@ -21,9 +21,9 @@ if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||"",4,ts-.35,A);
 meter(S,"4 ROBOTS","MOVING",A,a,fi>=0);callout(S,d,t,A);x.globalAlpha=1}};
 
 PRO.storm=(v,d)=>{const S=STG(v),x=S.x,A=D.acc,LN=LBL(d),DUR=N(d._dur)||9;
-const zf=Math.min(S.w/900,S.h/600)*.98,FULL=[450,300,zf],FV={charge:[450,220,zf*1.9],bolt:[450,330,zf*1.8],energy:[450,400,zf*2.0]};
+const zf=Math.min(S.w/900,S.h/600)*.98,FULL=[450,300,zf],FV={charge:[450,250,zf*1.2],bolt:[450,300,zf*1.2],energy:[450,380,zf*1.2]};
 const ORD=['charge','bolt','energy'],KF=cams(d,FULL,FV,ORD,DUR);
-return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=ez((cm[2]/zf-1)/.25);
+return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=0;
 const flash=(Math.floor(t*1.3)%3===0)?1:0;
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);x.lineJoin="round";x.lineCap="round";
 x.fillStyle="#2a2f36";x.beginPath();x.ellipse(450,190,300,90,0,0,Math.PI*2);x.fill();x.fillStyle="#3b4048";x.beginPath();x.ellipse(450,240,260,60,0,0,Math.PI*2);x.fill();
@@ -75,9 +75,9 @@ if(fi>=0&&ts>.35)stamp(S,fi,LN[fi]||"",4,ts-.35,A);
 meter(S,"FEEDBACK","POT",A,a,fi>=0);callout(S,d,t,A);x.globalAlpha=1}};
 
 PRO.magnus=(v,d)=>{const S=STG(v),x=S.x,A=D.acc,LN=LBL(d),DUR=N(d._dur)||9;
-const zf=Math.min(S.w/900,S.h/600)*.98,FULL=[450,300,zf],FV={ball:[450,300,zf*2.0],airflow:[450,300,zf*1.6],force:[450,200,zf*1.8]};
+const zf=Math.min(S.w/900,S.h/600)*.98,FULL=[450,300,zf],FV={ball:[450,300,zf*1.2],airflow:[450,300,zf*1.15],force:[450,260,zf*1.2]};
 const ORD=['ball','airflow','force'],KF=cams(d,FULL,FV,ORD,DUR);
-return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=ez((cm[2]/zf-1)/.25);
+return (t,st)=>{const p=E(st(0,1)),sp=cl(st(.3,1));S.begin();x.globalAlpha=p;const cm=camAt(KF,t,.8),zi=0;
 const rot=t*9,bx=450,by=300;
 x.save();x.translate(S.w/2,S.h/2);x.scale(cm[2],cm[2]);x.translate(-cm[0],-cm[1]);x.lineJoin="round";x.lineCap="round";
 x.globalAlpha=p*sp*(1-zi);x.strokeStyle="rgba(190,220,255,.7)";x.lineWidth=3;
