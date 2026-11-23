@@ -494,7 +494,7 @@ def _bad_scenes(scenes, why=""):
     return sorted(i for i in out if 0 <= i < len(body))
 
 
-def strengthen(script_id, why=""):
+def strengthen(script_id, why="", fresh=False):
     """Slabé scény (len ikony či text), prázdne a prekrývajúce sa scény dostanú nový obraz: mapu, graf, časovú os alebo blok „kto komu“.
     Jedno malé lacné AI volanie len pre tieto scény (scenár ani hlas sa nemenia). Vráti počet vymenených scén (16.11.)."""
     from . import ai, auto_visual, languages
@@ -522,7 +522,7 @@ Rules: a place, country, city or route -> "map"; years or history -> "timeline";
 people, companies or things giving something to each other -> "scene" with 2-4 things ONLY from this list: {sprites} (every thing labelled, every arrow says what moves).
 Never "hero", "text", "list", "icons", "draw", "svg" or "mech". Labels max 3 words. Write labels in {languages.english(s['lang'])}.
 Scenes: {json.dumps(items, ensure_ascii=False)}
-Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "strengthen", "cheap")
+Return JSON: {{"<scene number>":{{"k":"..."}}}}""", "strengthen", "cheap", use_cache=not fresh)
     except Exception as e:
         print("silnejší obraz:", e)
         return 0

@@ -505,7 +505,7 @@ def rerender(data: dict = Body(...)):
                                 n = 0
                                 if src:
                                     try:
-                                        n = explainer.strengthen(src["id"], why)
+                                        n = explainer.strengthen(src["id"], why, fresh=True)   # 23.11.: nová odpoveď AI, nie tá istá z pamäte
                                     except Exception as e:
                                         print("oprava pri výmene:", e)
                                 if not n and iid and _try == 0:
