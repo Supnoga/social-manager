@@ -712,6 +712,36 @@ def rerender_resume_now():
     return {"running": bool(_RERENDER.get("running")), "todo": len(db.get_setting("rerender_todo", []) or [])}
 
 
+@app.post("/api/cleanup-old")
+def cleanup_old(data: dict = Body(default={})):
+    """23.11. (Oliver): zmaže staré videá (súbory a záznamy v appke), scenáre ostanú.
+    - projekty v data["all_pids"] (N2N): všetky videá, ktoré nie sú na YouTube
+    - projekty v data["old_pids"] (Xplained): len videá v starom štýle (súbor pred new_style_since), ktoré nie sú na YouTube
+    Nikdy: video s hotovým, nahrávaným alebo súkromne odloženým zverejnením, video vo fronte prerábania. dry=true len spočíta."""
+    cut_ts = datetime.fromisoformat(db.get_setting("new_style_since", "2026-11-19 02:20:00")).timestamp()
+    all_pids = {int(x) for x in data.get("all_pids") or []}
+    old_pids = {int(x) for x in data.get("old_pids") or []}   # len tieto projekty (Xplained), iné (napr. Dupie) sa nedotknú
+    busy = set(db.get_setting("rerender_todo", []) or []) | {_RERENDER.get("current")}
+    rows = db.q("""SELECT v.id, v.project_id, v.file_path FROM videos v WHERE NOT EXISTS (SELECT 1 FROM posts q WHERE q.video_id=v.id
+                   AND (q.status IN ('done','uploading') OR COALESCE(q.stash_id,'')!='' OR COALESCE(q.external_id,'')!=''))""")
+    ids, by = [], {}
+    for v in rows:
+        if v["id"] in busy or (v["project_id"] not in all_pids and v["project_id"] not in old_pids):
+            continue
+        if v["project_id"] in all_pids or not _new_style(v, cut_ts):
+            ids.append(v["id"])
+            by[v["project_id"]] = by.get(v["project_id"], 0) + 1
+    if not data.get("dry", True):
+        for i in ids:
+            v = db.one("SELECT file_path FROM videos WHERE id=?", (i,))
+            if v and v["file_path"] and str(Path(v["file_path"]).resolve()).startswith(str(VIDEO_DIR.resolve())):
+                Path(v["file_path"]).unlink(missing_ok=True)
+                Path(v["file_path"]).with_suffix(".jpg").unlink(missing_ok=True)
+            db.run("DELETE FROM posts WHERE video_id=? AND status NOT IN ('done','uploading')", (i,))
+            db.run("DELETE FROM videos WHERE id=?", (i,))
+    return {"count": len(ids), "by_project": by, "deleted": not data.get("dry", True)}
+
+
 @app.post("/api/swap-retry")
 def swap_retry():
     """Videá, ktoré po výmene neprešli kontrolou (swap_skip): skúsi ich znova, teraz s opravou obrazu."""
