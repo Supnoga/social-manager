@@ -70,50 +70,79 @@ def _save_text(sid, text):
     db.run("UPDATE scripts SET thumb=? WHERE id=?", (json.dumps(t, ensure_ascii=False), sid))
 
 
+def _done_long():
+    """1.104.0: všetky zverejnené dlhé videá na YouTube (aj tie, ktorých súbor sa už z Macu zmazal)."""
+    return db.q("""SELECT v.id vid, v.file_path, p.account_id, COALESCE(NULLIF(p.external_id,''), p.stash_id, '') yt, s.id sid
+                   FROM videos v JOIN scripts s ON s.id=v.script_id JOIN ideas i ON i.id=s.idea_id
+                   JOIN posts p ON p.video_id=v.id JOIN accounts a ON a.id=p.account_id
+                   WHERE i.format='long' AND a.platform='youtube' AND p.status='done'
+                   AND COALESCE(NULLIF(p.external_id,''), p.stash_id, '')!='' ORDER BY p.scheduled_at DESC""")
+
+
+def _thumb_file(r, done):
+    """Obrázok náhľadu pre video: hotový, alebo ho nanovo vyrobí (bez AI, len zo scenára)."""
+    from . import main
+    for f in (db.get_setting(f"thumb2_path_{r['vid']}") or "", os.path.splitext(r["file_path"] or "")[0] + ".jpg"):
+        if f and os.path.exists(f):
+            return f
+    out = str(db.MEDIA_DIR / f"thumb_v{r['vid']}.jpg")
+    s = db.one("SELECT * FROM scripts WHERE id=?", (r["sid"],))
+    if not s:
+        return ""
+    try:
+        if not main.render_thumb(s, out) or not os.path.exists(out):
+            return ""
+    except Exception:
+        traceback.print_exc()
+        return ""
+    done.add(str(r["vid"]))
+    db.set_setting("thumb2_done", sorted(done))
+    db.set_setting(f"thumb2_path_{r['vid']}", out)
+    return out
+
+
 def thumbs_run(limit=PER_RUN):
     from . import main
     from .platforms import youtube
     done = set(db.get_setting("thumb2_done", []) or [])
     up = set(db.get_setting("thumb2_up", []) or [])
     rows = _long_rows()
-    todo = [r for r in rows if str(r["vid"]) not in done][:limit]           # na vyrenderovanie
-    todo_ids = {id(r) for r in todo}
-    todo += [r for r in rows if id(r) not in todo_ids and r["yt"] and r["yt"] not in up]   # len nahrať
-    if not todo:
-        return 0
-    texts = new_texts([r for r in todo if str(r["vid"]) not in done])
+    todo = [r for r in rows if str(r["vid"]) not in done][:limit]           # nový vzhľad náhľadu pre staršie videá
+    texts = new_texts(todo)
     n = 0
     for r in todo:
-        if str(r["vid"]) not in done:
-            if r["sid"] in texts:
-                _save_text(r["sid"], texts[r["sid"]])
-            s = db.one("SELECT * FROM scripts WHERE id=?", (r["sid"],))
-            out = os.path.splitext(r["file_path"] or "")[0] + ".jpg" if r["file_path"] else str(db.MEDIA_DIR / f"thumb_v{r['vid']}.jpg")
-            if not os.path.isdir(os.path.dirname(out) or "."):
-                out = str(db.MEDIA_DIR / f"thumb_v{r['vid']}.jpg")
-            try:
-                if not main.render_thumb(s, out):
-                    continue
-            except Exception:
-                traceback.print_exc()
+        if r["sid"] in texts:
+            _save_text(r["sid"], texts[r["sid"]])
+        s = db.one("SELECT * FROM scripts WHERE id=?", (r["sid"],))
+        out = os.path.splitext(r["file_path"] or "")[0] + ".jpg" if r["file_path"] else str(db.MEDIA_DIR / f"thumb_v{r['vid']}.jpg")
+        if not os.path.isdir(os.path.dirname(out) or "."):
+            out = str(db.MEDIA_DIR / f"thumb_v{r['vid']}.jpg")
+        try:
+            if not main.render_thumb(s, out):
                 continue
-            done.add(str(r["vid"]))
-            db.set_setting("thumb2_done", sorted(done))
-            db.set_setting(f"thumb2_path_{r['vid']}", out)
+        except Exception:
+            traceback.print_exc()
+            continue
+        done.add(str(r["vid"]))
+        db.set_setting("thumb2_done", sorted(done))
+        db.set_setting(f"thumb2_path_{r['vid']}", out)
+        n += 1
+    # 1.104.0: nahratie náhľadu všetkým zverejneným dlhým videám, ktoré ho na YouTube ešte nemajú. Kanál, ktorý náhľad
+    # odmietne (nie je overený), sa skúša znova raz za deň, takže po overení sa náhľady doplnia samy.
+    renders = 0
+    for r in _done_long():
+        if r["yt"] in up:
+            continue
+        acc = db.one("SELECT * FROM accounts WHERE id=?", (r["account_id"],))
+        if not acc or youtube.thumb_blocked(acc) or not youtube.spare_ok(acc, youtube.U_THUMB):
+            continue
+        path = _thumb_file(r, done) if renders < limit else ""
+        if not path:
+            continue
+        renders += 1
+        if youtube.set_thumb(acc, r["yt"], path):
+            up.add(r["yt"])
             n += 1
-        if r["yt"] and r["yt"] not in up:
-            acc = db.one("SELECT * FROM accounts WHERE id=?", (r["account_id"],))
-            path = db.get_setting(f"thumb2_path_{r['vid']}") or ""
-            if not acc or acc.get("platform") != "youtube" or not os.path.exists(path):
-                continue
-            if not youtube.spare_ok(acc, youtube.U_THUMB):
-                continue
-            if youtube.set_thumb(acc, r["yt"], path):
-                up.add(r["yt"])
-                db.set_setting("thumb2_up", sorted(up))
-            else:
-                up.add(r["yt"])   # kanál náhľad neprijíma (chyba v yt_thumb_fail): neskúšať stále dokola
-                db.set_setting("thumb2_up", sorted(up))
     return n
 
 

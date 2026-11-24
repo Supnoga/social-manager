@@ -3006,6 +3006,16 @@ def post_delete(pid: int):
     return {"ok": True}
 
 
+@app.get("/api/yt-thumbs")
+def yt_thumbs():
+    """1.104.0: ktoré YouTube kanály prijímajú vlastné náhľady a ktoré nie (a prečo)."""
+    st = db.get_setting("yt_thumb_state", {}) or {}
+    return {"state": st, "fail": db.get_setting("yt_thumb_fail", {}) or {},
+            "uploaded": len(db.get_setting("thumb2_up", []) or []),
+            "blocked": sorted({v.get("name") or k for k, v in st.items() if v.get("ok") is False}),
+            "ok": sorted({v.get("name") or k for k, v in st.items() if v.get("ok")})}
+
+
 @app.get("/api/update")
 def update_check():
     try:

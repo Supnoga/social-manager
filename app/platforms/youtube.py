@@ -597,13 +597,29 @@ def set_thumb(account, video_id, path, tok=None):
     except Exception as e:
         print("YouTube náhľad:", e)
         return False
+    st = db.get_setting("yt_thumb_state", {}) or {}
+    key = str(account.get("id"))
     if tr.status_code >= 300:
         fails = db.get_setting("yt_thumb_fail") or {}
-        fails[account.get("name") or str(account.get("id"))] = f"{tr.status_code} {tr.text[:160]}"
+        fails[account.get("name") or key] = f"{tr.status_code} {tr.text[:160]}"
         db.set_setting("yt_thumb_fail", fails)
+        st[key] = {"ok": False, "ts": time.time(), "name": account.get("name") or "", "err": f"{tr.status_code} {tr.text[:200]}"}
+        db.set_setting("yt_thumb_state", st)
         print("YouTube náhľad:", tr.status_code, tr.text[:200])
         return False
+    st[key] = {"ok": True, "ts": time.time(), "name": account.get("name") or ""}
+    db.set_setting("yt_thumb_state", st)
+    up = set(db.get_setting("thumb2_up", []) or [])
+    if video_id not in up:   # 1.104.0: náhľad je na YouTube, spätné dopĺňanie ho už nenahráva znova
+        up.add(video_id)
+        db.set_setting("thumb2_up", sorted(up))
     return True
+
+
+def thumb_blocked(account, hours=24):
+    """Kanál vlastný náhľad naposledy odmietol (napr. nie je overený telefónom): skúsi sa znova až o deň."""
+    st = (db.get_setting("yt_thumb_state", {}) or {}).get(str(account.get("id"))) or {}
+    return st.get("ok") is False and time.time() - (st.get("ts") or 0) < hours * 3600
 
 
 def add_related(account, video_id, text):
